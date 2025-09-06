@@ -16,7 +16,7 @@ type Keyboard struct {
 func NewKeyboard() (Keyboard, error) {
 	var kb Keyboard
 
-	vk, err := uinput.CreateKeyboard("/dev/uinput", []byte("mrext"))
+	vk, err := uinput.CreateKeyboard("/dev/uinput", []byte("sam"))
 	if err != nil {
 		return kb, err
 	}
