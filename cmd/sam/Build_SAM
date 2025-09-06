@@ -1,0 +1,1 @@
+rm -rf ~/mrext && git clone https://github.com/synrais/mrext.git ~/mrext && cd ~/mrext && CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -ldflags "-s -w" -o /tmp/SAM ./cmd/sam/main.go && scp /tmp/SAM root@192.168.1.104:/media/fat/Scripts/.MiSTer_SAM/
