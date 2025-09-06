@@ -1,4 +1,4 @@
-module github.com/wizzomafizzo/mrext
+module github.com/synrais/SAM-GO
 
 go 1.18
 
