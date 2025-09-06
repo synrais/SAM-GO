@@ -1,7 +1,7 @@
 package config
 
-const UserConfigEnv = "MREXT_CONFIG"
-const UserAppPathEnv = "MREXT_APP_PATH"
+const UserConfigEnv = "SAM_CONFIG"
+const UserAppPathEnv = "SAM_APP_PATH"
 
 const ActiveGameFile = TempFolder + "/ACTIVEGAME"
 const SearchDbFile = SdFolder + "/search.db"
@@ -19,6 +19,6 @@ const ArcadeDBFile = MrextConfigFolder + "/ArcadeDatabase.csv"
 const NfcDatabaseFile = SdFolder + "/nfc.csv"
 const NfcLastScanFile = TempFolder + "/NFCSCAN"
 
-const GamesDb = ScriptsConfigFolder + "/mrext/games.db"
+const GamesDb = ScriptsConfigFolder + "/sam/games.db"
 
 const LastLaunchFile = SdFolder + "/.LASTLAUNCH.mgl"
