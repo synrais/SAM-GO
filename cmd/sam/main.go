@@ -8,6 +8,7 @@ import (
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/list"
 	"github.com/synrais/SAM-GO/pkg/run"
+	"github.com/synrais/SAM-GO/pkg/spy" // <-- add this
 )
 
 func dumpConfig(cfg *config.UserConfig) {
@@ -28,7 +29,6 @@ func dumpConfig(cfg *config.UserConfig) {
 	fmt.Printf("  Systems: GamesFolder=%v | SetCore=%v\n",
 		cfg.Systems.GamesFolder, cfg.Systems.SetCore)
 
-	// Dump disable rules if any
 	if len(cfg.Disable) > 0 {
 		fmt.Printf("  Disable Rules:\n")
 		for sys, rules := range cfg.Disable {
@@ -40,7 +40,7 @@ func dumpConfig(cfg *config.UserConfig) {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags]")
+		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -spy")
 		os.Exit(1)
 	}
 
@@ -65,6 +65,8 @@ func main() {
 		}
 	case "-attract":
 		attract.Run(args)
+	case "-spy": // <-- add spy mode
+		spy.Run()
 	default:
 		fmt.Printf("Unknown tool: %s\n", cmd)
 		os.Exit(1)
