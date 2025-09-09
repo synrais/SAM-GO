@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"select"
 	"syscall"
 	"unsafe"
 
@@ -211,3 +210,4 @@ func MonitorAll() {
 		}
 	}
 }
+
