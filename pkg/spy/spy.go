@@ -1,11 +1,13 @@
 package spy
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
+	"strings"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -71,7 +73,7 @@ func decodeKeyboard(data []byte) string {
 }
 
 func decodeMouse(data []byte) string {
-	if len(data) < 3 {
+	if len(data) < 6 {
 		return ""
 	}
 	buttons := data[1]
@@ -104,28 +106,39 @@ type jsDevice struct {
 	btnmap   []uint32
 }
 
+func ioctl(fd int, req uintptr, arg unsafe.Pointer) error {
+	_, _, e := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), req, uintptr(arg))
+	if e != 0 {
+		return e
+	}
+	return nil
+}
+
 func setupJSDevice(fd int, path string) *jsDevice {
-	// Version
-	buf := make([]byte, 4)
-	unix.IoctlGetInt(fd, JSIOCGVERSION)
-	version := binary.LittleEndian.Uint32(buf)
+	// Driver version
+	var version uint32
+	_ = ioctl(fd, JSIOCGVERSION, unsafe.Pointer(&version))
 
 	// Axes
-	numAxes, _ := unix.IoctlGetInt(fd, JSIOCGAXES)
-	numButtons, _ := unix.IoctlGetInt(fd, JSIOCGBUTTONS)
+	var numAxes uint8
+	_ = ioctl(fd, JSIOCGAXES, unsafe.Pointer(&numAxes))
+
+	// Buttons
+	var numButtons uint8
+	_ = ioctl(fd, JSIOCGBUTTONS, unsafe.Pointer(&numButtons))
 
 	// Name
 	nameBuf := make([]byte, 128)
-	unix.Ioctl(fd, JSIOCGNAME, uintptr(unsafe.Pointer(&nameBuf[0])))
-	name := string(nameBuf[:])
+	_ = ioctl(fd, JSIOCGNAME, unsafe.Pointer(&nameBuf[0]))
+	name := string(bytes.TrimRight(nameBuf, "\x00"))
 
 	// Axis map
 	axmap := make([]uint32, numAxes)
-	unix.Ioctl(fd, JSIOCGAXMAP, uintptr(unsafe.Pointer(&axmap[0])))
+	_ = ioctl(fd, JSIOCGAXMAP, unsafe.Pointer(&axmap[0]))
 
 	// Button map
 	btnmap := make([]uint32, numButtons)
-	unix.Ioctl(fd, JSIOCGBTNMAP, uintptr(unsafe.Pointer(&btnmap[0])))
+	_ = ioctl(fd, JSIOCGBTNMAP, unsafe.Pointer(&btnmap[0]))
 
 	fmt.Printf("Monitoring %s (joystick: %s)\n", path, name)
 	fmt.Printf("  Driver version: %d\n", version)
@@ -147,7 +160,7 @@ func handleJSEvent(dev *jsDevice, evt []byte) {
 	var t uint32
 	var val int16
 	var etype, num uint8
-	binary.Read(bytes.NewReader(evt), binary.LittleEndian, &t)
+	binary.Read(bytes.NewReader(evt[:4]), binary.LittleEndian, &t)
 	binary.Read(bytes.NewReader(evt[4:6]), binary.LittleEndian, &val)
 	etype = evt[6]
 	num = evt[7]
@@ -164,7 +177,6 @@ func handleJSEvent(dev *jsDevice, evt []byte) {
 		}
 	}
 
-	// Full RetroSpy-style dump
 	axs := []string{}
 	for k, v := range dev.axes {
 		axs = append(axs, fmt.Sprintf("%s=%d", k, v))
@@ -191,14 +203,12 @@ func monitorAllInputs() {
 		devices = append(devices, dev)
 	}
 
-	// HID raw
+	// HID raw (stub for now, can expand like Python)
 	hidMatches, _ := filepath.Glob("/dev/hidraw*")
 	for _, path := range hidMatches {
 		fmt.Printf("Monitoring %s (hidraw)\n", path)
-		// TODO: implement HID read loop like python version
 	}
 
-	// TODO: use select/poll to multiplex HID + js events
 	for _, dev := range devices {
 		buf := make([]byte, 8)
 		for {
