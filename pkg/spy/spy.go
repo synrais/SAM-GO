@@ -130,9 +130,12 @@ func handleJSEvent(d *device, evt []byte) {
 	_ = binary.Read(bytes.NewReader(evt[4:]), binary.LittleEndian, &val)
 	etype = evt[6]
 	num = evt[7]
+
+	// fix overflow by casting
 	if etype&jsEventInit != 0 {
-		etype &= ^jsEventInit
+		etype &= ^uint8(jsEventInit)
 	}
+
 	if etype == jsEventAxis {
 		ax := axisNames[d.axmap[num]]
 		if ax == "" {
@@ -230,3 +233,4 @@ func Run(args []string) {
 	devs := make(map[string]*device)
 	monitor(devs)
 }
+
