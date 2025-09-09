@@ -65,8 +65,8 @@ func main() {
 		}
 	case "-attract":
 		attract.Run(args)
-	case "-spy": // <-- add spy mode
-		spy.Run()
+	case "-spy":
+    	spy.Run(args)
 	default:
 		fmt.Printf("Unknown tool: %s\n", cmd)
 		os.Exit(1)
