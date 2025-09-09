@@ -40,7 +40,7 @@ var ButtonNames = map[uint32]string{
 	0x12c: "BTN_MODE", 0x12d: "BTN_THUMBL", 0x12e: "BTN_THUMBR",
 }
 
-// HID key map (subset for A–Z, arrows, space, enter, esc, backspace)
+// HID key map
 var KeyMap = map[byte]string{
 	0x04: "A", 0x05: "B", 0x06: "C", 0x07: "D", 0x08: "E", 0x09: "F",
 	0x0A: "G", 0x0B: "H", 0x0C: "I", 0x0D: "J", 0x0E: "K", 0x0F: "L",
@@ -83,7 +83,7 @@ func decodeKeyboard(data []byte) string {
 }
 
 func decodeMouse(data []byte) string {
-	if len(data) < 3 {
+	if len(data) < 6 {
 		return ""
 	}
 	buttons := data[1]
@@ -141,12 +141,10 @@ func decodeGenericGamepad(data []byte) string {
 
 // ---------------- Joystick setup (RetroSpy style) ----------------
 type JSDev struct {
-	fd       int
-	name     string
-	axmap    []uint32
-	btnmap   []uint32
-	axes     map[string]int16
-	buttons  map[string]uint8
+	fd      int
+	name    string
+	axes    map[string]int16
+	buttons map[string]uint8
 }
 
 func setupJSDevice(path string) (*JSDev, error) {
@@ -162,37 +160,23 @@ func setupJSDevice(path string) (*JSDev, error) {
 	}
 	name := string(bytes.Trim(buf, "\x00"))
 
-	// Axes
-	abuf := make([]byte, 64)
-	unix.IoctlGetInt(fd, JSIOCGAXES)
-	axmap := make([]uint32, len(abuf))
-	_ = unix.IoctlGetInt(fd, JSIOCGAXMAP) // simplified
-
-	// Buttons
-	bbuf := make([]byte, 64)
-	unix.IoctlGetInt(fd, JSIOCGBUTTONS)
-	btnmap := make([]uint32, len(bbuf))
-	_ = unix.IoctlGetInt(fd, JSIOCGBTNMAP)
-
-	dev := &JSDev{
+	fmt.Printf("Monitoring %s (joystick: %s)\n", path, name)
+	return &JSDev{
 		fd:      fd,
 		name:    name,
-		axmap:   axmap,
-		btnmap:  btnmap,
 		axes:    map[string]int16{},
 		buttons: map[string]uint8{},
-	}
-	fmt.Printf("Monitoring %s (joystick: %s)\n", path, name)
-	return dev, nil
+	}, nil
 }
 
 func (js *JSDev) handleEvent(evt []byte) {
 	var t uint32
 	var val int16
 	var etype, num uint8
-	binary.Read(bytes.NewReader(evt), binary.LittleEndian, &t)
-	binary.Read(bytes.NewReader(evt[4:6]), binary.LittleEndian, &val)
-	etype = evt[6] & ^JS_EVENT_INIT
+	_ = binary.Read(bytes.NewReader(evt[0:4]), binary.LittleEndian, &t)
+	_ = binary.Read(bytes.NewReader(evt[4:6]), binary.LittleEndian, &val)
+	etype = evt[6]
+	etype &= ^uint8(JS_EVENT_INIT) // fix: mask off INIT
 	num = evt[7]
 
 	if etype == JS_EVENT_AXIS {
@@ -216,14 +200,7 @@ func join(s []string) string {
 	if len(s) == 0 {
 		return ""
 	}
-	out := ""
-	for i, v := range s {
-		if i > 0 {
-			out += ", "
-		}
-		out += v
-	}
-	return out
+	return fmt.Sprint(s)
 }
 
 // ---------------- Main Monitor ----------------
