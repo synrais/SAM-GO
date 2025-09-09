@@ -8,7 +8,8 @@ package spy
 import "C"
 
 // Run starts the C-based spy monitor
-func Run() {
+func Run()
 	C.spy_scan_devices()
 	C.spy_loop()
 }
+
