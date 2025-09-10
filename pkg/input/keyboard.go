@@ -1,7 +1,6 @@
 package input
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +9,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// SCAN_CODES map stores the key codes to key names
+const (
+	// Time interval between rescans for hotplug devices
+	HOTPLUG_SCAN_INTERVAL = 2.0 * time.Second
+)
+
+// SCAN_CODES stores key codes mapped to key names (similar to the Python script)
 var SCAN_CODES = map[int][]string{
 	0x04: {"a", "A"}, 0x05: {"b", "B"}, 0x06: {"c", "C"}, 0x07: {"d", "D"},
 	0x08: {"e", "E"}, 0x09: {"f", "F"}, 0x0A: {"g", "G"}, 0x0B: {"h", "H"},
