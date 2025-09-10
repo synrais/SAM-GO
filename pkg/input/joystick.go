@@ -263,7 +263,7 @@ func StreamJoysticks() <-chan string {
 			return
 		}
 
-		// Small goroutine just for hotplug
+		// Hotplug watcher
 		go func() {
 			buf := make([]byte, 4096)
 			for {
@@ -279,10 +279,12 @@ func StreamJoysticks() <-chan string {
 						if raw.Mask&unix.IN_CREATE != 0 {
 							if dev, err := openJoystickDevice(path, sdlmap); err == nil {
 								devices[path] = dev
+								fmt.Printf("[+] Opened %s (%s, GUID=%s)\n", dev.Path, dev.Name, dev.GUID)
 							}
 						}
 						if raw.Mask&unix.IN_DELETE != 0 {
 							if dev, ok := devices[path]; ok {
+								fmt.Printf("[-] Lost %s (%s)\n", dev.Path, dev.Name)
 								dev.close()
 								delete(devices, path)
 							}
@@ -293,7 +295,7 @@ func StreamJoysticks() <-chan string {
 			}
 		}()
 
-		// Main loop stays the same (readEvents + reopen)
+		// Main loop (read events + reopen)
 		for {
 			for _, dev := range devices {
 				if dev.FD < 0 {
