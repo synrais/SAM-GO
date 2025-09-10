@@ -16,10 +16,8 @@ const (
 	scanCodesFile        = "/media/fat/keyboardscancodes.txt"
 )
 
-// SCAN_CODES: USB HID code -> key name(s)
 var scanCodes = map[int][]string{}
 
-// -------- Scan code loading ----------
 func loadScanCodes(path string) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -35,9 +33,7 @@ func loadScanCodes(path string) {
 	}
 }
 
-// -------- Keyboard detection ----------
 func parseKeyboards() map[string]string {
-	// Return sysfs_id -> name
 	keyboards := map[string]string{}
 	block := []string{}
 	f, err := os.Open("/proc/bus/input/devices")
