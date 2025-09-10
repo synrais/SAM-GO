@@ -2,56 +2,45 @@ package input
 
 import (
 	"fmt"
-	"io"
-	"log"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
-	"unsafe"
+
 	"golang.org/x/sys/unix"
 )
 
 const (
 	reportSize   = 3
+	hotplugScan  = 2 * time.Second
 	pollInterval = 10 * time.Millisecond
 )
 
 type MouseDevice struct {
 	Path string
-	File *os.File
+	FD   int
 }
 
 func openMouseDevice(path string) (*MouseDevice, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|unix.O_NONBLOCK, 0)
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("[+] Opened %s\n", path)
-	return &MouseDevice{Path: path, File: f}, nil
+	fmt.Printf("[+] Opened %s (fd=%d)\n", path, fd)
+	return &MouseDevice{Path: path, FD: fd}, nil
 }
 
 func (m *MouseDevice) Close() {
-	if m.File != nil {
-		_ = m.File.Close()
+	if m.FD >= 0 {
+		_ = unix.Close(m.FD)
 		fmt.Printf("[-] Closed %s\n", m.Path)
-		m.File = nil
+		m.FD = -1
 	}
 }
 
-func (m *MouseDevice) ReadEvent() (string, error) {
-	buf := make([]byte, reportSize)
-	n, err := m.File.Read(buf)
-	if err != nil {
-		if err == io.EOF || err == unix.EAGAIN {
-			return "", nil
-		}
-		return "", err
+func decodePacket(buf []byte) string {
+	if len(buf) < 3 {
+		return ""
 	}
-	if n < reportSize {
-		return "", nil
-	}
-
 	buttons := buf[0]
 	dx := int8(buf[1])
 	dy := int8(buf[2])
@@ -71,87 +60,84 @@ func (m *MouseDevice) ReadEvent() (string, error) {
 	if len(pressed) > 0 {
 		status = fmt.Sprint(pressed)
 	}
-	return fmt.Sprintf("buttons=%s dx=%d dy=%d", status, dx, dy), nil
+	return fmt.Sprintf("buttons=%s dx=%d dy=%d", status, dx, dy)
 }
 
-// RunMouse starts monitoring /dev/input/mouse* devices.
 func RunMouse() {
-	devices := make(map[string]*MouseDevice)
-	var mu sync.Mutex
+	devices := map[string]*MouseDevice{}
+	lastScan := time.Time{}
 
-	// Setup inotify watcher
-	fd, err := unix.InotifyInit()
-	if err != nil {
-		log.Fatalf("inotify init: %v", err)
-	}
-	defer unix.Close(fd)
-
-	_, err = unix.InotifyAddWatch(fd, "/dev/input", unix.IN_CREATE|unix.IN_DELETE)
-	if err != nil {
-		log.Fatalf("add watch: %v", err)
-	}
-
-	// Open any existing devices at startup
-	initial, _ := filepath.Glob("/dev/input/mouse*")
-	if _, err := os.Stat("/dev/input/mice"); err == nil {
-		initial = append(initial, "/dev/input/mice")
-	}
-	for _, path := range initial {
-		if dev, err := openMouseDevice(path); err == nil {
-			devices[path] = dev
-		}
-	}
-
-	// Goroutine: inotify event loop
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, err := unix.Read(fd, buf)
-			if err != nil {
-				log.Fatalf("inotify read: %v", err)
-			}
-			offset := 0
-			for offset < n {
-				raw := (*unix.InotifyEvent)(unsafe.Pointer(&buf[offset]))
-				nameBytes := buf[offset+unix.SizeofInotifyEvent : offset+unix.SizeofInotifyEvent+int(raw.Len)]
-				name := string(nameBytes[:len(nameBytes)-1]) // trim null
-				path := filepath.Join("/dev/input", name)
-
-				if raw.Mask&unix.IN_CREATE != 0 {
-					if filepath.Base(path) == "mice" || filepath.HasPrefix(filepath.Base(path), "mouse") {
-						if dev, err := openMouseDevice(path); err == nil {
-							mu.Lock()
-							devices[path] = dev
-							mu.Unlock()
-						}
-					}
-				}
-				if raw.Mask&unix.IN_DELETE != 0 {
-					mu.Lock()
-					if dev, ok := devices[path]; ok {
-						dev.Close()
-						delete(devices, path)
-					}
-					mu.Unlock()
-				}
-				offset += unix.SizeofInotifyEvent + int(raw.Len)
-			}
-		}
-	}()
-
-	// Main loop: poll devices
 	for {
-		mu.Lock()
-		for path, dev := range devices {
-			if dev.File == nil {
-				continue
+		now := time.Now()
+		if now.Sub(lastScan) > hotplugScan {
+			lastScan = now
+			fmt.Println("[DEBUG] rescanning /dev/input/mouse* + /dev/input/mice")
+
+			paths, _ := filepath.Glob("/dev/input/mouse*")
+			if _, err := os.Stat("/dev/input/mice"); err == nil {
+				paths = append(paths, "/dev/input/mice")
 			}
-			if out, err := dev.ReadEvent(); err == nil && out != "" {
-				ts := time.Now().UnixMilli()
-				fmt.Printf("[%d ms] %s: %s\n", ts, filepath.Base(path), out)
+
+			found := map[string]bool{}
+			for _, path := range paths {
+				found[path] = true
+				if _, ok := devices[path]; !ok {
+					if dev, err := openMouseDevice(path); err == nil {
+						devices[path] = dev
+					} else {
+						fmt.Printf("[DEBUG] failed to open %s: %v\n", path, err)
+					}
+				}
+			}
+
+			// remove vanished
+			for path, dev := range devices {
+				if !found[path] {
+					dev.Close()
+					delete(devices, path)
+				}
 			}
 		}
-		mu.Unlock()
-		time.Sleep(pollInterval)
+
+		if len(devices) == 0 {
+			time.Sleep(pollInterval)
+			continue
+		}
+
+		// build fd set for select()
+		var fds unix.FdSet
+		maxfd := 0
+		for _, dev := range devices {
+			if dev.FD >= 0 {
+				unix.FD_SET(dev.FD, &fds)
+				if dev.FD > maxfd {
+					maxfd = dev.FD
+				}
+			}
+		}
+
+		timeout := unix.NsecToTimeval(int64(pollInterval))
+		_, err := unix.Select(maxfd+1, &fds, nil, nil, &timeout)
+		if err != nil {
+			fmt.Println("[DEBUG] select error:", err)
+			continue
+		}
+
+		for path, dev := range devices {
+			if dev.FD >= 0 && unix.FD_ISSET(dev.FD, &fds) {
+				buf := make([]byte, reportSize)
+				n, err := unix.Read(dev.FD, buf)
+				if err != nil {
+					fmt.Printf("[DEBUG] read error on %s: %v\n", path, err)
+					dev.Close()
+					delete(devices, path)
+					continue
+				}
+				if n == reportSize {
+					ts := time.Now().UnixMilli()
+					fmt.Printf("[%d ms] %s: %s\n", ts, filepath.Base(path), decodePacket(buf))
+				}
+			}
+		}
 	}
 }
