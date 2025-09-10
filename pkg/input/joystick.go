@@ -3,21 +3,15 @@ package input
 import (
 	"bufio"
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
-	"unsafe"
-
 	"golang.org/x/sys/unix"
+	"your_project/assets" // Import the assets package
 )
 
 const (
 	jsEventSize     = 8
 	jsReadFrequency = 50 * time.Millisecond
-	dbFilePath      = "/media/fat/gamecontrollerdb.txt"
 )
 
 // JoystickEvent is a snapshot of a joystick's state.
@@ -74,14 +68,14 @@ func parseMappingLine(line string) *mappingEntry {
 	return &mappingEntry{guid: guid, name: name, platform: platform, mapping: mapping}
 }
 
-func loadSDLDB(path string) []*mappingEntry {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
+// Use embedded DB content instead of file
+func loadSDLDB() []*mappingEntry {
 	var entries []*mappingEntry
-	scanner := bufio.NewScanner(f)
+	// Access the embedded game controller DB content
+	content := assets.GameControllerDB
+
+	// Read the content line by line
+	scanner := bufio.NewScanner(strings.NewReader(content))
 	for scanner.Scan() {
 		if e := parseMappingLine(scanner.Text()); e != nil {
 			entries = append(entries, e)
@@ -235,7 +229,7 @@ func (j *JoystickDevice) readEvents() bool {
 
 func StreamJoysticks() <-chan string {
 	out := make(chan string, 100)
-	sdlmap := loadSDLDB(dbFilePath)
+	sdlmap := loadSDLDB()  // Use the embedded SDL DB
 
 	go func() {
 		defer close(out)
