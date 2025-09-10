@@ -86,8 +86,8 @@ func main() {
         	for k, v := range evt.Axes {
             	axes = append(axes, fmt.Sprintf("A%d=%d", k, v))
         	}
-        	fmt.Printf("[%d ms] %s: Buttons[%s] Axes[%s]\n",
-            	evt.Timestamp, evt.Device, strings.Join(btns, ", "), strings.Join(axes, ", "))
+        	fmt.Printf("[%d ms] %s: Buttons=%v Axes=%v\n",
+            	evt.Timestamp, evt.Device, btns, axes)
     	}
 	default:
 		fmt.Printf("Unknown tool: %s\n", cmd)
