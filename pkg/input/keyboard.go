@@ -76,6 +76,25 @@ func parseKeyboards() (map[string]string, error) {
 	return devices, nil
 }
 
+// Helper function to check if a string contains a substring
+func contains(str, substr string) bool {
+	return strings.Contains(str, substr)
+}
+
+// Extract device info (name and sysfs ID) from the block
+func extractDeviceInfo(block []string) (string, string) {
+	var name, sysfsID string
+	for _, line := range block {
+		if strings.HasPrefix(line, "N: ") {
+			name = strings.TrimSpace(strings.Split(line, "=")[1])
+		}
+		if strings.HasPrefix(line, "S: Sysfs=") {
+			sysfsID = strings.TrimSpace(strings.Split(line, "=")[1])
+		}
+	}
+	return name, sysfsID
+}
+
 // Match the keyboards' sysfs IDs to the actual `/dev/hidraw*` devices
 func matchHidraws(keyboards map[string]string) ([]string, error) {
 	matches := []string{}
@@ -93,6 +112,44 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 		}
 	}
 	return matches, nil
+}
+
+// KeyboardDevice structure to hold device info and file descriptor
+type KeyboardDevice struct {
+	devnode string
+	name    string
+	fd      int
+}
+
+// NewKeyboardDevice creates a new keyboard device object
+func NewKeyboardDevice(devnode, name string) (*KeyboardDevice, error) {
+	fd, err := unix.Open(devnode, unix.O_RDONLY|unix.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	return &KeyboardDevice{
+		devnode: devnode,
+		name:    name,
+		fd:      fd,
+	}, nil
+}
+
+// Close closes the keyboard device
+func (kd *KeyboardDevice) Close() {
+	if kd.fd >= 0 {
+		_ = unix.Close(kd.fd)
+		kd.fd = -1
+	}
+}
+
+// ReadEvent reads an event from the device
+func (kd *KeyboardDevice) ReadEvent() string {
+	report := make([]byte, 8) // Read 8-byte report
+	n, err := unix.Read(kd.fd, report)
+	if err != nil || n < 8 {
+		return ""
+	}
+	return decodeReport(report)
 }
 
 // Monitor keyboards: Poll for keyboard events, match sysfs, and decode events
