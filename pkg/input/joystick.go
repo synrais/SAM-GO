@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 	"golang.org/x/sys/unix"
-	"your_project/assets" // Import the assets package
+	"github.com/synrais/SAM-GO/pkg/assets" 
 )
 
 const (
