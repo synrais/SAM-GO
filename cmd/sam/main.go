@@ -40,7 +40,7 @@ func dumpConfig(cfg *config.UserConfig) {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -mouse | -joystick | -keyboard")
+		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -mouse | -joystick")
 		os.Exit(1)
 	}
 
