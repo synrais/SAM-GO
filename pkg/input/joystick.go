@@ -241,13 +241,31 @@ func StreamJoysticks() <-chan string {
 		defer close(out)
 		devices := map[string]*JoystickDevice{}
 
-		// Initial scan
-		paths, _ := filepath.Glob("/dev/input/js*")
-		for _, path := range paths {
-			if dev, err := openJoystickDevice(path, sdlmap); err == nil {
-				devices[path] = dev
+		// Function to rescan all /dev/input/js* devices
+		rescan := func() {
+			paths, _ := filepath.Glob("/dev/input/js*")
+
+			// Add new ones
+			for _, path := range paths {
+				if _, ok := devices[path]; !ok {
+					if dev, err := openJoystickDevice(path, sdlmap); err == nil {
+						devices[path] = dev
+					}
+				}
+			}
+
+			// Remove vanished ones
+			for path, dev := range devices {
+				if _, err := os.Stat(path); os.IsNotExist(err) {
+					fmt.Printf("[-] Lost %s (%s)\n", dev.Path, dev.Name)
+					dev.close()
+					delete(devices, path)
+				}
 			}
 		}
+
+		// Initial scan
+		rescan()
 
 		// Inotify setup
 		inFd, err := unix.InotifyInit()
@@ -257,8 +275,9 @@ func StreamJoysticks() <-chan string {
 		}
 		defer unix.Close(inFd)
 
-		_, err = unix.InotifyAddWatch(inFd, "/dev/input",
-			unix.IN_CREATE|unix.IN_DELETE|unix.IN_MOVED_TO|unix.IN_MOVED_FROM)
+		// Watch by-id symlinks (reliable for all input devices)
+		_, err = unix.InotifyAddWatch(inFd, "/dev/input/by-id",
+			unix.IN_CREATE|unix.IN_DELETE|unix.IN_MOVED_FROM|unix.IN_MOVED_TO)
 		if err != nil {
 			fmt.Println("inotify addwatch failed:", err)
 			return
@@ -268,30 +287,9 @@ func StreamJoysticks() <-chan string {
 		go func() {
 			buf := make([]byte, 4096)
 			for {
-				n, _ := unix.Read(inFd, buf)
-				offset := 0
-				for offset < n {
-					raw := (*unix.InotifyEvent)(unsafe.Pointer(&buf[offset]))
-					nameBytes := buf[offset+unix.SizeofInotifyEvent : offset+unix.SizeofInotifyEvent+int(raw.Len)]
-					name := string(nameBytes[:len(nameBytes)-1]) // trim null
-					path := filepath.Join("/dev/input", name)
-
-					if strings.HasPrefix(name, "js") {
-						if raw.Mask&(unix.IN_CREATE|unix.IN_MOVED_TO) != 0 {
-							if dev, err := openJoystickDevice(path, sdlmap); err == nil {
-								devices[path] = dev
-							}
-						}
-						if raw.Mask&(unix.IN_DELETE|unix.IN_MOVED_FROM) != 0 {
-							if dev, ok := devices[path]; ok {
-								fmt.Printf("[-] Lost %s (%s)\n", dev.Path, dev.Name)
-								dev.close()
-								delete(devices, path)
-							}
-						}
-					}
-					offset += unix.SizeofInotifyEvent + int(raw.Len)
-				}
+				_, _ = unix.Read(inFd, buf) // block until something happens
+				// Any event here = device list changed, so rescan
+				rescan()
 			}
 		}()
 
@@ -305,7 +303,7 @@ func StreamJoysticks() <-chan string {
 					continue
 				}
 				if dev.readEvents() {
-					// Build button list
+					// ---- Build button list in order ----
 					btnKeys := make([]int, 0, len(dev.btnmap))
 					for k := range dev.btnmap {
 						btnKeys = append(btnKeys, k)
@@ -325,7 +323,7 @@ func StreamJoysticks() <-chan string {
 						btnParts = append(btnParts, fmt.Sprintf("%s=%s", name, state))
 					}
 
-					// Build axis list
+					// ---- Build axis list in order ----
 					axKeys := make([]int, 0, len(dev.axmap))
 					for k := range dev.axmap {
 						axKeys = append(axKeys, k)
@@ -345,6 +343,7 @@ func StreamJoysticks() <-chan string {
 						axParts = append(axParts, fmt.Sprintf("%s=%d", name, val))
 					}
 
+					// ---- Final line identical to Python ----
 					line := fmt.Sprintf("[%d ms] %s: Buttons[%s] Axes[%s]",
 						time.Now().UnixMilli(),
 						filepath.Base(dev.Path),
@@ -354,7 +353,10 @@ func StreamJoysticks() <-chan string {
 
 					out <- line
 				}
+				// Always reopen quietly
+				dev.reopen()
 			}
+
 			time.Sleep(jsReadFrequency)
 		}
 	}()
