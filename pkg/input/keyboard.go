@@ -7,9 +7,6 @@ import (
 	"time"
 	"path/filepath"
 	"golang.org/x/sys/unix"
-	"io/ioutil"
-	"strconv"
-	"unsafe"
 )
 
 const HOTPLUG_SCAN_INTERVAL = 2 * time.Second // seconds between rescans
@@ -56,14 +53,16 @@ var SCAN_CODES = map[int][]string{
 // Parse the `/proc/bus/input/devices` file to find keyboard devices
 func parseKeyboards() (map[string]string, error) {
 	devices := make(map[string]string)
-	data, err := ioutil.ReadFile("/proc/bus/input/devices")
+	file, err := os.Open("/proc/bus/input/devices")
 	if err != nil {
-		return nil, fmt.Errorf("Error reading /proc/bus/input/devices: %v", err)
+		return nil, fmt.Errorf("Error opening /proc/bus/input/devices: %v", err)
 	}
+	defer file.Close()
 
-	lines := strings.Split(string(data), "\n")
 	var block []string
-	for _, line := range lines {
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
 		if line == "" {
 			if contains(line, "Handlers=") && contains(line, "kbd") {
 				name, sysfsID := extractDeviceInfo(block)
@@ -75,6 +74,10 @@ func parseKeyboards() (map[string]string, error) {
 		} else {
 			block = append(block, line)
 		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("Error reading /proc/bus/input/devices: %v", err)
 	}
 
 	return devices, nil
@@ -153,11 +156,11 @@ func allZero(slice []byte) bool {
 type KeyboardDevice struct {
 	devnode string
 	name    string
-	fd      *os.File
+	fd      int
 }
 
 func NewKeyboardDevice(devnode, name string) (*KeyboardDevice, error) {
-	fd, err := os.OpenFile(devnode, os.O_RDONLY, 0)
+	fd, err := unix.Open(devnode, unix.O_RDONLY|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -169,15 +172,15 @@ func NewKeyboardDevice(devnode, name string) (*KeyboardDevice, error) {
 }
 
 func (kd *KeyboardDevice) Close() {
-	if kd.fd != nil {
-		_ = kd.fd.Close()
-		kd.fd = nil
+	if kd.fd >= 0 {
+		_ = unix.Close(kd.fd)
+		kd.fd = -1
 	}
 }
 
 func (kd *KeyboardDevice) ReadEvent() string {
 	report := make([]byte, 8) // Read 8-byte report
-	n, err := kd.fd.Read(report)
+	n, err := unix.Read(kd.fd, report)
 	if err != nil || n < 8 {
 		return ""
 	}
