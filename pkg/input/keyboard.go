@@ -20,7 +20,6 @@ const (
 var scanCodes = map[int][]string{}
 
 // -------- Scan code loading ----------
-
 func loadScanCodes(path string) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -37,7 +36,6 @@ func loadScanCodes(path string) {
 }
 
 // -------- Keyboard detection ----------
-
 func parseKeyboards() map[string]string {
 	// Return sysfs_id -> name
 	keyboards := map[string]string{}
@@ -107,7 +105,6 @@ func matchHidraws(keyboards map[string]string) [][2]string {
 }
 
 // -------- Report decoding ----------
-
 func decodeReport(report []byte) string {
 	if len(report) != 8 {
 		return ""
@@ -152,7 +149,6 @@ func decodeReport(report []byte) string {
 }
 
 // -------- Device wrapper ----------
-
 type KeyboardDevice struct {
 	Devnode string
 	Name    string
@@ -202,7 +198,6 @@ func (k *KeyboardDevice) readEvent() string {
 }
 
 // -------- Streaming monitor ----------
-
 func StreamKeyboards() <-chan string {
 	out := make(chan string, 100)
 	go func() {
