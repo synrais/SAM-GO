@@ -65,8 +65,12 @@ func main() {
 		}
 	case "-attract":
 		attract.Run(args)
-	case "-mouse":
-		input.RunMouse()
+case "-mouse":
+    events := input.StreamMouse()
+    for evt := range events {
+        fmt.Printf("[%d ms] %s: buttons=%v dx=%d dy=%d\n",
+            evt.Timestamp, evt.Device, evt.Buttons, evt.DX, evt.DY)
+    }
 	default:
 		fmt.Printf("Unknown tool: %s\n", cmd)
 		os.Exit(1)
