@@ -12,7 +12,6 @@ import (
 
 const HOTPLUG_SCAN_INTERVAL = 2 * time.Second // seconds between rescans
 
-// SCAN_CODES will be loaded from the keyboardscancodes.txt file
 var SCAN_CODES = map[int][]string{}
 
 // --- Load SCAN_CODES from external file (keyboardscancodes.txt) ---
@@ -124,9 +123,15 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 			continue
 		}
 		sysfsID := filepath.Base(realpath) // The sysfs ID should be the last part of the path
+
+		// Debug: Show the sysfs ID and check the match with keyboards
+		fmt.Printf("  Checking HIDraw sysfsID: %s\n", sysfsID)
 		if name, found := keyboards[sysfsID]; found {
 			devnode := fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(realpath)))
 			matches = append(matches, fmt.Sprintf("%s → %s", devnode, name))
+		} else {
+			// Debug: No match found
+			fmt.Printf("  No match for sysfsID: %s\n", sysfsID)
 		}
 	}
 
