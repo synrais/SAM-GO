@@ -194,12 +194,6 @@ func (j *JoystickDevice) close() {
 	}
 }
 
-func (j *JoystickDevice) close() {
-	if j.FD >= 0 {
-		unix.Close(j.FD)
-		j.FD = -1
-	}
-}
 
 func (j *JoystickDevice) reopen() {
 	j.close()
