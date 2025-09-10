@@ -6,9 +6,9 @@ import (
 
 	"github.com/synrais/SAM-GO/pkg/attract"
 	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/list"
 	"github.com/synrais/SAM-GO/pkg/run"
-	"github.com/synrais/SAM-GO/pkg/spy" // <-- add this
 )
 
 func dumpConfig(cfg *config.UserConfig) {
@@ -40,7 +40,7 @@ func dumpConfig(cfg *config.UserConfig) {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -spy")
+		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -mouse")
 		os.Exit(1)
 	}
 
@@ -65,8 +65,8 @@ func main() {
 		}
 	case "-attract":
 		attract.Run(args)
-	case "-spy":
-    	spy.Run()
+	case "-mouse":
+		input.RunMouse()
 	default:
 		fmt.Printf("Unknown tool: %s\n", cmd)
 		os.Exit(1)
