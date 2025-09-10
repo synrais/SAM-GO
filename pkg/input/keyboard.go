@@ -6,8 +6,6 @@ import (
 	"os"
 	"strings"
 	"time"
-	"syscall"
-	"golang.org/x/sys/unix"
 )
 
 const hotplugScanInterval = 2 * time.Second
