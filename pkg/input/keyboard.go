@@ -126,7 +126,7 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 	// Debug: Print all HIDraw devices found in /sys/class/hidraw/
 	fmt.Println("HIDraw devices in /sys/class/hidraw/:")
 	for _, hiddev := range files {
-		fmt.Println("  " + hiddev) // Print each hidraw device path
+		fmt.Println("  HIDraw device:", hiddev) // Print each hidraw device path
 
 		// Resolve the symlink to get the real sysfs path
 		realpath, err := filepath.EvalSymlinks(hiddev)
@@ -138,6 +138,12 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 
 		// Debug: Show the sysfs ID and check the match with keyboards
 		fmt.Printf("  Checking HIDraw sysfsID: %s\n", sysfsID)
+
+		// Add debug output to see what keys and sysfsIDs are present
+		for k, v := range keyboards {
+			fmt.Printf("    Keyboard sysfsID: %s, Name: %s\n", k, v)
+		}
+
 		if name, found := keyboards[sysfsID]; found {
 			devnode := fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(realpath)))
 			matches = append(matches, fmt.Sprintf("%s → %s", devnode, name))
