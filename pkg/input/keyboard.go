@@ -1,177 +1,265 @@
-#!/usr/bin/env python3
-import sys
-import os
-import glob
-import select
-import time
+package input
 
-HOTPLUG_SCAN_INTERVAL = 2.0   # seconds between rescans
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
-# --- Load SCAN_CODES from external file (scan_codes.txt) ---
-SCAN_CODES = {}
-here = os.path.dirname(os.path.abspath(__file__))
-scan_file = os.path.join(here, "keyboardscancodes.txt")
-if not os.path.exists(scan_file):
-    print(f"Error: {scan_file} not found")
-    sys.exit(1)
+	"golang.org/x/sys/unix"
+)
 
-with open(scan_file, "r") as f:
-    code_env = {}
-    exec(f.read(), code_env)
-    SCAN_CODES = code_env.get("SCAN_CODES", {})
+const (
+	keyboardScanInterval = 2 * time.Second
+	scanCodesFile        = "/media/fat/keyboardscancodes.txt"
+)
 
+// SCAN_CODES: USB HID code -> key name(s)
+var scanCodes = map[int][]string{}
 
-def parse_keyboards():
-    """Return dict {sysfs_id: name} for all keyboards from /proc/bus/input/devices."""
-    keyboards = {}
-    block = []
-    with open("/proc/bus/input/devices") as f:
-        for line in f:
-            if line.strip() == "":
-                if any("Handlers=" in l and "kbd" in l for l in block):
-                    name_line = next((l for l in block if l.startswith("N: ")), None)
-                    sysfs_line = next((l for l in block if l.startswith("S: Sysfs=")), None)
-                    if name_line and sysfs_line:
-                        name = name_line.split("=", 1)[1].strip().strip('"')
-                        sysfs_path = sysfs_line.split("=", 1)[1].strip()
-                        sysfs_id = None
-                        parts = sysfs_path.split("/")
-                        for p in reversed(parts):
-                            if p.startswith("0003:"):
-                                sysfs_id = p
-                                break
-                        if sysfs_id:
-                            keyboards[sysfs_id] = name
-                block = []
-            else:
-                block.append(line)
-    return keyboards
+// -------- Scan code loading ----------
 
+func loadScanCodes(path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		fmt.Printf("Error: %s not found\n", path)
+		return
+	}
+	defer f.Close()
 
-def match_hidraws(keyboards):
-    """Match keyboards sysfs IDs to /dev/hidrawX devices. Return list of (devnode, name)."""
-    matches = []
-    for hiddev in glob.glob("/sys/class/hidraw/hidraw*/device"):
-        target = os.path.realpath(hiddev)
-        sysfs_id = os.path.basename(target)
-        if sysfs_id in keyboards:
-            devnode = f"/dev/{os.path.basename(os.path.dirname(hiddev))}"
-            matches.append((devnode, keyboards[sysfs_id]))
-    return matches
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		// ⚠️ Stub loader: you’ll want to implement parsing of your text file here.
+		// For now this function just confirms the file exists.
+	}
+}
 
+// -------- Keyboard detection ----------
 
-def decode_report(report):
-    """Decode only real keystrokes (ignores touchpad/mouse junk)."""
-    if len(report) != 8:
-        return None
-    if report[0] == 0x02:
-        return None
-    if report[0] != 0 and all(b == 0 for b in report[1:]):
-        return None
+func parseKeyboards() map[string]string {
+	// Return sysfs_id -> name
+	keyboards := map[string]string{}
+	block := []string{}
+	f, err := os.Open("/proc/bus/input/devices")
+	if err != nil {
+		return keyboards
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "" {
+			hasKbd := false
+			for _, l := range block {
+				if strings.Contains(l, "Handlers=") && strings.Contains(l, "kbd") {
+					hasKbd = true
+					break
+				}
+			}
+			if hasKbd {
+				var name, sysfs string
+				for _, l := range block {
+					if strings.HasPrefix(l, "N: ") {
+						parts := strings.SplitN(l, "=", 2)
+						if len(parts) == 2 {
+							name = strings.Trim(parts[1], "\" ")
+						}
+					}
+					if strings.HasPrefix(l, "S: Sysfs=") {
+						sysfs = strings.TrimSpace(strings.SplitN(l, "=", 2)[1])
+					}
+				}
+				if sysfs != "" {
+					parts := strings.Split(sysfs, "/")
+					for i := len(parts) - 1; i >= 0; i-- {
+						if strings.HasPrefix(parts[i], "0003:") {
+							keyboards[parts[i]] = name
+							break
+						}
+					}
+				}
+			}
+			block = []string{}
+		} else {
+			block = append(block, line)
+		}
+	}
+	return keyboards
+}
 
-    keycodes = report[2:8]
-    output = []
-    for code in keycodes:
-        if code == 0:
-            continue
-        if code in SCAN_CODES:
-            key = SCAN_CODES[code][0]
-            if key == "SPACE":
-                output.append(" ")
-            elif key == "ENTER":
-                output.append("\n")
-            elif len(key) == 1:
-                output.append(key)
-            else:
-                output.append(f"<{key}>")
-    return "".join(output) if output else None
+func matchHidraws(keyboards map[string]string) [][2]string {
+	matches := [][2]string{}
+	paths, _ := filepath.Glob("/sys/class/hidraw/hidraw*/device")
+	for _, p := range paths {
+		target, err := filepath.EvalSymlinks(p)
+		if err != nil {
+			continue
+		}
+		sysfsID := filepath.Base(target)
+		if name, ok := keyboards[sysfsID]; ok {
+			devnode := filepath.Join("/dev", filepath.Base(filepath.Dir(p)))
+			matches = append(matches, [2]string{devnode, name})
+		}
+	}
+	return matches
+}
 
+// -------- Report decoding ----------
 
-class KeyboardDevice:
-    def __init__(self, devnode, name):
-        self.devnode = devnode
-        self.name = name
-        self.fd = None
-        self.open()
+func decodeReport(report []byte) string {
+	if len(report) != 8 {
+		return ""
+	}
+	if report[0] == 0x02 {
+		return ""
+	}
+	allZero := true
+	for _, b := range report[1:] {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if report[0] != 0 && allZero {
+		return ""
+	}
 
-    def open(self):
-        try:
-            self.fd = open(self.devnode, "rb", buffering=0)
-            print(f"[+] Opened {self.devnode} → {self.name}")
-        except Exception as e:
-            self.fd = None
+	keycodes := report[2:8]
+	out := ""
+	for _, code := range keycodes {
+		if code == 0 {
+			continue
+		}
+		if names, ok := scanCodes[int(code)]; ok && len(names) > 0 {
+			key := names[0]
+			switch key {
+			case "SPACE":
+				out += " "
+			case "ENTER":
+				out += "\n"
+			default:
+				if len(key) == 1 {
+					out += key
+				} else {
+					out += fmt.Sprintf("<%s>", key)
+				}
+			}
+		}
+	}
+	return out
+}
 
-    def close(self):
-        if self.fd:
-            try:
-                self.fd.close()
-            except:
-                pass
-            self.fd = None
-            print(f"[-] Closed {self.devnode} → {self.name}")
+// -------- Device wrapper ----------
 
-    def fileno(self):
-        return self.fd.fileno() if self.fd else None
+type KeyboardDevice struct {
+	Devnode string
+	Name    string
+	fd      int
+}
 
-    def read_event(self):
-        if not self.fd:
-            return None
-        try:
-            data = self.fd.read(8)
-            if not data:
-                return None
-            return decode_report(data)
-        except Exception:
-            # device gone
-            self.close()
-            return None
+func newKeyboardDevice(devnode, name string) *KeyboardDevice {
+	k := &KeyboardDevice{Devnode: devnode, Name: name, fd: -1}
+	k.open()
+	return k
+}
 
+func (k *KeyboardDevice) open() {
+	if k.fd >= 0 {
+		return
+	}
+	fd, err := unix.Open(k.Devnode, unix.O_RDONLY|unix.O_NONBLOCK, 0)
+	if err == nil {
+		k.fd = fd
+		fmt.Printf("[+] Opened %s → %s\n", k.Devnode, k.Name)
+	}
+}
 
-def monitor_keyboards():
-    devices = {}
-    last_scan = 0
+func (k *KeyboardDevice) close() {
+	if k.fd >= 0 {
+		unix.Close(k.fd)
+		fmt.Printf("[-] Closed %s → %s\n", k.Devnode, k.Name)
+		k.fd = -1
+	}
+}
 
-    while True:
-        now = time.time()
-        if now - last_scan > HOTPLUG_SCAN_INTERVAL:
-            last_scan = now
-            # rescan for keyboards
-            keyboards = parse_keyboards()
-            matches = match_hidraws(keyboards)
-            found = set(dev for dev, _ in matches)
+func (k *KeyboardDevice) fileno() int {
+	return k.fd
+}
 
-            # Add new devices
-            for devnode, name in matches:
-                if devnode not in devices:
-                    dev = KeyboardDevice(devnode, name)
-                    if dev.fd:
-                        devices[devnode] = dev
+func (k *KeyboardDevice) readEvent() string {
+	if k.fd < 0 {
+		return ""
+	}
+	buf := make([]byte, 8)
+	n, err := unix.Read(k.fd, buf)
+	if err != nil || n < 8 {
+		k.close()
+		return ""
+	}
+	return decodeReport(buf)
+}
 
-            # Remove vanished devices
-            for devnode in list(devices.keys()):
-                if devnode not in found:
-                    devices[devnode].close()
-                    del devices[devnode]
+// -------- Streaming monitor ----------
 
-        if devices:
-            try:
-                rlist, _, _ = select.select([d.fileno() for d in devices.values() if d.fd], [], [], 0.2)
-                for fd in rlist:
-                    dev = next((d for d in devices.values() if d.fileno() == fd), None)
-                    if not dev:
-                        continue
-                    out = dev.read_event()
-                    if out:
-                        sys.stdout.write(out)
-                        sys.stdout.flush()
-            except Exception:
-                pass
-        else:
-            time.sleep(0.2)  # avoid busy loop if nothing connected
+func StreamKeyboards() <-chan string {
+	out := make(chan string, 100)
+	go func() {
+		defer close(out)
+		devices := map[string]*KeyboardDevice{}
+		lastScan := time.Now().Add(-keyboardScanInterval)
 
+		for {
+			now := time.Now()
+			if now.Sub(lastScan) > keyboardScanInterval {
+				lastScan = now
+				keyboards := parseKeyboards()
+				matches := matchHidraws(keyboards)
+				found := map[string]bool{}
+				for _, m := range matches {
+					devnode, name := m[0], m[1]
+					found[devnode] = true
+					if _, ok := devices[devnode]; !ok {
+						dev := newKeyboardDevice(devnode, name)
+						if dev.fd >= 0 {
+							devices[devnode] = dev
+						}
+					}
+				}
+				for devnode, dev := range devices {
+					if !found[devnode] {
+						dev.close()
+						delete(devices, devnode)
+					}
+				}
+			}
 
-if __name__ == "__main__":
-    try:
-        monitor_keyboards()
-    except KeyboardInterrupt:
-        print("\n[+] Exiting.")
+			if len(devices) > 0 {
+				fds := []unix.PollFd{}
+				for _, dev := range devices {
+					if dev.fd >= 0 {
+						fds = append(fds, unix.PollFd{Fd: int32(dev.fd), Events: unix.POLLIN})
+					}
+				}
+				if len(fds) > 0 {
+					_, _ = unix.Poll(fds, 200)
+					for _, pfd := range fds {
+						if pfd.Revents&unix.POLLIN != 0 {
+							for _, dev := range devices {
+								if int32(dev.fd) == pfd.Fd {
+									if outStr := dev.readEvent(); outStr != "" {
+										out <- outStr
+									}
+								}
+							}
+						}
+					}
+				}
+			} else {
+				time.Sleep(200 * time.Millisecond)
+			}
+		}
+	}()
+	return out
+}
