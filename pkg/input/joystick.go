@@ -257,7 +257,9 @@ func StreamJoysticks() <-chan string {
 		}
 		defer unix.Close(inFd)
 
-		_, err = unix.InotifyAddWatch(inFd, "/dev/input", unix.IN_CREATE|unix.IN_DELETE)
+		// Watch for create/delete/move/attrib changes
+		_, err = unix.InotifyAddWatch(inFd, "/dev/input",
+			unix.IN_CREATE|unix.IN_DELETE|unix.IN_ATTRIB|unix.IN_MOVED_FROM|unix.IN_MOVED_TO)
 		if err != nil {
 			fmt.Println("inotify addwatch failed:", err)
 			return
@@ -276,13 +278,13 @@ func StreamJoysticks() <-chan string {
 					path := filepath.Join("/dev/input", name)
 
 					if strings.HasPrefix(name, "js") {
-						if raw.Mask&unix.IN_CREATE != 0 {
+						if raw.Mask&(unix.IN_CREATE|unix.IN_MOVED_TO) != 0 {
 							if dev, err := openJoystickDevice(path, sdlmap); err == nil {
 								devices[path] = dev
 								fmt.Printf("[+] Opened %s (%s, GUID=%s)\n", dev.Path, dev.Name, dev.GUID)
 							}
 						}
-						if raw.Mask&unix.IN_DELETE != 0 {
+						if raw.Mask&(unix.IN_DELETE|unix.IN_MOVED_FROM) != 0 {
 							if dev, ok := devices[path]; ok {
 								fmt.Printf("[-] Lost %s (%s)\n", dev.Path, dev.Name)
 								dev.close()
