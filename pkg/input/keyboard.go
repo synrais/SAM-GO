@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 	"syscall"
-	"unsafe"
 	"golang.org/x/sys/unix"
 )
 
@@ -53,6 +52,7 @@ var scanCodes = map[int][]string{
 	0x0075: {"SCREEN LOCK"},
 }
 
+// readEvent reads the event from the given device and decodes it
 func readEvent(devicePath string) (string, error) {
 	fd, err := os.OpenFile(devicePath, os.O_RDONLY, 0666)
 	if err != nil {
@@ -73,8 +73,56 @@ func readEvent(devicePath string) (string, error) {
 	return "", nil
 }
 
-func getKeyboardDevices() ([]string, error) {
-	var devices []string
+// parseKeyboards reads the /proc/bus/input/devices and returns a map of keyboard devices
+func parseKeyboards() (map[string]string, error) {
+	keyboards := make(map[string]string)
+	data, err := ioutil.ReadFile("/proc/bus/input/devices")
+	if err != nil {
+		return nil, err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var block []string
+	for _, line := range lines {
+		if line == "" {
+			// If the block contains the handler information and "kbd" device, extract the device
+			if strings.Contains(strings.Join(block, " "), "Handlers=") && strings.Contains(strings.Join(block, " "), "kbd") {
+				var nameLine, sysfsLine string
+				for _, l := range block {
+					if strings.HasPrefix(l, "N: ") {
+						nameLine = l
+					} else if strings.HasPrefix(l, "S: Sysfs=") {
+						sysfsLine = l
+					}
+				}
+				if nameLine != "" && sysfsLine != "" {
+					name := strings.TrimSpace(strings.Split(nameLine, "=")[1])
+					sysfsPath := strings.TrimSpace(strings.Split(sysfsLine, "=")[1])
+					sysfsID := ""
+					parts := strings.Split(sysfsPath, "/")
+					for i := len(parts) - 1; i >= 0; i-- {
+						if strings.HasPrefix(parts[i], "0003:") {
+							sysfsID = parts[i]
+							break
+						}
+					}
+					if sysfsID != "" {
+						keyboards[sysfsID] = name
+					}
+				}
+			}
+			block = nil
+		} else {
+			block = append(block, line)
+		}
+	}
+
+	return keyboards, nil
+}
+
+// matchHidraws matches the keyboard devices to their corresponding hidrawX device
+func matchHidraws(keyboards map[string]string) ([]string, error) {
+	matches := []string{}
 	files, err := ioutil.ReadDir("/sys/class/hidraw")
 	if err != nil {
 		return nil, err
@@ -82,14 +130,22 @@ func getKeyboardDevices() ([]string, error) {
 
 	for _, file := range files {
 		if strings.HasPrefix(file.Name(), "hidraw") {
-			devices = append(devices, "/dev/"+file.Name())
+			devPath := "/dev/" + file.Name()
+			sysfsPath, err := os.Readlink(devPath)
+			if err != nil {
+				return nil, err
+			}
+			sysfsID := strings.Split(sysfsPath, "/")[len(strings.Split(sysfsPath, "/"))-1]
+			if name, exists := keyboards[sysfsID]; exists {
+				matches = append(matches, devPath+" → "+name)
+			}
 		}
 	}
-	return devices, nil
+	return matches, nil
 }
 
 func monitorKeyboards() {
-	var devices map[string]bool
+	devices := make(map[string]bool)
 	lastScan := time.Now()
 
 	for {
@@ -97,21 +153,29 @@ func monitorKeyboards() {
 		if now.Sub(lastScan) > hotplugScanInterval {
 			lastScan = now
 
-			devicesList, err := getKeyboardDevices()
+			// Parse the connected keyboards and match with HID raw devices
+			keyboards, err := parseKeyboards()
 			if err != nil {
-				fmt.Printf("Error detecting devices: %v\n", err)
+				fmt.Printf("Error parsing keyboards: %v\n", err)
 				return
 			}
 
-			for _, devicePath := range devicesList {
-				if _, found := devices[devicePath]; !found {
-					devices[devicePath] = true
-					fmt.Printf("[+] Opened device %s\n", devicePath)
+			matches, err := matchHidraws(keyboards)
+			if err != nil {
+				fmt.Printf("Error matching hidraw devices: %v\n", err)
+				return
+			}
+
+			// Add new devices to the list
+			for _, match := range matches {
+				if !devices[match] {
+					devices[match] = true
+					fmt.Printf("[+] Opened %s\n", match)
 				}
 			}
 
+			// Remove devices that have been disconnected
 			for devicePath := range devices {
-				// Check if the device is still connected by verifying it exists
 				if _, err := os.Stat(devicePath); os.IsNotExist(err) {
 					delete(devices, devicePath)
 					fmt.Printf("[-] Device %s removed\n", devicePath)
@@ -119,6 +183,7 @@ func monitorKeyboards() {
 			}
 		}
 
+		// Read events from the active devices
 		for devicePath := range devices {
 			key, err := readEvent(devicePath)
 			if err != nil {
