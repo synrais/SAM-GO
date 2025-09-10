@@ -12,11 +12,12 @@ import (
 
 const HOTPLUG_SCAN_INTERVAL = 2 * time.Second // seconds between rescans
 
+// SCAN_CODES will be loaded from the keyboardscancodes.txt file
 var SCAN_CODES = map[int][]string{}
 
 // --- Load SCAN_CODES from external file (keyboardscancodes.txt) ---
 func loadScanCodes() error {
-	here := "./" // Change this path if necessary
+	here := "./" // Path to the current directory
 	scanFile := filepath.Join(here, "keyboardscancodes.txt")
 
 	// Check if the scan codes file exists
@@ -37,7 +38,6 @@ func loadScanCodes() error {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "SCAN_CODES") {
 			// Parse and store the scan codes (adjust based on actual file format)
-			// For example, assuming the file structure matches the SCAN_CODES format
 			// SCAN_CODES should be populated here
 		}
 	}
@@ -49,6 +49,7 @@ func loadScanCodes() error {
 	return nil
 }
 
+// parseKeyboards parses the /proc/bus/input/devices file and returns a map of keyboards (sysfsID -> name)
 func parseKeyboards() (map[string]string, error) {
 	devices := make(map[string]string)
 	file, err := os.Open("/proc/bus/input/devices")
@@ -57,16 +58,20 @@ func parseKeyboards() (map[string]string, error) {
 	}
 	defer file.Close()
 
-	// Debug: Print full contents of /proc/bus/input/devices to check the format
-	fmt.Println("Full contents of /proc/bus/input/devices:")
+	var block []string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		fmt.Println(scanner.Text()) // Print each line to debug
-
-		// Proceed with the current parsing logic
-		if strings.HasPrefix(scanner.Text(), "Handlers=") && strings.Contains(scanner.Text(), "kbd") {
-			// After identifying handlers and 'kbd' keyword, continue with device parsing logic
-			// Look for sysfsID for the matching keyboard device
+		line := scanner.Text()
+		if line == "" {
+			if contains(line, "Handlers=") && contains(line, "kbd") {
+				name, sysfsID := extractDeviceInfo(block)
+				if sysfsID != "" {
+					devices[sysfsID] = name
+				}
+			}
+			block = nil
+		} else {
+			block = append(block, line)
 		}
 	}
 
@@ -80,10 +85,12 @@ func parseKeyboards() (map[string]string, error) {
 	return devices, nil
 }
 
+// contains checks if a substring is present in a string
 func contains(str, substr string) bool {
 	return strings.Contains(str, substr)
 }
 
+// extractDeviceInfo extracts device name and sysfs ID from a block of lines in /proc/bus/input/devices
 func extractDeviceInfo(block []string) (string, string) {
 	var name, sysfsID string
 	for _, line := range block {
@@ -97,9 +104,10 @@ func extractDeviceInfo(block []string) (string, string) {
 	return name, sysfsID
 }
 
+// matchHidraws matches the sysfs IDs from keyboards to HIDraw device paths
 func matchHidraws(keyboards map[string]string) ([]string, error) {
 	matches := []string{}
-	files, err := filepath.Glob("/sys/class/hidraw/hidraw*/device") // Replaced glob with filepath.Glob
+	files, err := filepath.Glob("/sys/class/hidraw/hidraw*/device")
 	if err != nil {
 		return nil, fmt.Errorf("Error in globbing hidraw devices: %v", err)
 	}
@@ -108,12 +116,17 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 	fmt.Println("HIDraw devices in /sys/class/hidraw/:")
 	for _, hiddev := range files {
 		fmt.Println("  " + hiddev) // Print each hidraw device path
-	}
 
-	for _, hiddev := range files {
-		sysfsID := filepath.Base(hiddev)
-		if _, found := keyboards[sysfsID]; found {
-			matches = append(matches, fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(hiddev))))
+		// Resolve the symlink to get the real sysfs path
+		realpath, err := filepath.EvalSymlinks(hiddev)
+		if err != nil {
+			fmt.Println("Error resolving symlink:", err)
+			continue
+		}
+		sysfsID := filepath.Base(realpath) // The sysfs ID should be the last part of the path
+		if name, found := keyboards[sysfsID]; found {
+			devnode := fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(realpath)))
+			matches = append(matches, fmt.Sprintf("%s → %s", devnode, name))
 		}
 	}
 
@@ -123,6 +136,7 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 	return matches, nil
 }
 
+// decodeReport decodes a keyboard report into human-readable characters
 func decodeReport(report []byte) string {
 	if len(report) != 8 {
 		return ""
@@ -145,6 +159,7 @@ func decodeReport(report []byte) string {
 	return strings.Join(output, "")
 }
 
+// allZero checks if all bytes in a slice are zero
 func allZero(slice []byte) bool {
 	for _, b := range slice {
 		if b != 0 {
@@ -154,12 +169,14 @@ func allZero(slice []byte) bool {
 	return true
 }
 
+// KeyboardDevice represents a keyboard device, managing its file descriptor and events
 type KeyboardDevice struct {
 	devnode string
 	name    string
 	fd      int
 }
 
+// NewKeyboardDevice opens a keyboard device for reading
 func NewKeyboardDevice(devnode, name string) (*KeyboardDevice, error) {
 	fd, err := unix.Open(devnode, unix.O_RDONLY|unix.O_NONBLOCK, 0)
 	if err != nil {
@@ -172,6 +189,7 @@ func NewKeyboardDevice(devnode, name string) (*KeyboardDevice, error) {
 	}, nil
 }
 
+// Close closes the keyboard device
 func (kd *KeyboardDevice) Close() {
 	if kd.fd >= 0 {
 		_ = unix.Close(kd.fd)
@@ -179,6 +197,7 @@ func (kd *KeyboardDevice) Close() {
 	}
 }
 
+// ReadEvent reads a keyboard event from the device and decodes it
 func (kd *KeyboardDevice) ReadEvent() string {
 	report := make([]byte, 8) // Read 8-byte report
 	n, err := unix.Read(kd.fd, report)
@@ -188,6 +207,7 @@ func (kd *KeyboardDevice) ReadEvent() string {
 	return decodeReport(report)
 }
 
+// monitorKeyboards monitors and processes keyboard events, matching devices and parsing reports
 func monitorKeyboards(out chan<- string) {
 	devices := make(map[string]*KeyboardDevice)
 	lastScan := time.Now()
@@ -243,6 +263,7 @@ func monitorKeyboards(out chan<- string) {
 	}
 }
 
+// stringInSlice checks if a string is in the list
 func stringInSlice(a string, list []string) bool {
 	for _, b := range list {
 		if b == a {
@@ -252,6 +273,7 @@ func stringInSlice(a string, list []string) bool {
 	return false
 }
 
+// StreamKeyboards starts the keyboard monitoring and returns a channel of events
 func StreamKeyboards() <-chan string {
 	out := make(chan string, 100) // Buffered channel
 	go monitorKeyboards(out)
