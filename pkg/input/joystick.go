@@ -231,7 +231,7 @@ func (j *JoystickDevice) readEvents() bool {
 	return changed
 }
 
-// -------- Streaming monitor with inotify ----------
+// -------- Streaming monitor with inotify hotplug ----------
 
 func StreamJoysticks() <-chan string {
 	out := make(chan string, 100)
@@ -241,7 +241,7 @@ func StreamJoysticks() <-chan string {
 		defer close(out)
 		devices := map[string]*JoystickDevice{}
 
-		// initial scan
+		// Initial scan
 		paths, _ := filepath.Glob("/dev/input/js*")
 		for _, path := range paths {
 			if dev, err := openJoystickDevice(path, sdlmap); err == nil {
@@ -249,7 +249,7 @@ func StreamJoysticks() <-chan string {
 			}
 		}
 
-		// inotify watch on /dev/input
+		// Inotify setup
 		inFd, err := unix.InotifyInit()
 		if err != nil {
 			fmt.Println("inotify init failed:", err)
@@ -263,114 +263,101 @@ func StreamJoysticks() <-chan string {
 			return
 		}
 
-		for {
-			// poll devices + inotify
-			var pollfds []unix.PollFd
-			for _, dev := range devices {
-				if dev.FD >= 0 {
-					pollfds = append(pollfds, unix.PollFd{Fd: int32(dev.FD), Events: unix.POLLIN})
-				}
-			}
-			pollfds = append(pollfds, unix.PollFd{Fd: int32(inFd), Events: unix.POLLIN})
+		// Small goroutine just for hotplug
+		go func() {
+			buf := make([]byte, 4096)
+			for {
+				n, _ := unix.Read(inFd, buf)
+				offset := 0
+				for offset < n {
+					raw := (*unix.InotifyEvent)(unsafe.Pointer(&buf[offset]))
+					nameBytes := buf[offset+unix.SizeofInotifyEvent : offset+unix.SizeofInotifyEvent+int(raw.Len)]
+					name := string(nameBytes[:len(nameBytes)-1]) // trim null
+					path := filepath.Join("/dev/input", name)
 
-			_, err := unix.Poll(pollfds, int(jsReadFrequency.Milliseconds()))
-			if err != nil {
-				fmt.Println("[DEBUG] poll error:", err)
-				continue
-			}
-
-			for _, pfd := range pollfds {
-				// Handle inotify events
-				if pfd.Fd == int32(inFd) && pfd.Revents&unix.POLLIN != 0 {
-					buf := make([]byte, 4096)
-					n, _ := unix.Read(inFd, buf)
-					offset := 0
-					for offset < n {
-						raw := (*unix.InotifyEvent)(unsafe.Pointer(&buf[offset]))
-						nameBytes := buf[offset+unix.SizeofInotifyEvent : offset+unix.SizeofInotifyEvent+int(raw.Len)]
-						name := string(nameBytes[:len(nameBytes)-1]) // trim null
-						path := filepath.Join("/dev/input", name)
-
-						if raw.Mask&unix.IN_CREATE != 0 && strings.HasPrefix(name, "js") {
+					if strings.HasPrefix(name, "js") {
+						if raw.Mask&unix.IN_CREATE != 0 {
 							if dev, err := openJoystickDevice(path, sdlmap); err == nil {
 								devices[path] = dev
 							}
 						}
-						if raw.Mask&unix.IN_DELETE != 0 && strings.HasPrefix(name, "js") {
+						if raw.Mask&unix.IN_DELETE != 0 {
 							if dev, ok := devices[path]; ok {
 								dev.close()
 								delete(devices, path)
 							}
 						}
-						offset += unix.SizeofInotifyEvent + int(raw.Len)
 					}
-				}
-
-				// Handle joystick data
-				if pfd.Fd != int32(inFd) && pfd.Revents&unix.POLLIN != 0 {
-					var dev *JoystickDevice
-					for _, d := range devices {
-						if int32(d.FD) == pfd.Fd {
-							dev = d
-							break
-						}
-					}
-					if dev == nil {
-						continue
-					}
-					if dev.readEvents() {
-						// ---- Build button list in order ----
-						btnKeys := make([]int, 0, len(dev.btnmap))
-						for k := range dev.btnmap {
-							btnKeys = append(btnKeys, k)
-						}
-						sort.Ints(btnKeys)
-
-						btnParts := []string{}
-						for _, k := range btnKeys {
-							name := dev.btnmap[k]
-							if name == "" {
-								name = fmt.Sprintf("Btn%d", k)
-							}
-							state := "R"
-							if v, ok := dev.Buttons[k]; ok && v != 0 {
-								state = "P"
-							}
-							btnParts = append(btnParts, fmt.Sprintf("%s=%s", name, state))
-						}
-
-						// ---- Build axis list in order ----
-						axKeys := make([]int, 0, len(dev.axmap))
-						for k := range dev.axmap {
-							axKeys = append(axKeys, k)
-						}
-						sort.Ints(axKeys)
-
-						axParts := []string{}
-						for _, k := range axKeys {
-							name := dev.axmap[k]
-							if name == "" {
-								name = fmt.Sprintf("Axis%d", k)
-							}
-							val := int16(0)
-							if v, ok := dev.Axes[k]; ok {
-								val = v
-							}
-							axParts = append(axParts, fmt.Sprintf("%s=%d", name, val))
-						}
-
-						// ---- Final line identical to Python ----
-						line := fmt.Sprintf("[%d ms] %s: Buttons[%s] Axes[%s]",
-							time.Now().UnixMilli(),
-							filepath.Base(dev.Path),
-							strings.Join(btnParts, ", "),
-							strings.Join(axParts, ", "),
-						)
-
-						out <- line
-					}
+					offset += unix.SizeofInotifyEvent + int(raw.Len)
 				}
 			}
+		}()
+
+		// Main loop stays the same (readEvents + reopen)
+		for {
+			for _, dev := range devices {
+				if dev.FD < 0 {
+					if _, err := os.Stat(dev.Path); err == nil {
+						dev.reopen()
+					}
+					continue
+				}
+				if dev.readEvents() {
+					// ---- Build button list in order ----
+					btnKeys := make([]int, 0, len(dev.btnmap))
+					for k := range dev.btnmap {
+						btnKeys = append(btnKeys, k)
+					}
+					sort.Ints(btnKeys)
+
+					btnParts := []string{}
+					for _, k := range btnKeys {
+						name := dev.btnmap[k]
+						if name == "" {
+							name = fmt.Sprintf("Btn%d", k)
+						}
+						state := "R"
+						if v, ok := dev.Buttons[k]; ok && v != 0 {
+							state = "P"
+						}
+						btnParts = append(btnParts, fmt.Sprintf("%s=%s", name, state))
+					}
+
+					// ---- Build axis list in order ----
+					axKeys := make([]int, 0, len(dev.axmap))
+					for k := range dev.axmap {
+						axKeys = append(axKeys, k)
+					}
+					sort.Ints(axKeys)
+
+					axParts := []string{}
+					for _, k := range axKeys {
+						name := dev.axmap[k]
+						if name == "" {
+							name = fmt.Sprintf("Axis%d", k)
+						}
+						val := int16(0)
+						if v, ok := dev.Axes[k]; ok {
+							val = v
+						}
+						axParts = append(axParts, fmt.Sprintf("%s=%d", name, val))
+					}
+
+					// ---- Final line identical to Python ----
+					line := fmt.Sprintf("[%d ms] %s: Buttons[%s] Axes[%s]",
+						time.Now().UnixMilli(),
+						filepath.Base(dev.Path),
+						strings.Join(btnParts, ", "),
+						strings.Join(axParts, ", "),
+					)
+
+					out <- line
+				}
+				// Always reopen quietly
+				dev.reopen()
+			}
+
+			time.Sleep(jsReadFrequency)
 		}
 	}()
 
