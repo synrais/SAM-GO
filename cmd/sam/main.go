@@ -65,12 +65,30 @@ func main() {
 		}
 	case "-attract":
 		attract.Run(args)
-case "-mouse":
-    events := input.StreamMouse()
-    for evt := range events {
-        fmt.Printf("[%d ms] %s: buttons=%v dx=%d dy=%d\n",
-            evt.Timestamp, evt.Device, evt.Buttons, evt.DX, evt.DY)
-    }
+	case "-mouse":
+    	events := input.StreamMouse()
+    	for evt := range events {
+        	fmt.Printf("[%d ms] %s: buttons=%v dx=%d dy=%d\n",
+            	evt.Timestamp, evt.Device, evt.Buttons, evt.DX, evt.DY)
+    	}
+	case "-joystick":
+    	events := input.StreamJoysticks()
+    	for evt := range events {
+        	btns := []string{}
+        	for k, v := range evt.Buttons {
+            	state := "R"
+            	if v != 0 {
+                	state = "P"
+            	}
+            	btns = append(btns, fmt.Sprintf("B%d=%s", k, state))
+        	}
+        	axes := []string{}
+        	for k, v := range evt.Axes {
+            	axes = append(axes, fmt.Sprintf("A%d=%d", k, v))
+        	}
+        	fmt.Printf("[%d ms] %s: Buttons[%s] Axes[%s]\n",
+            	evt.Timestamp, evt.Device, strings.Join(btns, ", "), strings.Join(axes, ", "))
+    	}
 	default:
 		fmt.Printf("Unknown tool: %s\n", cmd)
 		os.Exit(1)
