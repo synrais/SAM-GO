@@ -40,7 +40,7 @@ func dumpConfig(cfg *config.UserConfig) {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -mouse | -joystick")
+		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -mouse | -joystick | -keyboard")
 		os.Exit(1)
 	}
 
@@ -66,13 +66,15 @@ func main() {
 	case "-attract":
 		attract.Run(args)
 	case "-mouse":
-		events := input.StreamMouse()
-		for evt := range events {
-			fmt.Printf("[%d ms] %s: buttons=%v dx=%d dy=%d\n",
-				evt.Timestamp, evt.Device, evt.Buttons, evt.DX, evt.DY)
+		for line := range input.StreamMouse() {
+			fmt.Println(line)
 		}
 	case "-joystick":
 		for line := range input.StreamJoysticks() {
+			fmt.Println(line)
+		}
+	case "-keyboard":
+		for line := range input.StreamKeyboards() {
 			fmt.Println(line)
 		}
 	default:
