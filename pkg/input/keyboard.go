@@ -8,22 +8,24 @@ import (
 	"time"
 	"path/filepath"
 	"golang.org/x/sys/unix"
+	"glob"
 )
 
 const HOTPLUG_SCAN_INTERVAL = 2 * time.Second // seconds between rescans
 
-// Define SCAN_CODES globally (assuming the data is in keyboardscancodes.txt)
+// --- Load SCAN_CODES from external file (keyboardscancodes.txt) ---
 var SCAN_CODES = map[int][]string{}
 
+// Load scan codes from the text file, following the Python script logic
 func loadScanCodes() error {
-	// Load scan codes from keyboardscancodes.txt
-	here := "./" // Replace with the path where the keyboardscancodes.txt is located
+	here := "./" // Replace with the correct path if needed
 	scanFile := filepath.Join(here, "keyboardscancodes.txt")
+
 	if _, err := os.Stat(scanFile); os.IsNotExist(err) {
 		return fmt.Errorf("Error: %s not found", scanFile)
 	}
 
-	// Open the scan codes file and parse the SCAN_CODES
+	// Open the scan codes file
 	file, err := os.Open(scanFile)
 	if err != nil {
 		return fmt.Errorf("Error opening scan codes file: %v", err)
@@ -35,25 +37,17 @@ func loadScanCodes() error {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "SCAN_CODES") {
-			// Parse the SCAN_CODES into the global map
-			// Assuming the format is like {0x04: {"a", "A"}, ...}
-			// You may need to adapt this part based on the exact file format
-			// For simplicity, you could use exec() here but in Go we will use manual parsing
-			// To keep it simple, I leave this for you to adapt based on your scan code format
+			// Parse the scan codes and store them
+			// This part would need to adapt to the format of the scan codes in the file
+			// You would need to manually extract the values into SCAN_CODES from the file
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("Error reading scan codes file: %v", err)
 	}
-	return nil
-}
 
-var SCAN_CODES = map[int][]string{
-	0x04: {"a", "A"}, 0x05: {"b", "B"}, 0x06: {"c", "C"}, 0x07: {"d", "D"},
-	0x08: {"e", "E"}, 0x09: {"f", "F"}, 0x0A: {"g", "G"}, 0x0B: {"h", "H"},
-	0x0C: {"i", "I"}, 0x0D: {"j", "J"}, 0x0E: {"k", "K"}, 0x0F: {"l", "L"},
-	// Add other scan codes as necessary
+	return nil
 }
 
 func parseKeyboards() (map[string]string, error) {
@@ -85,8 +79,6 @@ func parseKeyboards() (map[string]string, error) {
 		return nil, fmt.Errorf("Error reading /proc/bus/input/devices: %v", err)
 	}
 
-	fmt.Printf("Found keyboards: %v\n", devices) // Debug print
-
 	return devices, nil
 }
 
@@ -109,12 +101,10 @@ func extractDeviceInfo(block []string) (string, string) {
 
 func matchHidraws(keyboards map[string]string) ([]string, error) {
 	matches := []string{}
-	files, err := filepath.Glob("/sys/class/hidraw/hidraw*/device")
+	files, err := glob.Glob("/sys/class/hidraw/hidraw*/device")
 	if err != nil {
 		return nil, fmt.Errorf("Error in globbing hidraw devices: %v", err)
 	}
-
-	fmt.Printf("Matching HIDraw devices: %v\n", files) // Debug print
 
 	for _, hiddev := range files {
 		sysfsID := filepath.Base(hiddev)
@@ -130,6 +120,7 @@ func decodeReport(report []byte) string {
 		return ""
 	}
 
+	// Skip the invalid reports
 	if report[0] == 0x02 || (report[0] != 0 && allZero(report[1:])) {
 		return ""
 	}
@@ -197,6 +188,7 @@ func monitorKeyboards(out chan<- string) {
 		now := time.Now()
 		if now.Sub(lastScan) > HOTPLUG_SCAN_INTERVAL {
 			lastScan = now
+			// Rescan for keyboards
 			keyboards, err := parseKeyboards()
 			if err != nil {
 				fmt.Println(err)
@@ -209,8 +201,7 @@ func monitorKeyboards(out chan<- string) {
 				continue
 			}
 
-			fmt.Printf("Found matching devices: %v\n", matches)
-
+			// Add new devices
 			for _, devnode := range matches {
 				if _, found := devices[devnode]; !found {
 					dev, err := NewKeyboardDevice(devnode, "Keyboard")
@@ -220,6 +211,7 @@ func monitorKeyboards(out chan<- string) {
 				}
 			}
 
+			// Remove vanished devices
 			for devnode := range devices {
 				if !stringInSlice(devnode, matches) {
 					devices[devnode].Close()
@@ -228,14 +220,15 @@ func monitorKeyboards(out chan<- string) {
 			}
 		}
 
+		// Poll for keyboard events and decode them
 		for _, dev := range devices {
 			output := dev.ReadEvent()
 			if output != "" {
-				out <- output
+				out <- output // Send decoded event to channel
 			}
 		}
 
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond) // Avoid busy loop
 	}
 }
 
@@ -249,7 +242,7 @@ func stringInSlice(a string, list []string) bool {
 }
 
 func StreamKeyboards() <-chan string {
-	out := make(chan string, 100)
+	out := make(chan string, 100) // Buffered channel
 	go monitorKeyboards(out)
 	return out
 }
