@@ -3,6 +3,7 @@ package input
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -83,7 +84,7 @@ func (j *JoystickDevice) readEvents() bool {
 	return changed
 }
 
-// StreamJoysticks watches /sys/class/input for js* devices and streams events.
+// StreamJoysticks watches /sys/class/input for js* symlinks and streams events.
 func StreamJoysticks() <-chan JoystickEvent {
 	out := make(chan JoystickEvent, 100)
 
@@ -91,7 +92,7 @@ func StreamJoysticks() <-chan JoystickEvent {
 		defer close(out)
 		devices := map[string]*JoystickDevice{}
 
-		// initial scan
+		// initial scan of /dev/input/js*
 		paths, _ := filepath.Glob("/dev/input/js*")
 		for _, path := range paths {
 			if dev, err := openJoystickDevice(path); err == nil {
@@ -134,14 +135,16 @@ func StreamJoysticks() <-chan JoystickEvent {
 						nameBytes := buf[offset+unix.SizeofInotifyEvent : offset+unix.SizeofInotifyEvent+int(raw.Len)]
 						name := string(nameBytes[:len(nameBytes)-1])
 
-						if len(name) >= 2 && name[:2] == "js" {
+						if strings.HasPrefix(name, "js") {
 							path := filepath.Join("/dev/input", name)
 							if raw.Mask&unix.IN_CREATE != 0 {
+								fmt.Printf("hotplug: %s appeared\n", path)
 								if dev, err := openJoystickDevice(path); err == nil {
 									devices[path] = dev
 								}
 							}
 							if raw.Mask&unix.IN_DELETE != 0 {
+								fmt.Printf("hotplug: %s vanished\n", path)
 								if dev, ok := devices[path]; ok {
 									dev.Close()
 									delete(devices, path)
