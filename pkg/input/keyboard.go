@@ -7,11 +7,8 @@ import (
 	"strings"
 	"time"
 	"golang.org/x/sys/unix"
-)
-
-const (
-	// Time interval between rescans for hotplug devices
-	HOTPLUG_SCAN_INTERVAL = 2.0 * time.Second
+	"bufio"
+	"glob"
 )
 
 // SCAN_CODES stores key codes mapped to key names (similar to the Python script)
@@ -138,6 +135,9 @@ func monitorKeyboards() {
 		if now.Sub(lastScan) > HOTPLUG_SCAN_INTERVAL {
 			lastScan = now
 			// Rescan for keyboards here (parse /proc/bus/input/devices and match hidraws)
+			keyboards := parse_keyboards()  // Parsing /proc/bus/input/devices to find connected keyboards
+			matches := match_hidraws(keyboards)  // Matching sysfs_ids with /dev/hidraw devices
+			// Here, you should add logic to create devices and add them to `devices`
 		}
 
 		// Main loop to process events
@@ -150,6 +150,21 @@ func monitorKeyboards() {
 
 		time.Sleep(0.2 * time.Second)
 	}
+}
+
+// Function to parse /proc/bus/input/devices to find keyboards
+func parse_keyboards() map[string]string {
+	keyboards := make(map[string]string)
+	block := []string{}
+	// Add logic to read /proc/bus/input/devices and extract keyboard info
+	return keyboards
+}
+
+// Function to match HIDRAW devices based on sysfs ID
+func match_hidraws(keyboards map[string]string) []string {
+	matches := []string{}
+	// Add logic to match keyboards with /dev/hidraw* devices
+	return matches
 }
 
 func main() {
