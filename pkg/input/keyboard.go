@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -29,11 +30,15 @@ func loadScanCodes(path string) {
 	}
 	defer f.Close()
 
+	env := map[string]interface{}{}
 	scanner := bufio.NewScanner(f)
+	src := ""
 	for scanner.Scan() {
-		// ⚠️ Stub loader: you’ll want to implement parsing of your text file here.
-		// For now this function just confirms the file exists.
+		src += scanner.Text() + "\n"
 	}
+	// We don’t have Python exec, so we require SCAN_CODES defined as Go later
+	// For now, assume scanCodes is hardcoded or loaded via JSON/TOML
+	_ = env
 }
 
 // -------- Keyboard detection ----------
