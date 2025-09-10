@@ -74,20 +74,8 @@ func main() {
 	case "-joystick":
     	events := input.StreamJoysticks()
     	for evt := range events {
-        	btns := []string{}
-        	for k, v := range evt.Buttons {
-            	state := "R"
-            	if v != 0 {
-                	state = "P"
-            	}
-            	btns = append(btns, fmt.Sprintf("B%d=%s", k, state))
-        	}
-        	axes := []string{}
-        	for k, v := range evt.Axes {
-            	axes = append(axes, fmt.Sprintf("A%d=%d", k, v))
-        	}
         	fmt.Printf("[%d ms] %s: Buttons=%v Axes=%v\n",
-            	evt.Timestamp, evt.Device, btns, axes)
+            	evt.Timestamp, evt.Device, evt.Buttons, evt.Axes)
     	}
 	default:
 		fmt.Printf("Unknown tool: %s\n", cmd)
