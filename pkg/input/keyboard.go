@@ -109,7 +109,10 @@ func extractDeviceInfo(block []string) (string, string) {
 			name = strings.TrimSpace(strings.Split(line, "=")[1])
 		}
 		if strings.HasPrefix(line, "S: Sysfs=") {
-			sysfsID = strings.TrimSpace(strings.Split(line, "=")[1])
+			// Extract only the last part of the sysfs path (the sysfsID)
+			sysfsPath := strings.TrimSpace(strings.Split(line, "=")[1])
+			parts := strings.Split(sysfsPath, "/")
+			sysfsID = parts[len(parts)-2] // Get the last instance (0003:258A:002A.0001)
 		}
 	}
 	return name, sysfsID
@@ -134,7 +137,8 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 			fmt.Println("Error resolving symlink:", err)
 			continue
 		}
-		sysfsID := filepath.Base(realpath) // The sysfs ID should be the last part of the path
+		// The sysfs ID should be the last part of the path
+		sysfsID := filepath.Base(realpath)
 
 		// Debug: Show the sysfs ID and check the match with keyboards
 		fmt.Printf("  Checking HIDraw sysfsID: %s\n", sysfsID)
@@ -144,11 +148,13 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 			fmt.Printf("    Keyboard sysfsID: %s, Name: %s\n", k, v)
 		}
 
+		// Check if the HIDraw sysfsID matches any keyboard's sysfsID
 		if name, found := keyboards[sysfsID]; found {
+			// Match found: add it to the matched list
 			devnode := fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(realpath)))
 			matches = append(matches, fmt.Sprintf("%s → %s", devnode, name))
 		} else {
-			// Debug: No match found
+			// Debug: No match found for this sysfs ID
 			fmt.Printf("  No match for sysfsID: %s\n", sysfsID)
 		}
 	}
