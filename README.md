@@ -46,7 +46,7 @@ SAM -mouse
 -----------
 Starts the mouse watcher
 
-SAM -joystickAS
+SAM -joystick
 -----------
 Starts the joystick watcher
 
