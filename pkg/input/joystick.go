@@ -171,7 +171,6 @@ func openJoystickDevice(path string, sdlmap []*mappingEntry) (*JoystickDevice, e
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Opened %s (%s, GUID=%s)\n", path, name, guid)
 
 	return &JoystickDevice{
 		Path:    path,
@@ -184,6 +183,7 @@ func openJoystickDevice(path string, sdlmap []*mappingEntry) (*JoystickDevice, e
 		axmap:   axmap,
 	}, nil
 }
+
 
 func (j *JoystickDevice) close() {
 	if j.FD >= 0 {
