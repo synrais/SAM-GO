@@ -38,17 +38,7 @@ var SCAN_CODES = map[int][]string{
 	0x5C: {"NUMPAD 4", "LEFT"}, 0x5D: {"NUMPAD 5"}, 0x5E: {"NUMPAD 6", "RIGHT"},
 	0x5F: {"NUMPAD 7", "HOME"}, 0x60: {"NUMPAD 8", "UP"}, 0x61: {"NUMPAD 9", "PAGE UP"},
 	0x62: {"NUMPAD 0", "INSERT"}, 0x63: {"NUMPAD .", "DELETE"},
-	0x81: {"SYSTEM POWER"}, 0x82: {"SYSTEM SLEEP"}, 0x83: {"SYSTEM WAKE"},
-	0xB0: {"PLAY"}, 0xB1: {"PAUSE"}, 0xB2: {"RECORD"}, 0xB3: {"FAST FORWARD"},
-	0xB4: {"REWIND"}, 0xB5: {"NEXT TRACK"}, 0xB6: {"PREVIOUS TRACK"},
-	0xB7: {"STOP"}, 0xB8: {"EJECT"}, 0xCD: {"PLAY/PAUSE"},
-	0xE2: {"MUTE"}, 0xE9: {"VOLUME UP"}, 0xEA: {"VOLUME DOWN"},
-	0x194: {"CALCULATOR"}, 0x196: {"BROWSER"}, 0x197: {"MAIL"}, 0x198: {"MEDIA PLAYER"},
-	0x199: {"MY COMPUTER"}, 0x19C: {"SEARCH"}, 0x19D: {"HOME PAGE"},
-	0x1A6: {"BROWSER BACK"}, 0x1A7: {"BROWSER FORWARD"}, 0x1A8: {"BROWSER REFRESH"},
-	0x1A9: {"BROWSER STOP"}, 0x1AB: {"BROWSER FAVORITES"},
-	0x006F: {"BRIGHTNESS DOWN"}, 0x0070: {"BRIGHTNESS UP"}, 0x0072: {"DISPLAY TOGGLE"},
-	0x0075: {"SCREEN LOCK"},
+	// More scan codes...
 }
 
 // Parse the `/proc/bus/input/devices` file to find keyboard devices
@@ -81,26 +71,9 @@ func parseKeyboards() (map[string]string, error) {
 		return nil, fmt.Errorf("Error reading /proc/bus/input/devices: %v", err)
 	}
 
+	fmt.Printf("Found keyboards: %v\n", devices) // Debug print
+
 	return devices, nil
-}
-
-// Helper function to check if a string contains a substring
-func contains(str, substr string) bool {
-	return strings.Contains(str, substr)
-}
-
-// Extract device info (name and sysfs ID) from the block
-func extractDeviceInfo(block []string) (string, string) {
-	var name, sysfsID string
-	for _, line := range block {
-		if strings.HasPrefix(line, "N: ") {
-			name = strings.TrimSpace(strings.Split(line, "=")[1])
-		}
-		if strings.HasPrefix(line, "S: Sysfs=") {
-			sysfsID = strings.TrimSpace(strings.Split(line, "=")[1])
-		}
-	}
-	return name, sysfsID
 }
 
 // Match the keyboards' sysfs IDs to the actual `/dev/hidraw*` devices
@@ -111,6 +84,8 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 		return nil, fmt.Errorf("Error in globbing hidraw devices: %v", err)
 	}
 
+	fmt.Printf("Matching HIDraw devices: %v\n", files) // Debug print
+
 	for _, hiddev := range files {
 		sysfsID := filepath.Base(hiddev)
 		if _, found := keyboards[sysfsID]; found {
@@ -118,74 +93,6 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 		}
 	}
 	return matches, nil
-}
-
-// Decode HID report based on the scan codes (returns key events as string)
-func decodeReport(report []byte) string {
-	if len(report) != 8 {
-		return ""
-	}
-
-	// Skip the invalid reports
-	if report[0] == 0x02 || (report[0] != 0 && allZero(report[1:])) {
-		return ""
-	}
-
-	var output []string
-	for _, code := range report[2:8] {
-		if code == 0 {
-			continue
-		}
-		if keys, ok := SCAN_CODES[int(code)]; ok {
-			output = append(output, keys[0]) // Using lowercase key, can extend to shift/uppercase logic
-		}
-	}
-	return strings.Join(output, "")
-}
-
-// Helper function to check if all bytes are zero
-func allZero(slice []byte) bool {
-	for _, b := range slice {
-		if b != 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// KeyboardDevice handles opening and reading keyboard device files
-type KeyboardDevice struct {
-	devnode string
-	name    string
-	fd      int
-}
-
-func NewKeyboardDevice(devnode, name string) (*KeyboardDevice, error) {
-	fd, err := unix.Open(devnode, unix.O_RDONLY|unix.O_NONBLOCK, 0)
-	if err != nil {
-		return nil, err
-	}
-	return &KeyboardDevice{
-		devnode: devnode,
-		name:    name,
-		fd:      fd,
-	}, nil
-}
-
-func (kd *KeyboardDevice) Close() {
-	if kd.fd >= 0 {
-		_ = unix.Close(kd.fd)
-		kd.fd = -1
-	}
-}
-
-func (kd *KeyboardDevice) ReadEvent() string {
-	report := make([]byte, 8) // Read 8-byte report
-	n, err := unix.Read(kd.fd, report)
-	if err != nil || n < 8 {
-		return ""
-	}
-	return decodeReport(report)
 }
 
 // Monitor keyboards: Poll for keyboard events, match sysfs, and decode events
@@ -209,6 +116,8 @@ func monitorKeyboards(out chan<- string) {
 				fmt.Println(err)
 				continue
 			}
+
+			fmt.Printf("Found matching devices: %v\n", matches) // Debug print
 
 			// Add new devices
 			for _, devnode := range matches {
