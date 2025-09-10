@@ -215,7 +215,7 @@ func monitorKeyboards() {
 
 			// Remove vanished devices
 			for devnode := range devices {
-				if !contains(matches, devnode) {
+				if !stringInSlice(devnode, matches) { // Use our new helper function to check
 					devices[devnode].Close()
 					delete(devices, devnode)
 				}
@@ -232,6 +232,16 @@ func monitorKeyboards() {
 
 		time.Sleep(200 * time.Millisecond) // Avoid busy loop
 	}
+}
+
+// stringInSlice checks if a string is present in a slice of strings
+func stringInSlice(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
 }
 
 func main() {
