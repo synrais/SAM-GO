@@ -2,7 +2,6 @@ package input
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 	"unsafe"
@@ -11,87 +10,53 @@ import (
 )
 
 const (
-	jsEventSize          = 8
-	JS_READ_FREQUENCY    = 50 * time.Millisecond
-	HOTPLUG_SCAN_INTERVAL = 2 * time.Second
-	DB_FILE_BASENAME     = "gamecontrollerdb.txt" // placeholder for SDL map
+	jsEventSize           = 8
+	jsReadFrequency       = 50 * time.Millisecond
+	hotplugScanInterval   = 2 * time.Second
 )
+
+// JoystickEvent represents a decoded joystick state snapshot.
+type JoystickEvent struct {
+	Timestamp int64
+	Device    string
+	Buttons   map[int]int16
+	Axes      map[int]int16
+}
 
 // JoystickDevice holds state for a joystick.
 type JoystickDevice struct {
 	Path    string
-	Name    string
-	GUID    string
 	Buttons map[int]int16
 	Axes    map[int]int16
 	FD      int
 }
 
-func getJsMetadata(path string) (string, int, int, int) {
-	base := filepath.Base(path)
-	sysdir := filepath.Join("/sys/class/input", base, "device")
-
-	readHex := func(fname string) (int, error) {
-		data, err := os.ReadFile(filepath.Join(sysdir, fname))
-		if err != nil {
-			return 0, err
-		}
-		var val int
-		fmt.Sscanf(string(data), "%x", &val)
-		return val, nil
-	}
-
-	nameBytes, err := os.ReadFile(filepath.Join(sysdir, "name"))
+func openJoystickDevice(path string) (*JoystickDevice, error) {
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK, 0)
 	if err != nil {
-		return base, 0, 0, 0
+		return nil, err
 	}
-	name := string(nameBytes)
-
-	vid, _ := readHex("id/vendor")
-	pid, _ := readHex("id/product")
-	ver, _ := readHex("id/version")
-	return name, vid, pid, ver
-}
-
-func makeGuid(vid, pid, version int) string {
-	if vid == 0 || pid == 0 {
-		return ""
-	}
-	le16 := func(x int) int { return ((x & 0xFF) << 8) | ((x >> 8) & 0xFF) }
-	return fmt.Sprintf("03000000%04x0000%04x0000%04x0000", le16(vid), le16(pid), le16(version))
-}
-
-func newJoystickDevice(path string) *JoystickDevice {
-	name, vid, pid, ver := getJsMetadata(path)
-	guid := makeGuid(vid, pid, ver)
-
+	fmt.Printf("[+] Opened %s\n", path)
 	return &JoystickDevice{
 		Path:    path,
-		Name:    name,
-		GUID:    guid,
+		FD:      fd,
 		Buttons: make(map[int]int16),
 		Axes:    make(map[int]int16),
-		FD:      -1,
-	}
-}
-
-func (j *JoystickDevice) open(announce bool) bool {
-	fd, err := unix.Open(j.Path, unix.O_RDONLY|unix.O_NONBLOCK, 0)
-	if err != nil {
-		j.FD = -1
-		return false
-	}
-	j.FD = fd
-	if announce {
-		fmt.Printf("Opened %s (%s, GUID=%s)\n", j.Path, j.Name, j.GUID)
-	}
-	return true
+	}, nil
 }
 
 func (j *JoystickDevice) close() {
 	if j.FD >= 0 {
 		_ = unix.Close(j.FD)
 		j.FD = -1
+	}
+}
+
+func (j *JoystickDevice) reopen() {
+	j.close()
+	fd, err := unix.Open(j.Path, unix.O_RDONLY|unix.O_NONBLOCK, 0)
+	if err == nil {
+		j.FD = fd
 	}
 }
 
@@ -106,7 +71,6 @@ func (j *JoystickDevice) readEvents() bool {
 		if err != nil || n < jsEventSize {
 			break
 		}
-		t := *(*uint32)(unsafe.Pointer(&buf[0]))
 		val := *(*int16)(unsafe.Pointer(&buf[4]))
 		etype := buf[6] & 0x7F
 		num := int(buf[7])
@@ -123,69 +87,79 @@ func (j *JoystickDevice) readEvents() bool {
 				changed = true
 			}
 		}
-		_ = t
 	}
 	return changed
 }
 
-func (j *JoystickDevice) printState() {
-	btns := []string{}
-	for i, v := range j.Buttons {
-		state := "R"
-		if v != 0 {
-			state = "P"
-		}
-		btns = append(btns, fmt.Sprintf("Btn%d=%s", i, state))
-	}
-	axs := []string{}
-	for i, v := range j.Axes {
-		axs = append(axs, fmt.Sprintf("Axis%d=%d", i, v))
-	}
-	fmt.Printf("Changed: Buttons[%v] Axes[%v]\n", btns, axs)
-}
+// StreamJoysticks streams events for all /dev/input/js* devices.
+func StreamJoysticks() <-chan JoystickEvent {
+	out := make(chan JoystickEvent, 100)
 
-// RunJoystickMonitor runs the joystick hotplug + read loop.
-func RunJoystickMonitor() {
-	devices := map[string]*JoystickDevice{}
-	lastScan := time.Now()
+	go func() {
+		defer close(out)
+		devices := map[string]*JoystickDevice{}
+		lastScan := time.Now()
 
-	for {
-		now := time.Now()
-		if now.Sub(lastScan) > HOTPLUG_SCAN_INTERVAL {
-			lastScan = now
-			paths, _ := filepath.Glob("/dev/input/js*")
-			for _, path := range paths {
-				if _, ok := devices[path]; !ok {
-					dev := newJoystickDevice(path)
-					if dev.open(true) {
-						devices[path] = dev
+		for {
+			now := time.Now()
+			// rescan hotplug
+			if now.Sub(lastScan) > hotplugScanInterval {
+				lastScan = now
+				paths, _ := filepath.Glob("/dev/input/js*")
+				for _, path := range paths {
+					if _, ok := devices[path]; !ok {
+						if dev, err := openJoystickDevice(path); err == nil {
+							devices[path] = dev
+						}
+					}
+				}
+				// remove vanished
+				for path, dev := range devices {
+					if _, err := unix.Access(path, unix.F_OK); err != nil {
+						dev.close()
+						delete(devices, path)
 					}
 				}
 			}
-			// remove vanished
-			for path, dev := range devices {
-				if _, err := os.Stat(path); os.IsNotExist(err) {
-					dev.close()
-					delete(devices, path)
-				}
-			}
-		}
 
-		for _, dev := range devices {
-			if dev.FD < 0 {
-				if _, err := os.Stat(dev.Path); err == nil {
-					dev.open(false)
+			// poll devices
+			for _, dev := range devices {
+				if dev.FD < 0 {
+					if err := unix.Access(dev.Path, unix.F_OK); err == nil {
+						dev.reopen()
+					}
+					continue
 				}
-				continue
+				if dev.readEvents() {
+					out <- JoystickEvent{
+						Timestamp: time.Now().UnixMilli(),
+						Device:    filepath.Base(dev.Path),
+						Buttons:   copyBtn(dev.Buttons),
+						Axes:      copyAxes(dev.Axes),
+					}
+				}
+				// always reopen quietly (like Python)
+				dev.reopen()
 			}
-			if dev.readEvents() {
-				dev.printState()
-			}
-			// ✅ always reopen quietly (like Python)
-			dev.close()
-			dev.open(false)
-		}
 
-		time.Sleep(JS_READ_FREQUENCY)
+			time.Sleep(jsReadFrequency)
+		}
+	}()
+
+	return out
+}
+
+func copyBtn(src map[int]int16) map[int]int16 {
+	dst := make(map[int]int16)
+	for k, v := range src {
+		dst[k] = v
 	}
+	return dst
+}
+func copyAxes(src map[int]int16) map[int]int16 {
+	dst := make(map[int]int16)
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
