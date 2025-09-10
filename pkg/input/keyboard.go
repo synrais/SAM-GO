@@ -8,19 +8,19 @@ import (
 	"time"
 	"path/filepath"
 	"golang.org/x/sys/unix"
-	"glob"
 )
 
 const HOTPLUG_SCAN_INTERVAL = 2 * time.Second // seconds between rescans
 
-// --- Load SCAN_CODES from external file (keyboardscancodes.txt) ---
+// SCAN_CODES map (we will load this from the file later)
 var SCAN_CODES = map[int][]string{}
 
-// Load scan codes from the text file, following the Python script logic
+// --- Load SCAN_CODES from external file (keyboardscancodes.txt) ---
 func loadScanCodes() error {
-	here := "./" // Replace with the correct path if needed
+	here := "./" // Change this path if necessary
 	scanFile := filepath.Join(here, "keyboardscancodes.txt")
 
+	// Check if the scan codes file exists
 	if _, err := os.Stat(scanFile); os.IsNotExist(err) {
 		return fmt.Errorf("Error: %s not found", scanFile)
 	}
@@ -37,9 +37,8 @@ func loadScanCodes() error {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "SCAN_CODES") {
-			// Parse the scan codes and store them
-			// This part would need to adapt to the format of the scan codes in the file
-			// You would need to manually extract the values into SCAN_CODES from the file
+			// Parse and store the scan codes (depending on file format)
+			// Code to parse SCAN_CODES into the global map goes here...
 		}
 	}
 
@@ -101,7 +100,7 @@ func extractDeviceInfo(block []string) (string, string) {
 
 func matchHidraws(keyboards map[string]string) ([]string, error) {
 	matches := []string{}
-	files, err := glob.Glob("/sys/class/hidraw/hidraw*/device")
+	files, err := filepath.Glob("/sys/class/hidraw/hidraw*/device") // Replaced glob with filepath.Glob
 	if err != nil {
 		return nil, fmt.Errorf("Error in globbing hidraw devices: %v", err)
 	}
