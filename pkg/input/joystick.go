@@ -235,8 +235,10 @@ func (j *JoystickDevice) readEvents() bool {
 
 // -------- Streaming monitor ----------
 
-func StreamJoysticks() <-chan JoystickEvent {
-	out := make(chan JoystickEvent, 100)
+// -------- Streaming monitor ----------
+
+func StreamJoysticks() <-chan string {
+	out := make(chan string, 100)
 	sdlmap := loadSDLDB(dbFilePath)
 
 	go func() {
@@ -275,16 +277,15 @@ func StreamJoysticks() <-chan JoystickEvent {
 					continue
 				}
 				if dev.readEvents() {
-					btns := map[string]string{}
-					axs := map[string]int16{}
-
-					// ---- Buttons sorted ----
-					keys := make([]int, 0, len(dev.btnmap))
+					// ---- Build button list in order ----
+					btnKeys := make([]int, 0, len(dev.btnmap))
 					for k := range dev.btnmap {
-						keys = append(keys, k)
+						btnKeys = append(btnKeys, k)
 					}
-					sort.Ints(keys)
-					for _, k := range keys {
+					sort.Ints(btnKeys)
+
+					btnParts := []string{}
+					for _, k := range btnKeys {
 						name := dev.btnmap[k]
 						if name == "" {
 							name = fmt.Sprintf("Btn%d", k)
@@ -293,16 +294,18 @@ func StreamJoysticks() <-chan JoystickEvent {
 						if v, ok := dev.Buttons[k]; ok && v != 0 {
 							state = "P"
 						}
-						btns[name] = state
+						btnParts = append(btnParts, fmt.Sprintf("%s=%s", name, state))
 					}
 
-					// ---- Axes sorted ----
-					akeys := make([]int, 0, len(dev.axmap))
+					// ---- Build axis list in order ----
+					axKeys := make([]int, 0, len(dev.axmap))
 					for k := range dev.axmap {
-						akeys = append(akeys, k)
+						axKeys = append(axKeys, k)
 					}
-					sort.Ints(akeys)
-					for _, k := range akeys {
+					sort.Ints(axKeys)
+
+					axParts := []string{}
+					for _, k := range axKeys {
 						name := dev.axmap[k]
 						if name == "" {
 							name = fmt.Sprintf("Axis%d", k)
@@ -311,15 +314,18 @@ func StreamJoysticks() <-chan JoystickEvent {
 						if v, ok := dev.Axes[k]; ok {
 							val = v
 						}
-						axs[name] = val
+						axParts = append(axParts, fmt.Sprintf("%s=%d", name, val))
 					}
 
-					out <- JoystickEvent{
-						Timestamp: time.Now().UnixMilli(),
-						Device:    filepath.Base(dev.Path),
-						Buttons:   btns,
-						Axes:      axs,
-					}
+					// ---- Final line identical to Python ----
+					line := fmt.Sprintf("[%d ms] %s: Buttons[%s] Axes[%s]",
+						time.Now().UnixMilli(),
+						filepath.Base(dev.Path),
+						strings.Join(btnParts, ", "),
+						strings.Join(axParts, ", "),
+					)
+
+					out <- line
 				}
 				// always reopen quietly
 				dev.reopen()
