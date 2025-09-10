@@ -36,9 +36,9 @@ func loadScanCodes() error {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "SCAN_CODES") {
-			// Parsing logic here (adjust this to match the structure of the file)
-			// For example, assuming the format is similar to the Python code
-			// You may need to write custom code to parse and fill SCAN_CODES here
+			// Parse and store the scan codes (adjust based on actual file format)
+			// For example, assuming the file structure matches the SCAN_CODES format
+			// SCAN_CODES should be populated here
 		}
 	}
 
@@ -78,6 +78,9 @@ func parseKeyboards() (map[string]string, error) {
 		return nil, fmt.Errorf("Error reading /proc/bus/input/devices: %v", err)
 	}
 
+	// Debug: Print detected keyboards
+	fmt.Println("Detected keyboards:", devices)
+
 	return devices, nil
 }
 
@@ -104,6 +107,9 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Error in globbing hidraw devices: %v", err)
 	}
+
+	// Debug: Print matched HIDraw devices
+	fmt.Println("Matching HIDraw devices:", files)
 
 	for _, hiddev := range files {
 		sysfsID := filepath.Base(hiddev)
@@ -199,6 +205,9 @@ func monitorKeyboards(out chan<- string) {
 				fmt.Println(err)
 				continue
 			}
+
+			// Debug: Print matched devices
+			fmt.Println("Matched devices:", matches)
 
 			// Add new devices
 			for _, devnode := range matches {
