@@ -193,7 +193,6 @@ func (j *JoystickDevice) close() {
 	}
 }
 
-
 func (j *JoystickDevice) reopen() {
 	j.close()
 	fd, err := unix.Open(j.Path, unix.O_RDONLY|unix.O_NONBLOCK, 0)
@@ -259,9 +258,7 @@ func StreamJoysticks() <-chan string {
 		}
 		defer unix.Close(inFd)
 
-		// Watch for create/delete/move/attrib changes
-		_, err = unix.InotifyAddWatch(inFd, "/dev/input",
-			unix.IN_CREATE|unix.IN_DELETE|unix.IN_ATTRIB|unix.IN_MOVED_FROM|unix.IN_MOVED_TO)
+		_, err = unix.InotifyAddWatch(inFd, "/dev/input", unix.IN_CREATE|unix.IN_MOVED_TO)
 		if err != nil {
 			fmt.Println("inotify addwatch failed:", err)
 			return
@@ -286,13 +283,6 @@ func StreamJoysticks() <-chan string {
 								fmt.Printf("[+] Opened %s (%s, GUID=%s)\n", dev.Path, dev.Name, dev.GUID)
 							}
 						}
-						if raw.Mask&(unix.IN_DELETE|unix.IN_MOVED_FROM) != 0 {
-							if dev, ok := devices[path]; ok {
-								fmt.Printf("[-] Lost %s (%s)\n", dev.Path, dev.Name)
-								dev.close()
-								delete(devices, path)
-							}
-						}
 					}
 					offset += unix.SizeofInotifyEvent + int(raw.Len)
 				}
@@ -309,7 +299,6 @@ func StreamJoysticks() <-chan string {
 					continue
 				}
 				if dev.readEvents() {
-					// ---- Build button list in order ----
 					btnKeys := make([]int, 0, len(dev.btnmap))
 					for k := range dev.btnmap {
 						btnKeys = append(btnKeys, k)
@@ -329,7 +318,6 @@ func StreamJoysticks() <-chan string {
 						btnParts = append(btnParts, fmt.Sprintf("%s=%s", name, state))
 					}
 
-					// ---- Build axis list in order ----
 					axKeys := make([]int, 0, len(dev.axmap))
 					for k := range dev.axmap {
 						axKeys = append(axKeys, k)
@@ -349,7 +337,6 @@ func StreamJoysticks() <-chan string {
 						axParts = append(axParts, fmt.Sprintf("%s=%d", name, val))
 					}
 
-					// ---- Final line identical to Python ----
 					line := fmt.Sprintf("[%d ms] %s: Buttons[%s] Axes[%s]",
 						time.Now().UnixMilli(),
 						filepath.Base(dev.Path),
@@ -359,10 +346,7 @@ func StreamJoysticks() <-chan string {
 
 					out <- line
 				}
-				// Always reopen quietly
-				dev.reopen()
 			}
-
 			time.Sleep(jsReadFrequency)
 		}
 	}()
