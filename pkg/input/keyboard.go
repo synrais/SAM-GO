@@ -2,11 +2,14 @@ package input
 
 import (
 	"fmt"
-	"path/filepath"
+	"os"
 	"strings"
 	"time"
-	"unsafe"
+	"path/filepath"
 	"golang.org/x/sys/unix"
+	"io/ioutil"
+	"strconv"
+	"unsafe"
 )
 
 const HOTPLUG_SCAN_INTERVAL = 2 * time.Second // seconds between rescans
@@ -50,128 +53,77 @@ var SCAN_CODES = map[int][]string{
 	0x0075: {"SCREEN LOCK"},
 }
 
-type KeyboardDevice struct {
-	Path string
-	FD   int
-}
-
-func openKeyboardDevice(path string) (*KeyboardDevice, error) {
-	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK, 0)
+// Parse the `/proc/bus/input/devices` file to find keyboard devices
+func parseKeyboards() (map[string]string, error) {
+	devices := make(map[string]string)
+	data, err := ioutil.ReadFile("/proc/bus/input/devices")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Error reading /proc/bus/input/devices: %v", err)
 	}
-	fmt.Printf("[+] Opened %s (fd=%d)\n", path, fd)
-	return &KeyboardDevice{Path: path, FD: fd}, nil
-}
 
-func (kd *KeyboardDevice) Close() {
-	if kd.FD >= 0 {
-		_ = unix.Close(kd.FD)
-		fmt.Printf("[-] Closed %s\n", kd.Path)
-		kd.FD = -1
+	lines := strings.Split(string(data), "\n")
+	var block []string
+	for _, line := range lines {
+		if line == "" {
+			if contains(line, "Handlers=") && contains(line, "kbd") {
+				name, sysfsID := extractDeviceInfo(block)
+				if sysfsID != "" {
+					devices[sysfsID] = name
+				}
+			}
+			block = nil
+		} else {
+			block = append(block, line)
+		}
 	}
+
+	return devices, nil
 }
 
-// StreamKeyboards returns a channel of decoded keyboard events
-func StreamKeyboards() <-chan string {
-	out := make(chan string, 100) // Buffered channel
-
-	go func() {
-		defer close(out)
-		devices := map[string]*KeyboardDevice{}
-
-		// initial scan for /dev/input/event*
-		paths, _ := filepath.Glob("/dev/input/event*")
-		for _, path := range paths {
-			if dev, err := openKeyboardDevice(path); err == nil {
-				devices[path] = dev
-			}
-		}
-
-		// inotify watch on /dev/input
-		inFd, err := unix.InotifyInit()
-		if err != nil {
-			fmt.Println("inotify init failed:", err)
-			return
-		}
-		defer unix.Close(inFd)
-
-		_, err = unix.InotifyAddWatch(inFd, "/dev/input", unix.IN_CREATE|unix.IN_DELETE)
-		if err != nil {
-			fmt.Println("inotify addwatch failed:", err)
-			return
-		}
-
-		for {
-			// Poll devices + inotify events
-			var pollfds []unix.PollFd
-			for _, dev := range devices {
-				if dev.FD >= 0 {
-					pollfds = append(pollfds, unix.PollFd{Fd: int32(dev.FD), Events: unix.POLLIN})
-				}
-			}
-			pollfds = append(pollfds, unix.PollFd{Fd: int32(inFd), Events: unix.POLLIN})
-
-			n, err := unix.Poll(pollfds, int(HOTPLUG_SCAN_INTERVAL.Milliseconds()))
-			if err != nil {
-				fmt.Println("[DEBUG] poll error:", err)
-				continue
-			}
-			if n == 0 {
-				continue
-			}
-
-			for _, pfd := range pollfds {
-				// Handle inotify events
-				if pfd.Fd == int32(inFd) && pfd.Revents&unix.POLLIN != 0 {
-					buf := make([]byte, 4096)
-					n, _ := unix.Read(inFd, buf)
-					offset := 0
-					for offset < n {
-						raw := (*unix.InotifyEvent)(unsafe.Pointer(&buf[offset]))
-						nameBytes := buf[offset+unix.SizeofInotifyEvent : offset+unix.SizeofInotifyEvent+int(raw.Len)]
-						name := string(nameBytes[:len(nameBytes)-1]) // trim null
-						path := filepath.Join("/dev/input", name)
-
-						if raw.Mask&unix.IN_CREATE != 0 {
-							if filepath.HasPrefix(filepath.Base(path), "event") {
-								if dev, err := openKeyboardDevice(path); err == nil {
-									devices[path] = dev
-								}
-							}
-						}
-						if raw.Mask&unix.IN_DELETE != 0 {
-							if dev, ok := devices[path]; ok {
-								dev.Close()
-								delete(devices, path)
-							}
-						}
-						offset += unix.SizeofInotifyEvent + int(raw.Len)
-					}
-				}
-
-				// Handle keyboard data
-				if pfd.Fd != int32(inFd) && pfd.Revents&unix.POLLIN != 0 {
-					buf := make([]byte, 8) // Report size for keyboards
-					n, err := unix.Read(int(pfd.Fd), buf)
-					if err != nil || n < 8 {
-						continue
-					}
-
-					output := decodeReport(buf) // Decoding the key event
-					if output != "" {
-						out <- output // Send decoded key event to channel
-					}
-				}
-			}
-		}
-	}()
-
-	return out
+// Helper function to check if a string contains a substring
+func contains(str, substr string) bool {
+	return strings.Contains(str, substr)
 }
 
+// Extract device info (name and sysfs ID) from the block
+func extractDeviceInfo(block []string) (string, string) {
+	var name, sysfsID string
+	for _, line := range block {
+		if strings.HasPrefix(line, "N: ") {
+			name = strings.TrimSpace(strings.Split(line, "=")[1])
+		}
+		if strings.HasPrefix(line, "S: Sysfs=") {
+			sysfsID = strings.TrimSpace(strings.Split(line, "=")[1])
+		}
+	}
+	return name, sysfsID
+}
+
+// Match the keyboards' sysfs IDs to the actual `/dev/hidraw*` devices
+func matchHidraws(keyboards map[string]string) ([]string, error) {
+	matches := []string{}
+	files, err := filepath.Glob("/sys/class/hidraw/hidraw*/device")
+	if err != nil {
+		return nil, fmt.Errorf("Error in globbing hidraw devices: %v", err)
+	}
+
+	for _, hiddev := range files {
+		sysfsID := filepath.Base(hiddev)
+		if _, found := keyboards[sysfsID]; found {
+			matches = append(matches, fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(hiddev))))
+		}
+	}
+	return matches, nil
+}
+
+// Decode HID report based on the scan codes (returns key events as string)
 func decodeReport(report []byte) string {
 	if len(report) != 8 {
+		return ""
+	}
+
+	// Skip the invalid reports
+	if report[0] == 0x02 || (report[0] != 0 && allZero(report[1:])) {
 		return ""
 	}
 
@@ -181,8 +133,123 @@ func decodeReport(report []byte) string {
 			continue
 		}
 		if keys, ok := SCAN_CODES[int(code)]; ok {
-			output = append(output, keys[0]) // Return the first key (you could also handle shift here)
+			output = append(output, keys[0]) // Using lowercase key, can extend to shift/uppercase logic
 		}
 	}
 	return strings.Join(output, "")
+}
+
+// Helper function to check if all bytes are zero
+func allZero(slice []byte) bool {
+	for _, b := range slice {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// KeyboardDevice handles opening and reading keyboard device files
+type KeyboardDevice struct {
+	devnode string
+	name    string
+	fd      *os.File
+}
+
+func NewKeyboardDevice(devnode, name string) (*KeyboardDevice, error) {
+	fd, err := os.OpenFile(devnode, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, err
+	}
+	return &KeyboardDevice{
+		devnode: devnode,
+		name:    name,
+		fd:      fd,
+	}, nil
+}
+
+func (kd *KeyboardDevice) Close() {
+	if kd.fd != nil {
+		_ = kd.fd.Close()
+		kd.fd = nil
+	}
+}
+
+func (kd *KeyboardDevice) ReadEvent() string {
+	report := make([]byte, 8) // Read 8-byte report
+	n, err := kd.fd.Read(report)
+	if err != nil || n < 8 {
+		return ""
+	}
+	return decodeReport(report)
+}
+
+// Monitor keyboards: Poll for keyboard events, match sysfs, and decode events
+func monitorKeyboards(out chan<- string) {
+	devices := make(map[string]*KeyboardDevice)
+	lastScan := time.Now()
+
+	for {
+		now := time.Now()
+		if now.Sub(lastScan) > HOTPLUG_SCAN_INTERVAL {
+			lastScan = now
+			// Rescan for keyboards
+			keyboards, err := parseKeyboards()
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+
+			matches, err := matchHidraws(keyboards)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+
+			// Add new devices
+			for _, devnode := range matches {
+				if _, found := devices[devnode]; !found {
+					dev, err := NewKeyboardDevice(devnode, "Keyboard")
+					if err == nil {
+						devices[devnode] = dev
+					}
+				}
+			}
+
+			// Remove vanished devices
+			for devnode := range devices {
+				if !stringInSlice(devnode, matches) {
+					devices[devnode].Close()
+					delete(devices, devnode)
+				}
+			}
+		}
+
+		// Poll for keyboard events and decode them
+		for _, dev := range devices {
+			output := dev.ReadEvent()
+			if output != "" {
+				out <- output // Send decoded event to channel
+			}
+		}
+
+		time.Sleep(200 * time.Millisecond) // Avoid busy loop
+	}
+}
+
+// Helper function to check if a string is in the list
+func stringInSlice(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
+}
+
+// StreamKeyboards starts the keyboard monitoring and returns a channel of events
+func StreamKeyboards() <-chan string {
+	out := make(chan string, 100) // Buffered channel
+	go monitorKeyboards(out)
+	return out
 }
