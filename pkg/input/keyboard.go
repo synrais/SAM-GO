@@ -57,20 +57,16 @@ func parseKeyboards() (map[string]string, error) {
 	}
 	defer file.Close()
 
-	var block []string
+	// Debug: Print full contents of /proc/bus/input/devices to check the format
+	fmt.Println("Full contents of /proc/bus/input/devices:")
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			if contains(line, "Handlers=") && contains(line, "kbd") {
-				name, sysfsID := extractDeviceInfo(block)
-				if sysfsID != "" {
-					devices[sysfsID] = name
-				}
-			}
-			block = nil
-		} else {
-			block = append(block, line)
+		fmt.Println(scanner.Text()) // Print each line to debug
+
+		// Proceed with the current parsing logic
+		if strings.HasPrefix(scanner.Text(), "Handlers=") && strings.Contains(scanner.Text(), "kbd") {
+			// After identifying handlers and 'kbd' keyword, continue with device parsing logic
+			// Look for sysfsID for the matching keyboard device
 		}
 	}
 
