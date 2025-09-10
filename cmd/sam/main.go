@@ -75,16 +75,6 @@ func main() {
 		for line := range input.StreamJoysticks() {
 			fmt.Println(line)
 		}
-	case "-keyboard":
-		// Load scan codes first
-		if err := input.LoadScanCodes("/media/fat/keyboardscancodes.txt"); err != nil {
-			fmt.Println("Error loading scancodes:", err)
-			os.Exit(1)
-		}
-		for out := range input.StreamKeyboards() {
-			// Python just streamed text straight out
-			fmt.Print(out)
-		}
 	default:
 		fmt.Printf("Unknown tool: %s\n", cmd)
 		os.Exit(1)
