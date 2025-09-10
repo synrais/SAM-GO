@@ -63,7 +63,7 @@ func ScriptCanLaunch() bool {
 	}
 }
 
-func OpenConsole(kbd input.Keyboard) error {
+func OpenConsole(kbd input.VirtualKeyboard) error {
 	if !IsMenuRunning() {
 		return fmt.Errorf("cannot open console, active core is not menu")
 	}
@@ -141,7 +141,7 @@ func GetAllScripts() ([]Script, error) {
 	return scripts, nil
 }
 
-func RunScript(kbd input.Keyboard, path string) error {
+func RunScript(kbd input.VirtualKeyboard, path string) error {
 	if _, err := os.Stat(path); err != nil {
 		return err
 	}
