@@ -40,7 +40,7 @@ func dumpConfig(cfg *config.UserConfig) {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -mouse")
+		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -mouse | -joystick | -keyboard")
 		os.Exit(1)
 	}
 
@@ -66,15 +66,25 @@ func main() {
 	case "-attract":
 		attract.Run(args)
 	case "-mouse":
-    	events := input.StreamMouse()
-    	for evt := range events {
-        	fmt.Printf("[%d ms] %s: buttons=%v dx=%d dy=%d\n",
-            	evt.Timestamp, evt.Device, evt.Buttons, evt.DX, evt.DY)
-    	}
+		events := input.StreamMouse()
+		for evt := range events {
+			fmt.Printf("[%d ms] %s: buttons=%v dx=%d dy=%d\n",
+				evt.Timestamp, evt.Device, evt.Buttons, evt.DX, evt.DY)
+		}
 	case "-joystick":
-    	for line := range input.StreamJoysticks() {
-        	fmt.Println(line)
-    	}
+		for line := range input.StreamJoysticks() {
+			fmt.Println(line)
+		}
+	case "-keyboard":
+		// Load scan codes first
+		if err := input.LoadScanCodes("/media/fat/keyboardscancodes.txt"); err != nil {
+			fmt.Println("Error loading scancodes:", err)
+			os.Exit(1)
+		}
+		for out := range input.StreamKeyboards() {
+			// Python just streamed text straight out
+			fmt.Print(out)
+		}
 	default:
 		fmt.Printf("Unknown tool: %s\n", cmd)
 		os.Exit(1)
