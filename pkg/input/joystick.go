@@ -15,10 +15,9 @@ import (
 )
 
 const (
-	jsEventSize         = 8
-	jsReadFrequency     = 50 * time.Millisecond
-	hotplugScanInterval = 2 * time.Second
-	dbFilePath          = "/media/fat/gamecontrollerdb.txt"
+	jsEventSize     = 8
+	jsReadFrequency = 50 * time.Millisecond
+	dbFilePath      = "/media/fat/gamecontrollerdb.txt"
 )
 
 // JoystickEvent is a snapshot of a joystick's state.
@@ -258,7 +257,8 @@ func StreamJoysticks() <-chan string {
 		}
 		defer unix.Close(inFd)
 
-		_, err = unix.InotifyAddWatch(inFd, "/dev/input", unix.IN_CREATE|unix.IN_MOVED_TO)
+		_, err = unix.InotifyAddWatch(inFd, "/dev/input",
+			unix.IN_CREATE|unix.IN_DELETE|unix.IN_MOVED_TO|unix.IN_MOVED_FROM)
 		if err != nil {
 			fmt.Println("inotify addwatch failed:", err)
 			return
@@ -280,7 +280,13 @@ func StreamJoysticks() <-chan string {
 						if raw.Mask&(unix.IN_CREATE|unix.IN_MOVED_TO) != 0 {
 							if dev, err := openJoystickDevice(path, sdlmap); err == nil {
 								devices[path] = dev
-								fmt.Printf("[+] Opened %s (%s, GUID=%s)\n", dev.Path, dev.Name, dev.GUID)
+							}
+						}
+						if raw.Mask&(unix.IN_DELETE|unix.IN_MOVED_FROM) != 0 {
+							if dev, ok := devices[path]; ok {
+								fmt.Printf("[-] Lost %s (%s)\n", dev.Path, dev.Name)
+								dev.close()
+								delete(devices, path)
 							}
 						}
 					}
@@ -299,6 +305,7 @@ func StreamJoysticks() <-chan string {
 					continue
 				}
 				if dev.readEvents() {
+					// Build button list
 					btnKeys := make([]int, 0, len(dev.btnmap))
 					for k := range dev.btnmap {
 						btnKeys = append(btnKeys, k)
@@ -318,6 +325,7 @@ func StreamJoysticks() <-chan string {
 						btnParts = append(btnParts, fmt.Sprintf("%s=%s", name, state))
 					}
 
+					// Build axis list
 					axKeys := make([]int, 0, len(dev.axmap))
 					for k := range dev.axmap {
 						axKeys = append(axKeys, k)
