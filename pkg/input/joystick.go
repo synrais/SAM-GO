@@ -232,6 +232,8 @@ func (j *JoystickDevice) readEvents() bool {
 
 // -------- Streaming monitor ----------
 
+// -------- Streaming monitor ----------
+
 func StreamJoysticks() <-chan JoystickEvent {
 	out := make(chan JoystickEvent, 100)
 	sdlmap := loadSDLDB(dbFilePath)
@@ -273,25 +275,44 @@ func StreamJoysticks() <-chan JoystickEvent {
 				}
 				if dev.readEvents() {
 					btns := map[string]string{}
-					for k, v := range dev.Buttons {
-						state := "R"
-						if v != 0 {
-							state = "P"
-						}
+					axs := map[string]int16{}
+
+					// ---- Buttons sorted ----
+					keys := make([]int, 0, len(dev.btnmap))
+					for k := range dev.btnmap {
+						keys = append(keys, k)
+					}
+					sort.Ints(keys)
+					for _, k := range keys {
 						name := dev.btnmap[k]
 						if name == "" {
 							name = fmt.Sprintf("Btn%d", k)
 						}
+						state := "R"
+						if v, ok := dev.Buttons[k]; ok && v != 0 {
+							state = "P"
+						}
 						btns[name] = state
 					}
-					axs := map[string]int16{}
-					for k, v := range dev.Axes {
+
+					// ---- Axes sorted ----
+					akeys := make([]int, 0, len(dev.axmap))
+					for k := range dev.axmap {
+						akeys = append(akeys, k)
+					}
+					sort.Ints(akeys)
+					for _, k := range akeys {
 						name := dev.axmap[k]
 						if name == "" {
 							name = fmt.Sprintf("Axis%d", k)
 						}
-						axs[name] = v
+						val := int16(0)
+						if v, ok := dev.Axes[k]; ok {
+							val = v
+						}
+						axs[name] = val
 					}
+
 					out <- JoystickEvent{
 						Timestamp: time.Now().UnixMilli(),
 						Device:    filepath.Base(dev.Path),
