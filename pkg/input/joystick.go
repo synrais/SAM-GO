@@ -2,7 +2,6 @@ package input
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 	"unsafe"
