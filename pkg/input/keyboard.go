@@ -57,29 +57,41 @@ func parseKeyboards() (map[string]string, error) {
 	}
 	defer file.Close()
 
-	var block []string
+	// Debug: Print the full content of /proc/bus/input/devices
+	fmt.Println("Full /proc/bus/input/devices content:")
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if line == "" {
-			if contains(line, "Handlers=") && contains(line, "kbd") {
-				name, sysfsID := extractDeviceInfo(block)
-				if sysfsID != "" {
-					devices[sysfsID] = name
+		fmt.Println(line) // Print each line to debug
+
+		// Look for lines that contain 'Handlers=kbd'
+		if strings.Contains(line, "Handlers=") && strings.Contains(line, "kbd") {
+			// Log the handlers line
+			fmt.Println("Found keyboard handler:", line)
+
+			// Collect the block of lines for each device
+			block := []string{line}
+			for scanner.Scan() {
+				line = scanner.Text()
+				if line == "" {
+					break
 				}
+				block = append(block, line)
 			}
-			block = nil
-		} else {
-			block = append(block, line)
+
+			// Extract device info from the block
+			name, sysfsID := extractDeviceInfo(block)
+			if sysfsID != "" {
+				devices[sysfsID] = name
+				// Log the detected device and sysfsID
+				fmt.Printf("Detected keyboard: %s with sysfsID: %s\n", name, sysfsID)
+			}
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("Error reading /proc/bus/input/devices: %v", err)
 	}
-
-	// Debug: Print detected keyboards
-	fmt.Println("Detected keyboards:", devices)
 
 	return devices, nil
 }
