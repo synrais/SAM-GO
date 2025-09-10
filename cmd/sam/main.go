@@ -72,10 +72,8 @@ func main() {
             	evt.Timestamp, evt.Device, evt.Buttons, evt.DX, evt.DY)
     	}
 	case "-joystick":
-    	events := input.StreamJoysticks()
-    	for evt := range events {
-        	fmt.Printf("[%d ms] %s: Buttons=%v Axes=%v\n",
-            	evt.Timestamp, evt.Device, evt.Buttons, evt.Axes)
+    	for line := range input.StreamJoysticks() {
+        	fmt.Println(line)
     	}
 	default:
 		fmt.Printf("Unknown tool: %s\n", cmd)
