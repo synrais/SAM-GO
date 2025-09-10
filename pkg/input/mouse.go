@@ -63,6 +63,7 @@ func decodePacket(buf []byte) string {
 	return fmt.Sprintf("buttons=%s dx=%d dy=%d", status, dx, dy)
 }
 
+// RunMouse scans /dev/input for mouse devices and monitors them.
 func RunMouse() {
 	devices := map[string]*MouseDevice{}
 	lastScan := time.Time{}
@@ -90,7 +91,6 @@ func RunMouse() {
 				}
 			}
 
-			// remove vanished
 			for path, dev := range devices {
 				if !found[path] {
 					dev.Close()
@@ -104,38 +104,34 @@ func RunMouse() {
 			continue
 		}
 
-		// build fd set for select()
-		var fds unix.FdSet
-		maxfd := 0
+		// build pollfds
+		var pollfds []unix.PollFd
 		for _, dev := range devices {
 			if dev.FD >= 0 {
-				unix.FD_SET(dev.FD, &fds)
-				if dev.FD > maxfd {
-					maxfd = dev.FD
-				}
+				pollfds = append(pollfds, unix.PollFd{Fd: int32(dev.FD), Events: unix.POLLIN})
 			}
 		}
 
-		timeout := unix.NsecToTimeval(int64(pollInterval))
-		_, err := unix.Select(maxfd+1, &fds, nil, nil, &timeout)
+		n, err := unix.Poll(pollfds, int(pollInterval.Milliseconds()))
 		if err != nil {
-			fmt.Println("[DEBUG] select error:", err)
+			fmt.Println("[DEBUG] poll error:", err)
 			continue
 		}
+		if n == 0 {
+			continue // timeout, no events
+		}
 
-		for path, dev := range devices {
-			if dev.FD >= 0 && unix.FD_ISSET(dev.FD, &fds) {
+		for _, pfd := range pollfds {
+			if pfd.Revents&unix.POLLIN != 0 {
 				buf := make([]byte, reportSize)
-				n, err := unix.Read(dev.FD, buf)
+				n, err := unix.Read(int(pfd.Fd), buf)
 				if err != nil {
-					fmt.Printf("[DEBUG] read error on %s: %v\n", path, err)
-					dev.Close()
-					delete(devices, path)
+					fmt.Printf("[DEBUG] read error on fd=%d: %v\n", pfd.Fd, err)
 					continue
 				}
 				if n == reportSize {
 					ts := time.Now().UnixMilli()
-					fmt.Printf("[%d ms] %s: %s\n", ts, filepath.Base(path), decodePacket(buf))
+					fmt.Printf("[%d ms] fd=%d: %s\n", ts, pfd.Fd, decodePacket(buf))
 				}
 			}
 		}
