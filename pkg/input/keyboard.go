@@ -108,7 +108,7 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 		return nil, fmt.Errorf("Error in globbing hidraw devices: %v", err)
 	}
 
-	// Debug: Print matched HIDraw devices
+	// Debug: Print HIDraw devices
 	fmt.Println("Matching HIDraw devices:", files)
 
 	for _, hiddev := range files {
@@ -117,6 +117,10 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 			matches = append(matches, fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(hiddev))))
 		}
 	}
+
+	// Debug: Print matched HIDraw devices
+	fmt.Println("Matched HIDraw devices:", matches)
+
 	return matches, nil
 }
 
