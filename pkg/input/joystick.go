@@ -189,7 +189,6 @@ func openJoystickDevice(path string, sdlmap []*mappingEntry) (*JoystickDevice, e
 func (j *JoystickDevice) close() {
 	if j.FD >= 0 {
 		unix.Close(j.FD)
-		fmt.Printf("[-] Closed %s (%s)\n", j.Path, j.Name)
 		j.FD = -1
 	}
 }
