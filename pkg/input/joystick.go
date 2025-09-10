@@ -6,7 +6,10 @@ import (
 	"strings"
 	"time"
 	"golang.org/x/sys/unix"
-	"github.com/synrais/SAM-GO/pkg/assets" // Importing the assets package that includes the embedded file
+	"github.com/synrais/SAM-GO/pkg/assets"
+	"os"
+	"path/filepath"
+	"strconv"
 )
 
 const (
