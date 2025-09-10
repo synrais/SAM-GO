@@ -2,16 +2,16 @@ package input
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
-	"path/filepath"
+	"unsafe"
+	"golang.org/x/sys/unix"
 )
 
 const HOTPLUG_SCAN_INTERVAL = 2 * time.Second // seconds between rescans
 
-// Define a map for scan codes (similar to SCAN_CODES in Python)
 var SCAN_CODES = map[int][]string{
 	0x04: {"a", "A"}, 0x05: {"b", "B"}, 0x06: {"c", "C"}, 0x07: {"d", "D"},
 	0x08: {"e", "E"}, 0x09: {"f", "F"}, 0x0A: {"g", "G"}, 0x0B: {"h", "H"},
@@ -51,87 +51,128 @@ var SCAN_CODES = map[int][]string{
 	0x0075: {"SCREEN LOCK"},
 }
 
-func loadScanCodes(filename string) error {
-	// Similar to reading the scan codes file in Python
-	content, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return fmt.Errorf("Error reading scan codes file: %v", err)
-	}
-	// You can parse the file content to populate SCAN_CODES map
-	// For now, we use a dummy map for demonstration
-	_ = content
-	return nil
+type KeyboardDevice struct {
+	Path string
+	FD   int
 }
 
-func parseKeyboards() (map[string]string, error) {
-	// Parse `/proc/bus/input/devices` and return a map {sysfs_id: name}
-	devices := make(map[string]string)
-	data, err := ioutil.ReadFile("/proc/bus/input/devices")
+func openKeyboardDevice(path string) (*KeyboardDevice, error) {
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK, 0)
 	if err != nil {
-		return nil, fmt.Errorf("Error reading /proc/bus/input/devices: %v", err)
+		return nil, err
 	}
+	fmt.Printf("[+] Opened %s (fd=%d)\n", path, fd)
+	return &KeyboardDevice{Path: path, FD: fd}, nil
+}
 
-	lines := strings.Split(string(data), "\n")
-	var block []string
-	for _, line := range lines {
-		if line == "" {
-			if contains(line, "Handlers=") && contains(line, "kbd") {
-				// Extract name and sysfs_id from block
-				name, sysfs_id := extractDeviceInfo(block)
-				if sysfs_id != "" {
-					devices[sysfs_id] = name
+func (kd *KeyboardDevice) Close() {
+	if kd.FD >= 0 {
+		_ = unix.Close(kd.FD)
+		fmt.Printf("[-] Closed %s\n", kd.Path)
+		kd.FD = -1
+	}
+}
+
+// StreamKeyboards returns a channel of decoded keyboard events
+func StreamKeyboards() <-chan string {
+	out := make(chan string, 100) // Buffered channel
+
+	go func() {
+		defer close(out)
+		devices := map[string]*KeyboardDevice{}
+
+		// initial scan for /dev/input/event*
+		paths, _ := filepath.Glob("/dev/input/event*")
+		for _, path := range paths {
+			if dev, err := openKeyboardDevice(path); err == nil {
+				devices[path] = dev
+			}
+		}
+
+		// inotify watch on /dev/input
+		inFd, err := unix.InotifyInit()
+		if err != nil {
+			fmt.Println("inotify init failed:", err)
+			return
+		}
+		defer unix.Close(inFd)
+
+		_, err = unix.InotifyAddWatch(inFd, "/dev/input", unix.IN_CREATE|unix.IN_DELETE)
+		if err != nil {
+			fmt.Println("inotify addwatch failed:", err)
+			return
+		}
+
+		for {
+			// Poll devices + inotify events
+			var pollfds []unix.PollFd
+			for _, dev := range devices {
+				if dev.FD >= 0 {
+					pollfds = append(pollfds, unix.PollFd{Fd: int32(dev.FD), Events: unix.POLLIN})
 				}
 			}
-			block = nil
-		} else {
-			block = append(block, line)
+			pollfds = append(pollfds, unix.PollFd{Fd: int32(inFd), Events: unix.POLLIN})
+
+			n, err := unix.Poll(pollfds, int(HOTPLUG_SCAN_INTERVAL.Milliseconds()))
+			if err != nil {
+				fmt.Println("[DEBUG] poll error:", err)
+				continue
+			}
+			if n == 0 {
+				continue
+			}
+
+			for _, pfd := range pollfds {
+				// Handle inotify events
+				if pfd.Fd == int32(inFd) && pfd.Revents&unix.POLLIN != 0 {
+					buf := make([]byte, 4096)
+					n, _ := unix.Read(inFd, buf)
+					offset := 0
+					for offset < n {
+						raw := (*unix.InotifyEvent)(unsafe.Pointer(&buf[offset]))
+						nameBytes := buf[offset+unix.SizeofInotifyEvent : offset+unix.SizeofInotifyEvent+int(raw.Len)]
+						name := string(nameBytes[:len(nameBytes)-1]) // trim null
+						path := filepath.Join("/dev/input", name)
+
+						if raw.Mask&unix.IN_CREATE != 0 {
+							if filepath.HasPrefix(filepath.Base(path), "event") {
+								if dev, err := openKeyboardDevice(path); err == nil {
+									devices[path] = dev
+								}
+							}
+						}
+						if raw.Mask&unix.IN_DELETE != 0 {
+							if dev, ok := devices[path]; ok {
+								dev.Close()
+								delete(devices, path)
+							}
+						}
+						offset += unix.SizeofInotifyEvent + int(raw.Len)
+					}
+				}
+
+				// Handle keyboard data
+				if pfd.Fd != int32(inFd) && pfd.Revents&unix.POLLIN != 0 {
+					buf := make([]byte, 8) // Report size for keyboards
+					n, err := unix.Read(int(pfd.Fd), buf)
+					if err != nil || n < 8 {
+						continue
+					}
+
+					output := decodeReport(buf) // Decoding the key event
+					if output != "" {
+						out <- output // Send decoded key event to channel
+					}
+				}
+			}
 		}
-	}
+	}()
 
-	return devices, nil
-}
-
-func contains(str, substr string) bool {
-	return strings.Contains(str, substr)
-}
-
-func extractDeviceInfo(block []string) (string, string) {
-	var name, sysfs_id string
-	for _, line := range block {
-		if strings.HasPrefix(line, "N: ") {
-			name = strings.TrimSpace(strings.Split(line, "=")[1])
-		}
-		if strings.HasPrefix(line, "S: Sysfs=") {
-			sysfs_id = strings.TrimSpace(strings.Split(line, "=")[1])
-		}
-	}
-	return name, sysfs_id
-}
-
-func matchHidraws(keyboards map[string]string) ([]string, error) {
-	// Match sysfs_id with /dev/hidraw devices
-	matches := []string{}
-	files, err := filepath.Glob("/sys/class/hidraw/hidraw*/device")
-	if err != nil {
-		return nil, fmt.Errorf("Error in globbing hidraw devices: %v", err)
-	}
-
-	for _, hiddev := range files {
-		sysfs_id := filepath.Base(hiddev)
-		if _, found := keyboards[sysfs_id]; found {
-			matches = append(matches, fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(hiddev))))
-		}
-	}
-	return matches, nil
+	return out
 }
 
 func decodeReport(report []byte) string {
-	// Decode the report based on SCAN_CODES map
 	if len(report) != 8 {
-		return ""
-	}
-
-	if report[0] == 0x02 {
 		return ""
 	}
 
@@ -141,116 +182,8 @@ func decodeReport(report []byte) string {
 			continue
 		}
 		if keys, ok := SCAN_CODES[int(code)]; ok {
-			// Choose the correct key (you can decide whether to use the shift or lowercase version)
-			output = append(output, keys[0]) // You could choose keys[1] for uppercase, or implement shift logic
+			output = append(output, keys[0]) // Return the first key (you could also handle shift here)
 		}
 	}
 	return strings.Join(output, "")
-}
-
-type KeyboardDevice struct {
-	devnode string
-	name    string
-	fd      *os.File
-}
-
-func NewKeyboardDevice(devnode, name string) (*KeyboardDevice, error) {
-	fd, err := os.OpenFile(devnode, os.O_RDONLY, 0)
-	if err != nil {
-		return nil, err
-	}
-	return &KeyboardDevice{
-		devnode: devnode,
-		name:    name,
-		fd:      fd,
-	}, nil
-}
-
-func (kd *KeyboardDevice) Close() {
-	if kd.fd != nil {
-		kd.fd.Close()
-	}
-}
-
-func (kd *KeyboardDevice) ReadEvent() string {
-	// Read 8 bytes from the device
-	report := make([]byte, 8)
-	n, err := kd.fd.Read(report)
-	if err != nil || n == 0 {
-		return ""
-	}
-	return decodeReport(report)
-}
-
-func monitorKeyboards() {
-	devices := make(map[string]*KeyboardDevice)
-	lastScan := time.Now()
-
-	for {
-		now := time.Now()
-		if now.Sub(lastScan) > HOTPLUG_SCAN_INTERVAL {
-			lastScan = now
-			// Rescan for keyboards
-			keyboards, err := parseKeyboards()
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-
-			matches, err := matchHidraws(keyboards)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-
-			// Add new devices
-			for _, devnode := range matches {
-				if _, found := devices[devnode]; !found {
-					dev, err := NewKeyboardDevice(devnode, "Keyboard")
-					if err == nil {
-						devices[devnode] = dev
-					}
-				}
-			}
-
-			// Remove vanished devices
-			for devnode := range devices {
-				if !stringInSlice(devnode, matches) { // Use our new helper function to check
-					devices[devnode].Close()
-					delete(devices, devnode)
-				}
-			}
-		}
-
-		// Poll for keyboard events
-		for _, dev := range devices {
-			output := dev.ReadEvent()
-			if output != "" {
-				fmt.Print(output)
-			}
-		}
-
-		time.Sleep(200 * time.Millisecond) // Avoid busy loop
-	}
-}
-
-// stringInSlice checks if a string is present in a slice of strings
-func stringInSlice(a string, list []string) bool {
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
-}
-
-func main() {
-	if err := loadScanCodes("keyboardscancodes.txt"); err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	go monitorKeyboards()
-
-	select {} // Keep the program running
 }
