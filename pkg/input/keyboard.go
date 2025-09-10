@@ -12,7 +12,6 @@ import (
 
 const HOTPLUG_SCAN_INTERVAL = 2 * time.Second // seconds between rescans
 
-// SCAN_CODES map (we will load this from the file later)
 var SCAN_CODES = map[int][]string{}
 
 // --- Load SCAN_CODES from external file (keyboardscancodes.txt) ---
@@ -32,13 +31,14 @@ func loadScanCodes() error {
 	}
 	defer file.Close()
 
-	codeEnv := make(map[string]interface{})
+	// Parse the scan codes from the file (you may need to adjust this part based on your format)
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "SCAN_CODES") {
-			// Parse and store the scan codes (depending on file format)
-			// Code to parse SCAN_CODES into the global map goes here...
+			// Parsing logic here (adjust this to match the structure of the file)
+			// For example, assuming the format is similar to the Python code
+			// You may need to write custom code to parse and fill SCAN_CODES here
 		}
 	}
 
