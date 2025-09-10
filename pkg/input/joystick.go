@@ -2,8 +2,8 @@ package input
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
-	"strings"
 	"time"
 	"unsafe"
 
@@ -11,49 +11,94 @@ import (
 )
 
 const (
-	jsEventSize = 8
-	jsPollDelay = 50 * time.Millisecond
+	jsEventSize          = 8
+	JS_READ_FREQUENCY    = 50 * time.Millisecond
+	HOTPLUG_SCAN_INTERVAL = 2 * time.Second
+	DB_FILE_BASENAME     = "gamecontrollerdb.txt" // placeholder for SDL map
 )
-
-// JoystickEvent represents a decoded joystick input event.
-type JoystickEvent struct {
-	Timestamp int64
-	Device    string
-	Buttons   map[int]int16
-	Axes      map[int]int16
-}
 
 // JoystickDevice holds state for a joystick.
 type JoystickDevice struct {
 	Path    string
-	FD      int
+	Name    string
+	GUID    string
 	Buttons map[int]int16
 	Axes    map[int]int16
+	FD      int
 }
 
-func openJoystickDevice(path string) (*JoystickDevice, error) {
-	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK, 0)
-	if err != nil {
-		return nil, err
+func getJsMetadata(path string) (string, int, int, int) {
+	base := filepath.Base(path)
+	sysdir := filepath.Join("/sys/class/input", base, "device")
+
+	readHex := func(fname string) (int, error) {
+		data, err := os.ReadFile(filepath.Join(sysdir, fname))
+		if err != nil {
+			return 0, err
+		}
+		var val int
+		fmt.Sscanf(string(data), "%x", &val)
+		return val, nil
 	}
-	fmt.Printf("[+] Opened %s (fd=%d)\n", path, fd)
+
+	nameBytes, err := os.ReadFile(filepath.Join(sysdir, "name"))
+	if err != nil {
+		return base, 0, 0, 0
+	}
+	name := string(nameBytes)
+
+	vid, _ := readHex("id/vendor")
+	pid, _ := readHex("id/product")
+	ver, _ := readHex("id/version")
+	return name, vid, pid, ver
+}
+
+func makeGuid(vid, pid, version int) string {
+	if vid == 0 || pid == 0 {
+		return ""
+	}
+	le16 := func(x int) int { return ((x & 0xFF) << 8) | ((x >> 8) & 0xFF) }
+	return fmt.Sprintf("03000000%04x0000%04x0000%04x0000", le16(vid), le16(pid), le16(version))
+}
+
+func newJoystickDevice(path string) *JoystickDevice {
+	name, vid, pid, ver := getJsMetadata(path)
+	guid := makeGuid(vid, pid, ver)
+
 	return &JoystickDevice{
 		Path:    path,
-		FD:      fd,
+		Name:    name,
+		GUID:    guid,
 		Buttons: make(map[int]int16),
 		Axes:    make(map[int]int16),
-	}, nil
+		FD:      -1,
+	}
 }
 
-func (j *JoystickDevice) Close() {
+func (j *JoystickDevice) open(announce bool) bool {
+	fd, err := unix.Open(j.Path, unix.O_RDONLY|unix.O_NONBLOCK, 0)
+	if err != nil {
+		j.FD = -1
+		return false
+	}
+	j.FD = fd
+	if announce {
+		fmt.Printf("Opened %s (%s, GUID=%s)\n", j.Path, j.Name, j.GUID)
+	}
+	return true
+}
+
+func (j *JoystickDevice) close() {
 	if j.FD >= 0 {
 		_ = unix.Close(j.FD)
-		fmt.Printf("[-] Closed %s\n", j.Path)
 		j.FD = -1
 	}
 }
 
 func (j *JoystickDevice) readEvents() bool {
+	if j.FD < 0 {
+		return false
+	}
 	changed := false
 	for {
 		buf := make([]byte, jsEventSize)
@@ -61,7 +106,6 @@ func (j *JoystickDevice) readEvents() bool {
 		if err != nil || n < jsEventSize {
 			break
 		}
-		// struct js_event: __u32 time; __s16 value; __u8 type; __u8 number
 		t := *(*uint32)(unsafe.Pointer(&buf[0]))
 		val := *(*int16)(unsafe.Pointer(&buf[4]))
 		etype := buf[6] & 0x7F
@@ -79,118 +123,69 @@ func (j *JoystickDevice) readEvents() bool {
 				changed = true
 			}
 		}
-		_ = t // kernel timestamp not used
+		_ = t
 	}
 	return changed
 }
 
-// StreamJoysticks watches /sys/class/input for js* symlinks and streams events.
-func StreamJoysticks() <-chan JoystickEvent {
-	out := make(chan JoystickEvent, 100)
-
-	go func() {
-		defer close(out)
-		devices := map[string]*JoystickDevice{}
-
-		// initial scan of /dev/input/js*
-		paths, _ := filepath.Glob("/dev/input/js*")
-		for _, path := range paths {
-			if dev, err := openJoystickDevice(path); err == nil {
-				devices[path] = dev
-			}
+func (j *JoystickDevice) printState() {
+	btns := []string{}
+	for i, v := range j.Buttons {
+		state := "R"
+		if v != 0 {
+			state = "P"
 		}
+		btns = append(btns, fmt.Sprintf("Btn%d=%s", i, state))
+	}
+	axs := []string{}
+	for i, v := range j.Axes {
+		axs = append(axs, fmt.Sprintf("Axis%d=%d", i, v))
+	}
+	fmt.Printf("Changed: Buttons[%v] Axes[%v]\n", btns, axs)
+}
 
-		// inotify watch on /sys/class/input
-		inFd, err := unix.InotifyInit()
-		if err != nil {
-			fmt.Println("inotify init failed:", err)
-			return
-		}
-		defer unix.Close(inFd)
-		_, _ = unix.InotifyAddWatch(inFd, "/sys/class/input", unix.IN_CREATE|unix.IN_DELETE)
+// RunJoystickMonitor runs the joystick hotplug + read loop.
+func RunJoystickMonitor() {
+	devices := map[string]*JoystickDevice{}
+	lastScan := time.Now()
 
-		for {
-			// build pollfds
-			var pollfds []unix.PollFd
-			for _, dev := range devices {
-				if dev.FD >= 0 {
-					pollfds = append(pollfds, unix.PollFd{Fd: int32(dev.FD), Events: unix.POLLIN})
+	for {
+		now := time.Now()
+		if now.Sub(lastScan) > HOTPLUG_SCAN_INTERVAL {
+			lastScan = now
+			paths, _ := filepath.Glob("/dev/input/js*")
+			for _, path := range paths {
+				if _, ok := devices[path]; !ok {
+					dev := newJoystickDevice(path)
+					if dev.open(true) {
+						devices[path] = dev
+					}
 				}
 			}
-			pollfds = append(pollfds, unix.PollFd{Fd: int32(inFd), Events: unix.POLLIN})
+			// remove vanished
+			for path, dev := range devices {
+				if _, err := os.Stat(path); os.IsNotExist(err) {
+					dev.close()
+					delete(devices, path)
+				}
+			}
+		}
 
-			n, err := unix.Poll(pollfds, int(jsPollDelay.Milliseconds()))
-			if err != nil || n == 0 {
+		for _, dev := range devices {
+			if dev.FD < 0 {
+				if _, err := os.Stat(dev.Path); err == nil {
+					dev.open(false)
+				}
 				continue
 			}
-
-			for _, pfd := range pollfds {
-				// handle sysfs hotplug events
-				if pfd.Fd == int32(inFd) && pfd.Revents&unix.POLLIN != 0 {
-					buf := make([]byte, 4096)
-					n, _ := unix.Read(inFd, buf)
-					offset := 0
-					for offset < n {
-						raw := (*unix.InotifyEvent)(unsafe.Pointer(&buf[offset]))
-						nameBytes := buf[offset+unix.SizeofInotifyEvent : offset+unix.SizeofInotifyEvent+int(raw.Len)]
-						name := string(nameBytes[:len(nameBytes)-1])
-
-						if strings.HasPrefix(name, "js") {
-							path := filepath.Join("/dev/input", name)
-							if raw.Mask&unix.IN_CREATE != 0 {
-								fmt.Printf("hotplug: %s appeared\n", path)
-								if dev, err := openJoystickDevice(path); err == nil {
-									devices[path] = dev
-								}
-							}
-							if raw.Mask&unix.IN_DELETE != 0 {
-								fmt.Printf("hotplug: %s vanished\n", path)
-								if dev, ok := devices[path]; ok {
-									dev.Close()
-									delete(devices, path)
-								}
-							}
-						}
-						offset += unix.SizeofInotifyEvent + int(raw.Len)
-					}
-				}
-
-				// handle joystick input events
-				if pfd.Fd != int32(inFd) && pfd.Revents&unix.POLLIN != 0 {
-					var dev *JoystickDevice
-					for _, d := range devices {
-						if int32(d.FD) == pfd.Fd {
-							dev = d
-							break
-						}
-					}
-					if dev != nil && dev.readEvents() {
-						out <- JoystickEvent{
-							Timestamp: time.Now().UnixMilli(),
-							Device:    filepath.Base(dev.Path),
-							Buttons:   copyBtn(dev.Buttons),
-							Axes:      copyAxes(dev.Axes),
-						}
-					}
-				}
+			if dev.readEvents() {
+				dev.printState()
 			}
+			// ✅ always reopen quietly (like Python)
+			dev.close()
+			dev.open(false)
 		}
-	}()
 
-	return out
-}
-
-func copyBtn(src map[int]int16) map[int]int16 {
-	dst := make(map[int]int16)
-	for k, v := range src {
-		dst[k] = v
+		time.Sleep(JS_READ_FREQUENCY)
 	}
-	return dst
-}
-func copyAxes(src map[int]int16) map[int]int16 {
-	dst := make(map[int]int16)
-	for k, v := range src {
-		dst[k] = v
-	}
-	return dst
 }
