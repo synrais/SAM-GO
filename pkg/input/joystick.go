@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 	"golang.org/x/sys/unix"
-	"github.com/synrais/SAM-GO/pkg/assets" 
+	"github.com/synrais/SAM-GO/pkg/assets" // Importing the assets package that includes the embedded file
 )
 
 const (
@@ -72,7 +72,7 @@ func parseMappingLine(line string) *mappingEntry {
 func loadSDLDB() []*mappingEntry {
 	var entries []*mappingEntry
 	// Access the embedded game controller DB content
-	content := assets.GameControllerDB
+	content := assets.GameControllerDB // This is the embedded content from assets
 
 	// Read the content line by line
 	scanner := bufio.NewScanner(strings.NewReader(content))
@@ -138,6 +138,7 @@ func getJSMetadata(path string) (string, int, int, int) {
 		return int(v)
 	}
 	name := stringMust(os.ReadFile(filepath.Join(sysdir, "name")))
+
 	vid := readHex("id/vendor")
 	pid := readHex("id/product")
 	ver := readHex("id/version")
@@ -229,7 +230,7 @@ func (j *JoystickDevice) readEvents() bool {
 
 func StreamJoysticks() <-chan string {
 	out := make(chan string, 100)
-	sdlmap := loadSDLDB()  // Use the embedded SDL DB
+	sdlmap := loadSDLDB() // Use the embedded SDL DB content
 
 	go func() {
 		defer close(out)
@@ -338,7 +339,7 @@ func StreamJoysticks() <-chan string {
 					}
 
 					// ---- Final line identical to Python ----
-					line := fmt.Sprintf("[%d ms] %s: Buttons[%s] Axes[%s]",
+					line := fmt.Sprintf("[%d ms] %s: Buttons[%s] Axes[%s] ",
 						time.Now().UnixMilli(),
 						filepath.Base(dev.Path),
 						strings.Join(btnParts, ", "),
