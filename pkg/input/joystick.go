@@ -1,8 +1,12 @@
 package input
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -10,44 +14,179 @@ import (
 )
 
 const (
-	jsEventSize           = 8
-	jsReadFrequency       = 50 * time.Millisecond
-	hotplugScanInterval   = 2 * time.Second
+	jsEventSize         = 8
+	jsReadFrequency     = 50 * time.Millisecond
+	hotplugScanInterval = 2 * time.Second
+	dbFilePath          = "/media/fat/gamecontrollerdb.txt"
 )
 
-// JoystickEvent represents a decoded joystick state snapshot.
+// JoystickEvent is a snapshot of a joystick's state.
 type JoystickEvent struct {
 	Timestamp int64
 	Device    string
-	Buttons   map[int]int16
-	Axes      map[int]int16
+	Buttons   map[string]string // friendly button name -> "P"/"R"
+	Axes      map[string]int16  // friendly axis name -> value
 }
 
-// JoystickDevice holds state for a joystick.
+// -------- SDL DB parsing ----------
+
+func le16(x int) int {
+	return ((x & 0xFF) << 8) | ((x >> 8) & 0xFF)
+}
+
+func makeGUID(vid, pid, version int) string {
+	if vid == 0 || pid == 0 {
+		return ""
+	}
+	return fmt.Sprintf("03000000%04x0000%04x0000%04x0000",
+		le16(vid), le16(pid), le16(version))
+}
+
+type mappingEntry struct {
+	guid     string
+	name     string
+	platform string
+	mapping  map[string]string
+}
+
+func parseMappingLine(line string) *mappingEntry {
+	parts := strings.Split(strings.TrimSpace(line), ",")
+	if len(parts) < 3 {
+		return nil
+	}
+	guid := strings.ToLower(parts[0])
+	name := parts[1]
+	items := parts[2:]
+	mapping := map[string]string{}
+	var platform string
+	for _, item := range items {
+		if !strings.Contains(item, ":") {
+			continue
+		}
+		kv := strings.SplitN(item, ":", 2)
+		k, v := kv[0], kv[1]
+		if k == "platform" {
+			platform = v
+		} else {
+			mapping[k] = v
+		}
+	}
+	return &mappingEntry{guid: guid, name: name, platform: platform, mapping: mapping}
+}
+
+func loadSDLDB(path string) []*mappingEntry {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	var entries []*mappingEntry
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		if e := parseMappingLine(scanner.Text()); e != nil {
+			entries = append(entries, e)
+		}
+	}
+	return entries
+}
+
+func chooseMapping(entries []*mappingEntry, guid string) map[string]string {
+	for _, e := range entries {
+		if e.guid == strings.ToLower(guid) && e.platform == "Linux" {
+			fmt.Printf("  -> SDL DB: Matched to '%s'\n", e.name)
+			return e.mapping
+		}
+	}
+	fmt.Printf("  -> No SDL match for GUID: %s\n", guid)
+	return map[string]string{}
+}
+
+func invertMapping(mapping map[string]string) (map[int]string, map[int]string) {
+	btnmap := map[int]string{}
+	axmap := map[int]string{}
+	for friendly, raw := range mapping {
+		if strings.HasPrefix(raw, "b") {
+			if n, err := strconv.Atoi(raw[1:]); err == nil {
+				btnmap[n] = friendly
+			}
+		} else if strings.HasPrefix(raw, "a") || strings.HasPrefix(raw, "+a") || strings.HasPrefix(raw, "-a") {
+			nstr := strings.TrimLeft(raw, "+a-")
+			if n, err := strconv.Atoi(nstr); err == nil {
+				axmap[n] = friendly
+			}
+		}
+	}
+	return btnmap, axmap
+}
+
+// -------- Device handling ----------
+
 type JoystickDevice struct {
 	Path    string
+	Name    string
+	GUID    string
+	FD      int
 	Buttons map[int]int16
 	Axes    map[int]int16
-	FD      int
+	btnmap  map[int]string
+	axmap   map[int]string
 }
 
-func openJoystickDevice(path string) (*JoystickDevice, error) {
+func getJSMetadata(path string) (string, int, int, int) {
+	base := filepath.Base(path)
+	sysdir := filepath.Join("/sys/class/input", base, "device")
+	readHex := func(fname string) int {
+		b, err := os.ReadFile(filepath.Join(sysdir, fname))
+		if err != nil {
+			return 0
+		}
+		v, _ := strconv.ParseInt(strings.TrimSpace(string(b)), 16, 32)
+		return int(v)
+	}
+	name := stringMust(os.ReadFile(filepath.Join(sysdir, "name")))
+	vid := readHex("id/vendor")
+	pid := readHex("id/product")
+	ver := readHex("id/version")
+	return name, vid, pid, ver
+}
+
+func stringMust(b []byte, _ error) string {
+	if b == nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+func openJoystickDevice(path string, sdlmap []*mappingEntry) (*JoystickDevice, error) {
+	name, vid, pid, ver := getJSMetadata(path)
+	guid := makeGUID(vid, pid, ver)
+	mapping := map[string]string{}
+	if guid != "" {
+		mapping = chooseMapping(sdlmap, guid)
+	}
+	btnmap, axmap := invertMapping(mapping)
+
 	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("[+] Opened %s\n", path)
+	fmt.Printf("Opened %s (%s, GUID=%s)\n", path, name, guid)
+
 	return &JoystickDevice{
 		Path:    path,
+		Name:    name,
+		GUID:    guid,
 		FD:      fd,
 		Buttons: make(map[int]int16),
 		Axes:    make(map[int]int16),
+		btnmap:  btnmap,
+		axmap:   axmap,
 	}, nil
 }
 
 func (j *JoystickDevice) close() {
 	if j.FD >= 0 {
-		_ = unix.Close(j.FD)
+		unix.Close(j.FD)
 		j.FD = -1
 	}
 }
@@ -91,9 +230,11 @@ func (j *JoystickDevice) readEvents() bool {
 	return changed
 }
 
-// StreamJoysticks streams events for all /dev/input/js* devices.
+// -------- Streaming monitor ----------
+
 func StreamJoysticks() <-chan JoystickEvent {
 	out := make(chan JoystickEvent, 100)
+	sdlmap := loadSDLDB(dbFilePath)
 
 	go func() {
 		defer close(out)
@@ -108,14 +249,14 @@ func StreamJoysticks() <-chan JoystickEvent {
 				paths, _ := filepath.Glob("/dev/input/js*")
 				for _, path := range paths {
 					if _, ok := devices[path]; !ok {
-						if dev, err := openJoystickDevice(path); err == nil {
+						if dev, err := openJoystickDevice(path, sdlmap); err == nil {
 							devices[path] = dev
 						}
 					}
 				}
 				// remove vanished
 				for path, dev := range devices {
-					if _, err := unix.Access(path, unix.F_OK); err != nil {
+					if _, err := os.Stat(path); err != nil {
 						dev.close()
 						delete(devices, path)
 					}
@@ -125,20 +266,40 @@ func StreamJoysticks() <-chan JoystickEvent {
 			// poll devices
 			for _, dev := range devices {
 				if dev.FD < 0 {
-					if err := unix.Access(dev.Path, unix.F_OK); err == nil {
+					if _, err := os.Stat(dev.Path); err == nil {
 						dev.reopen()
 					}
 					continue
 				}
 				if dev.readEvents() {
+					btns := map[string]string{}
+					for k, v := range dev.Buttons {
+						state := "R"
+						if v != 0 {
+							state = "P"
+						}
+						name := dev.btnmap[k]
+						if name == "" {
+							name = fmt.Sprintf("Btn%d", k)
+						}
+						btns[name] = state
+					}
+					axs := map[string]int16{}
+					for k, v := range dev.Axes {
+						name := dev.axmap[k]
+						if name == "" {
+							name = fmt.Sprintf("Axis%d", k)
+						}
+						axs[name] = v
+					}
 					out <- JoystickEvent{
 						Timestamp: time.Now().UnixMilli(),
 						Device:    filepath.Base(dev.Path),
-						Buttons:   copyBtn(dev.Buttons),
-						Axes:      copyAxes(dev.Axes),
+						Buttons:   btns,
+						Axes:      axs,
 					}
 				}
-				// always reopen quietly (like Python)
+				// always reopen quietly
 				dev.reopen()
 			}
 
@@ -147,19 +308,4 @@ func StreamJoysticks() <-chan JoystickEvent {
 	}()
 
 	return out
-}
-
-func copyBtn(src map[int]int16) map[int]int16 {
-	dst := make(map[int]int16)
-	for k, v := range src {
-		dst[k] = v
-	}
-	return dst
-}
-func copyAxes(src map[int]int16) map[int]int16 {
-	dst := make(map[int]int16)
-	for k, v := range src {
-		dst[k] = v
-	}
-	return dst
 }
