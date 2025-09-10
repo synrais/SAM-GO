@@ -478,7 +478,7 @@ func LaunchRandomGame(cfg *config.UserConfig, systems []games.System) error {
 	return fmt.Errorf("failed to find a random game")
 }
 
-func LaunchToken(cfg *config.UserConfig, manual bool, kbd input.Keyboard, text string) error {
+func LaunchToken(cfg *config.UserConfig, manual bool, kbd input.VirtualKeyboard, text string) error {
 	// detection can never be perfect, but these characters are illegal in
 	// windows filenames and heavily avoided in linux. use them to mark that
 	// this is a command
