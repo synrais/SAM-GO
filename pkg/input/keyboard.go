@@ -135,12 +135,12 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 		sysfsID := filepath.Base(realpath) // This should get the HID ID like '0003:258A:002A.0001'
 
 		// Debug: Show the sysfs ID and check the match with keyboards
-		fmt.Printf("  Checking HIDraw sysfsID: %s\n", sysfsID)
+		fmt.Printf("  Extracted HIDraw sysfsID from %s: %s\n", hiddev, sysfsID)
 
 		// Add debug output to see what keys and sysfsIDs are present
 		for k, v := range keyboards {
 			// Show what sysfsID we are attempting to match
-			fmt.Printf("    Keyboard sysfsID: %s, Name: %s\n", k, v)
+			fmt.Printf("    Extracted keyboard sysfsID: %s, Name: %s\n", k, v)
 		}
 
 		// Compare the extracted sysfsID from HIDraw and the keyboard sysfsID
