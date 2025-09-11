@@ -103,7 +103,7 @@ func extractDeviceInfo(block []string) (string, string) {
 		if strings.HasPrefix(line, "S: Sysfs=") {
 			// Extract the sysfs path and sysfs ID
 			sysfsPath := strings.TrimSpace(strings.Split(line, "=")[1])
-			// Extract sysfsID from the path
+			// Extract sysfsID from the path (match last part after 0003: for consistency)
 			parts := strings.Split(sysfsPath, "/")
 			sysfsID = parts[len(parts)-2] // sysfs ID should be in the penultimate part of the path
 		}
@@ -125,15 +125,14 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 		fmt.Println("  HIDraw device:", hiddev) // Print each hidraw device path
 
 		// Resolve the symlink to get the real sysfs path
-		realpath, err := filepath.EvalSymlinks(hiddev)
+		realpath, err := os.Readlink(hiddev)
 		if err != nil {
 			fmt.Println("Error resolving symlink:", err)
 			continue
 		}
 
-		// Extract the sysfsID (this should be the penultimate part of the path)
-		sysfsIDParts := strings.Split(realpath, "/")
-		sysfsID := sysfsIDParts[len(sysfsIDParts)-2] // Adjust this based on actual path structure
+		// The sysfsID we want is the last part of the realpath, which should look like '0003:258A:002A.0001'
+		sysfsID := filepath.Base(realpath) // This should get the HID ID like '0003:258A:002A.0001'
 
 		// Debug: Show the sysfs ID and check the match with keyboards
 		fmt.Printf("  Checking HIDraw sysfsID: %s\n", sysfsID)
