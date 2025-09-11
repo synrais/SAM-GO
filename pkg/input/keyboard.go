@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 	"golang.org/x/sys/unix"
@@ -78,16 +79,18 @@ func anyKeyboardHandlerInBlock(block []string) bool {
 // extractDeviceInfo extracts device name and sysfs ID from a block of lines in /proc/bus/input/devices
 func extractDeviceInfo(block []string) (string, string) {
 	var name, sysfsID string
+	sysfsPattern := regexp.MustCompile(`\b[0-9a-fA-F]+:[0-9a-fA-F]+:[0-9a-fA-F]+(?:\.[0-9]+)?\b`)
+
 	for _, line := range block {
 		if strings.HasPrefix(line, "N: ") {
 			name = strings.TrimSpace(strings.Split(line, "=")[1])
 		}
 		if strings.HasPrefix(line, "S: Sysfs=") {
 			sysfsPath := strings.TrimSpace(strings.Split(line, "=")[1])
-			// Extract sysfsID from the path (match last part after 0003: for consistency)
-			parts := strings.Split(sysfsPath, "/")
-			if len(parts) > 0 {
-				sysfsID = parts[len(parts)-2] // sysfs ID should be in the penultimate part of the path
+			// Match the sysfsID using regex (find the pattern)
+			match := sysfsPattern.FindString(sysfsPath)
+			if match != "" {
+				sysfsID = match
 			}
 		}
 	}
