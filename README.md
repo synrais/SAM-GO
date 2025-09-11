@@ -20,7 +20,7 @@ SAM -list <flags>
 -----------
 
 -o <dir>         Output directory for gamelist files
-                 Default: "."
+                 Default: "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
 
 -s <systems>     List of systems to index (comma separated)
                  Default: "all"
