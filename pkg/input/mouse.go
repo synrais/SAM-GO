@@ -12,7 +12,6 @@ import (
 
 const (
 	reportSize   = 3
-	pollInterval = 10 * time.Millisecond
 )
 
 // MouseEvent is a decoded mouse packet
@@ -89,7 +88,7 @@ func StreamMouse() <-chan MouseEvent {
 			}
 			pollfds = append(pollfds, unix.PollFd{Fd: int32(inFd), Events: unix.POLLIN})
 
-			n, err := unix.Poll(pollfds, int(pollInterval.Milliseconds()))
+			n, err := unix.Poll(pollfds, -1)
 			if err != nil {
 				fmt.Println("[DEBUG] poll error:", err)
 				continue
