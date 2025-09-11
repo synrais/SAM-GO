@@ -80,8 +80,6 @@ func parseKeyboards() (map[string]string, error) {
 			name, sysfsID := extractDeviceInfo(block)
 			if sysfsID != "" {
 				devices[sysfsID] = name
-				// Log the detected device and sysfsID
-				fmt.Printf("Detected keyboard: %s with sysfsID: %s\n", name, sysfsID)
 			}
 		}
 	}
@@ -134,7 +132,7 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 		sysfsID := filepath.Base(realpath) // This should get the HID ID like '0003:258A:002A.0001'
 
 		// Debug: Show the sysfs ID extracted from HIDraw
-		fmt.Printf("  Extracted keys from ls -l /sys/class/hidraw/hidraw*/device: %s\n", sysfsID)
+		fmt.Printf("Extracted keys from ls -l /sys/class/hidraw/hidraw*/device: %s\n", sysfsID)
 
 		// Checking if keys were found
 		if sysfsID != "" {
@@ -146,7 +144,7 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 		// Now, we want to print all the keyboard sysfsIDs and names to debug
 		for k, v := range keyboards {
 			// Debug: Showing what we are trying to match against for each HIDraw device
-			fmt.Printf("    Extracted keys from cat /proc/bus/input/devices: %s → %s\n", k, v)
+			fmt.Printf("  Extracted keys from cat /proc/bus/input/devices: %s → %s\n", k, v)
 
 			// Checking if keys were found
 			if k != "" {
@@ -161,7 +159,7 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 				devnode := fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(realpath)))
 				matches = append(matches, fmt.Sprintf("%s → %s", devnode, v))
 				// Debug: Log the successful match
-				fmt.Printf("  Match found! %s → %s\n", devnode, v)
+				fmt.Printf("Match found! %s → %s\n", devnode, v)
 			}
 		}
 	}
