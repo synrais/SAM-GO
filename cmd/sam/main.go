@@ -10,6 +10,7 @@ import (
 	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/list"
 	"github.com/synrais/SAM-GO/pkg/run"
+	"github.com/synrais/SAM-GO/pkg/staticdetector"
 )
 
 func dumpConfig(cfg *config.UserConfig) {
@@ -45,7 +46,7 @@ func main() {
 	debug.SetMemoryLimit(128 * 1024 * 1024) // 128MB soft limit
 
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -mouse | -joystick | -keyboard")
+		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -mouse | -joystick | -keyboard | -static")
 		os.Exit(1)
 	}
 
@@ -80,6 +81,10 @@ func main() {
 		}
 	case "-keyboard":
 		for line := range input.StreamKeyboards() {
+			fmt.Println(line)
+		}
+	case "-static":
+		for line := range staticdetector.Stream() {
 			fmt.Println(line)
 		}
 	default:
