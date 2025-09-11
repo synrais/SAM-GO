@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -11,7 +12,7 @@ import (
 )
 
 const (
-	reportSize   = 3
+	reportSize = 3
 )
 
 // MouseEvent is a decoded mouse packet
@@ -20,6 +21,45 @@ type MouseEvent struct {
 	Device    string
 	Buttons   []string
 	DX, DY    int8
+}
+
+// direction converts x and y deltas into a human readable description such as
+// "up", "down-right", etc. A zero movement returns "none".
+func direction(dx, dy int8) string {
+	var dir string
+
+	if dy < 0 {
+		dir += "up"
+	} else if dy > 0 {
+		dir += "down"
+	}
+
+	if dx < 0 {
+		if dir != "" {
+			dir += "-"
+		}
+		dir += "left"
+	} else if dx > 0 {
+		if dir != "" {
+			dir += "-"
+		}
+		dir += "right"
+	}
+
+	if dir == "" {
+		dir = "none"
+	}
+
+	return dir
+}
+
+// String renders a human-friendly representation of the mouse event.
+func (e MouseEvent) String() string {
+	return fmt.Sprintf("[%d ms] %s: Buttons[%s] Move[%s]",
+		e.Timestamp,
+		e.Device,
+		strings.Join(e.Buttons, ","),
+		direction(e.DX, e.DY))
 }
 
 type MouseDevice struct {
