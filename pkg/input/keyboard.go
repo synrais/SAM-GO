@@ -115,15 +115,18 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 
 		// If the sysfsID is found in the keyboards map, add the match
 		if name, found := keyboards[sysfsID]; found {
-			devnode := fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(realpath)))
+			// Correct the devnode to reflect the correct HIDraw device
+			devnode := fmt.Sprintf("/dev/%s", filepath.Base(hiddev)) // Use hiddev directly for the path
 			matches = append(matches, fmt.Sprintf("%s → %s", devnode, name))
-			// Debug: Show sysfsID matching result
-			fmt.Printf("Match found! HID device: %s → SysfsID: %s → %s\n", devnode, sysfsID, name)
+
+			// Debugging: Show sysfsID matching result with the full path
+			fmt.Printf("Match found! HID device: %s → SysfsID: %s → \"%s\"\n", devnode, sysfsID, name)
 		}
 	}
 
 	return matches, nil
 }
+
 
 // KeyboardDevice represents a keyboard device, managing its file descriptor and events
 type KeyboardDevice struct {
