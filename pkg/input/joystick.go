@@ -7,7 +7,6 @@ import (
 	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -319,44 +318,48 @@ func StreamJoysticks() <-chan string {
 					continue
 				}
 				if dev.readEvents() {
-					// ---- Build button list in order ----
-					btnKeys := make([]int, 0, len(dev.btnmap))
-					for k := range dev.btnmap {
-						btnKeys = append(btnKeys, k)
-					}
-					sort.Ints(btnKeys)
-
+					// ---- Build button list ----
 					btnParts := []string{}
-					for _, k := range btnKeys {
-						name := dev.btnmap[k]
-						if name == "" {
-							name = fmt.Sprintf("Btn%d", k)
+					if len(dev.btnmap) > 0 {
+						for k, name := range dev.btnmap {
+							if name == "" {
+								name = fmt.Sprintf("Btn%d", k)
+							}
+							state := "R"
+							if v, ok := dev.Buttons[k]; ok && v != 0 {
+								state = "P"
+							}
+							btnParts = append(btnParts, fmt.Sprintf("%s=%s", name, state))
 						}
-						state := "R"
-						if v, ok := dev.Buttons[k]; ok && v != 0 {
-							state = "P"
+					} else {
+						for k, v := range dev.Buttons {
+							name := fmt.Sprintf("Btn%d", k)
+							state := "R"
+							if v != 0 {
+								state = "P"
+							}
+							btnParts = append(btnParts, fmt.Sprintf("%s=%s", name, state))
 						}
-						btnParts = append(btnParts, fmt.Sprintf("%s=%s", name, state))
 					}
 
-					// ---- Build axis list in order ----
-					axKeys := make([]int, 0, len(dev.axmap))
-					for k := range dev.axmap {
-						axKeys = append(axKeys, k)
-					}
-					sort.Ints(axKeys)
-
+					// ---- Build axis list ----
 					axParts := []string{}
-					for _, k := range axKeys {
-						name := dev.axmap[k]
-						if name == "" {
-							name = fmt.Sprintf("Axis%d", k)
+					if len(dev.axmap) > 0 {
+						for k, name := range dev.axmap {
+							if name == "" {
+								name = fmt.Sprintf("Axis%d", k)
+							}
+					} else {
+						for k, v := range dev.Axes {
+							name := fmt.Sprintf("Axis%d", k)
+							axParts = append(axParts, fmt.Sprintf("%s=%d", name, v))
+							}
+							axParts = append(axParts, fmt.Sprintf("%s=%d", name, val))
 						}
 						val := int16(0)
 						if v, ok := dev.Axes[k]; ok {
 							val = v
 						}
-						axParts = append(axParts, fmt.Sprintf("%s=%d", name, val))
 					}
 
 					// ---- Final line identical to Python ----
