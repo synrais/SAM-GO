@@ -86,7 +86,9 @@ func extractDeviceInfo(block []string) (string, string) {
 			sysfsPath := strings.TrimSpace(strings.Split(line, "=")[1])
 			// Extract sysfsID from the path (match last part after 0003: for consistency)
 			parts := strings.Split(sysfsPath, "/")
-			sysfsID = parts[len(parts)-2] // sysfs ID should be in the penultimate part of the path
+			if len(parts) > 0 {
+				sysfsID = parts[len(parts)-2] // sysfs ID should be in the penultimate part of the path
+			}
 		}
 	}
 	return name, sysfsID
