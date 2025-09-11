@@ -91,11 +91,11 @@ func loadSDLDB() []*mappingEntry {
 
 func chooseMapping(entries []*mappingEntry, guid string) map[string]string {
 	guid = strings.ToLower(guid)
-	if len(guid) >= 24 {
-		prefix := guid[:24]
+	if len(guid) >= 20 {
+		vidpid := guid[8:20]
 		for _, e := range entries {
 			eguid := strings.ToLower(e.guid)
-			if len(eguid) >= 24 && strings.HasPrefix(eguid, prefix) && e.platform == "Linux" {
+			if len(eguid) >= 20 && eguid[8:20] == vidpid && e.platform == "Linux" {
 				fmt.Printf("  -> SDL DB: Matched to '%s'\n", e.name)
 				return e.mapping
 			}
