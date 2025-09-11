@@ -109,10 +109,11 @@ func extractDeviceInfo(block []string) (string, string) {
 			name = strings.TrimSpace(strings.Split(line, "=")[1])
 		}
 		if strings.HasPrefix(line, "S: Sysfs=") {
-			// Extract only the last part of the sysfs path (the sysfsID)
+			// Extract the sysfs path and sysfs ID
 			sysfsPath := strings.TrimSpace(strings.Split(line, "=")[1])
+			// Extract sysfsID from the path
 			parts := strings.Split(sysfsPath, "/")
-			sysfsID = parts[len(parts)-2] // Get the last instance (0003:258A:002A.0001)
+			sysfsID = parts[len(parts)-2] // sysfs ID should be in the penultimate part of the path
 		}
 	}
 	return name, sysfsID
@@ -137,7 +138,7 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 			fmt.Println("Error resolving symlink:", err)
 			continue
 		}
-		// The sysfs ID should be the last part of the path
+		// The sysfs ID should be the last part of the path (e.g. 0003:258A:002A.0001)
 		sysfsID := filepath.Base(realpath)
 
 		// Debug: Show the sysfs ID and check the match with keyboards
