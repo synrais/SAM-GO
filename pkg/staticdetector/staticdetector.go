@@ -274,7 +274,7 @@ func Stream() <-chan StaticEvent {
 						firstFrame = true
 						alreadyBlacklisted = false
 						alreadyStaticlisted = false
-					} else if name == "SAM_Game.txt" {
+					} else if name == "Now_Playing.txt" {
 						game = readTmpTxt(gameNameFile)
 					}
 					offset += unix.SizeofInotifyEvent + int(ev.Len)
