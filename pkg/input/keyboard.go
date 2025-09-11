@@ -115,8 +115,10 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 
 		// If the sysfsID is found in the keyboards map, add the match
 		if name, found := keyboards[sysfsID]; found {
-			// Correct the devnode to reflect the correct HIDraw device
-			devnode := fmt.Sprintf("/dev/%s", filepath.Base(hiddev)) // Use hiddev directly for the path
+			// Construct devnode correctly: /dev/hidrawX
+			devnode := fmt.Sprintf("/dev/%s", filepath.Base(hiddev)) // This should give you /dev/hidrawX
+
+			// Add to matches list
 			matches = append(matches, fmt.Sprintf("%s → %s", devnode, name))
 
 			// Debugging: Show sysfsID matching result with the full path
@@ -126,7 +128,6 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 
 	return matches, nil
 }
-
 
 // KeyboardDevice represents a keyboard device, managing its file descriptor and events
 type KeyboardDevice struct {
