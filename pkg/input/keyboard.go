@@ -178,8 +178,6 @@ func StreamKeyboards() <-chan string {
 	go func() {
 		defer close(out)
 		devices := map[string]*KeyboardDevice{}
-		ticker := time.NewTicker(hotplugScanInterval)
-		defer ticker.Stop()
 
 		rescan := func() {
 			kbs := parseKeyboards()
@@ -203,18 +201,20 @@ func StreamKeyboards() <-chan string {
 		}
 
 		rescan()
+		inFd, err := unix.InotifyInit()
+		if err != nil {
+			fmt.Println("inotify init failed:", err)
+			return
+		}
+		defer unix.Close(inFd)
+
+		_, err = unix.InotifyAddWatch(inFd, "/dev", unix.IN_CREATE|unix.IN_DELETE)
+		if err != nil {
+			fmt.Println("inotify addwatch failed:", err)
+			return
+		}
+
 		for {
-			select {
-			case <-ticker.C:
-				rescan()
-			default:
-			}
-
-			if len(devices) == 0 {
-				time.Sleep(200 * time.Millisecond)
-				continue
-			}
-
 			var pollfds []unix.PollFd
 			fdmap := map[int]*KeyboardDevice{}
 			for _, dev := range devices {
@@ -223,12 +223,28 @@ func StreamKeyboards() <-chan string {
 					fdmap[dev.FD] = dev
 				}
 			}
-			n, err := unix.Poll(pollfds, 200)
+			pollfds = append(pollfds, unix.PollFd{Fd: int32(inFd), Events: unix.POLLIN})
+
+			n, err := unix.Poll(pollfds, -1)
 			if err != nil || n == 0 {
 				continue
 			}
+
 			for _, pfd := range pollfds {
-				if pfd.Revents&unix.POLLIN != 0 {
+				if pfd.Fd == int32(inFd) && pfd.Revents&unix.POLLIN != 0 {
+					buf := make([]byte, 4096)
+					n, _ := unix.Read(inFd, buf)
+					offset := 0
+					for offset < n {
+						raw := (*unix.InotifyEvent)(unsafe.Pointer(&buf[offset]))
+						nameBytes := buf[offset+unix.SizeofInotifyEvent : offset+unix.SizeofInotifyEvent+int(raw.Len)]
+						name := string(nameBytes[:len(nameBytes)-1])
+						if strings.HasPrefix(name, "hidraw") {
+							rescan()
+						}
+						offset += unix.SizeofInotifyEvent + int(raw.Len)
+					}
+				} else if pfd.Fd != int32(inFd) && pfd.Revents&unix.POLLIN != 0 {
 					buf := make([]byte, 8)
 					if _, err := unix.Read(int(pfd.Fd), buf); err == nil {
 						if s := decodeReport(buf); s != "" {
