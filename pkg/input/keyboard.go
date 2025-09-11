@@ -58,7 +58,6 @@ func parseKeyboards() (map[string]string, error) {
 	defer file.Close()
 
 	// Debug: Print the full content of /proc/bus/input/devices
-	fmt.Println("Full /proc/bus/input/devices content:")
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -80,6 +79,8 @@ func parseKeyboards() (map[string]string, error) {
 			name, sysfsID := extractDeviceInfo(block)
 			if sysfsID != "" {
 				devices[sysfsID] = name
+				// Debug: Print the sysfsID and device name
+				fmt.Printf("Extracted keys from cat /proc/bus/input/devices: sysfsID: %s → Name: %s\n", sysfsID, name)
 			}
 		}
 	}
@@ -144,7 +145,7 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 		// Now, we want to print all the keyboard sysfsIDs and names to debug
 		for k, v := range keyboards {
 			// Debug: Showing what we are trying to match against for each HIDraw device
-			fmt.Printf("  Extracted keys from cat /proc/bus/input/devices: %s → %s\n", k, v)
+			fmt.Printf("  Extracted keys from cat /proc/bus/input/devices: sysfsID: %s → Name: %s\n", k, v)
 
 			// Checking if keys were found
 			if k != "" {
@@ -153,7 +154,7 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 				fmt.Println("    No keys found")
 			}
 
-			// Compare the sysfsID
+			// Compare the sysfsID and check if they match
 			if sysfsID == k {
 				// Match found: add it to the matched list
 				devnode := fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(realpath)))
