@@ -344,7 +344,7 @@ func StreamJoysticks() <-chan string {
 					}
 
 					// ---- Final line identical to Python ----
-					line := fmt.Sprintf("[%d ms] %s: Buttons[%s] Axes[%s] ",
+					line := fmt.Sprintf("[%d ms] %s: Buttons[%s] Axes[%s]",
 						time.Now().UnixMilli(),
 						filepath.Base(dev.Path),
 						strings.Join(btnParts, ", "),
