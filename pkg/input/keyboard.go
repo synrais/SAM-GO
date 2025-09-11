@@ -99,37 +99,37 @@ func extractDeviceInfo(block []string) (string, string) {
 
 // matchHidraws matches the sysfs IDs from keyboards to HIDraw device numbers
 func matchHidraws(keyboards map[string]string) ([]string, error) {
-    matches := []string{}
-    files, err := filepath.Glob("/sys/class/hidraw/hidraw*/device")
-    if err != nil {
-        return nil, fmt.Errorf("Error in globbing hidraw devices: %v", err)
-    }
+	matches := []string{}
+	files, err := filepath.Glob("/sys/class/hidraw/hidraw*/device")
+	if err != nil {
+		return nil, fmt.Errorf("Error in globbing hidraw devices: %v", err)
+	}
 
-    for _, hiddev := range files {
-        // Resolve the symlink to get the actual device path
-        realpath, err := os.Readlink(hiddev)
-        if err != nil {
-            fmt.Println("Error resolving symlink:", err)
-            continue
-        }
+	for _, hiddev := range files {
+		// Resolve the symlink to get the actual device path
+		realpath, err := os.Readlink(hiddev)
+		if err != nil {
+			fmt.Println("Error resolving symlink:", err)
+			continue
+		}
 
-        // Extract the sysfs ID from the realpath
-        sysfsID := filepath.Base(realpath)
+		// Extract the sysfs ID from the realpath
+		sysfsID := filepath.Base(realpath)
 
-        // Match sysfsID with keyboard entries
-        if name, found := keyboards[sysfsID]; found {
-            // Construct the device node path
-            devnode := fmt.Sprintf("/dev/%s", filepath.Base(hiddev))
+		// Match sysfsID with keyboard entries
+		if name, found := keyboards[sysfsID]; found {
+			// Construct the correct device node path: /dev/hidrawX
+			devnode := fmt.Sprintf("/dev/%s", filepath.Base(hiddev)) // Same logic as Python's os.path.basename(os.path.dirname(hiddev))
 
-            // Add to matches list
-            matches = append(matches, fmt.Sprintf("%s → %s", devnode, name))
+			// Add to matches list
+			matches = append(matches, fmt.Sprintf("%s → %s", devnode, name))
 
-            // Debugging: Show sysfsID matching result with hidraw number
-            fmt.Printf("Match found! HID device: %s → SysfsID: %s → \"%s\"\n", devnode, sysfsID, name)
-        }
-    }
+			// Debugging: Show sysfsID matching result with hidraw number
+			fmt.Printf("Match found! HID device: %s → SysfsID: %s → \"%s\"\n", devnode, sysfsID, name)
+		}
+	}
 
-    return matches, nil
+	return matches, nil
 }
 
 // KeyboardDevice represents a keyboard device, managing its file descriptor and events
