@@ -349,16 +349,16 @@ func StreamJoysticks() <-chan string {
 							if name == "" {
 								name = fmt.Sprintf("Axis%d", k)
 							}
+							val := int16(0)
+							if v, ok := dev.Axes[k]; ok {
+								val = v
+							}
+							axParts = append(axParts, fmt.Sprintf("%s=%d", name, val))
+						}
 					} else {
 						for k, v := range dev.Axes {
 							name := fmt.Sprintf("Axis%d", k)
 							axParts = append(axParts, fmt.Sprintf("%s=%d", name, v))
-							}
-							axParts = append(axParts, fmt.Sprintf("%s=%d", name, val))
-						}
-						val := int16(0)
-						if v, ok := dev.Axes[k]; ok {
-							val = v
 						}
 					}
 
