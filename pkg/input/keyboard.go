@@ -138,6 +138,7 @@ func NewKeyboardDevice(devnode, name string) (*KeyboardDevice, error) {
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("[+] Opened device: %s → %s\n", devnode, name) // Debugging device opening
 	return &KeyboardDevice{
 		devnode: devnode,
 		name:    name,
@@ -161,6 +162,8 @@ func (kd *KeyboardDevice) ReadEvent() string {
 		fmt.Printf("Failed to read event from %s → %v\n", kd.devnode, err) // Debugging failed read
 		return ""
 	}
+	// Debugging: Show raw data being read
+	fmt.Printf("Raw event data: %v\n", report)
 	return decodeReport(report)
 }
 
