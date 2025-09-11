@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"runtime/debug"
+	"strings"
 
 	"github.com/synrais/SAM-GO/pkg/attract"
 	"github.com/synrais/SAM-GO/pkg/config"
@@ -12,6 +15,8 @@ import (
 	"github.com/synrais/SAM-GO/pkg/run"
 	"github.com/synrais/SAM-GO/pkg/staticdetector"
 )
+
+const socketPath = "/tmp/sam.sock"
 
 func dumpConfig(cfg *config.UserConfig) {
 	fmt.Printf("INI Debug ->\n")
@@ -40,34 +45,12 @@ func dumpConfig(cfg *config.UserConfig) {
 	}
 }
 
-func main() {
-	// Restrict the Go runtime heap to reduce the overall virtual memory footprint.
-	// This keeps the process from reserving excessively large address space by default.
-	debug.SetMemoryLimit(128 * 1024 * 1024) // 128MB soft limit
-
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -mouse | -joystick | -keyboard | -static")
-		os.Exit(1)
-	}
-
-	cmd := os.Args[1]
-	cfg, err := config.LoadUserConfig("SAM", &config.UserConfig{})
-	if err != nil {
-		fmt.Println("Config load error:", err)
-	} else {
-		fmt.Println("Loaded config from:", cfg.IniPath)
-		dumpConfig(cfg)
-	}
-
-	args := os.Args[2:]
-
-	switch cmd {
+func handleCommand(cmd string, args []string) {	switch cmd {
 	case "-list":
 		list.Run(args)
 	case "-run":
 		if err := run.Run(args); err != nil {
 			fmt.Fprintln(os.Stderr, "Run failed:", err)
-			os.Exit(1)
 		}
 	case "-attract":
 		attract.Run(args)
@@ -89,6 +72,88 @@ func main() {
 		}
 	default:
 		fmt.Printf("Unknown tool: %s\n", cmd)
+			}
+}
+
+func commandProcessor(ch <-chan []string) {
+	for args := range ch {
+		if len(args) == 0 {
+			continue
+		}
+		handleCommand(args[0], args[1:])
+	}
+}
+
+func handleConnection(conn net.Conn, ch chan<- []string) {
+	defer conn.Close()
+	data, err := io.ReadAll(conn)
+	if err != nil {
+		return
+	}
+	if len(data) == 0 {
+		return
+	}
+	ch <- strings.Split(string(data), "\x00")
+}
+
+func startServer(ch chan<- []string) {
+	os.Remove(socketPath)
+	ln, err := net.Listen("unix", socketPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "listen error:", err)
 		os.Exit(1)
 	}
+
+	go func() {
+		defer ln.Close()
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				continue
+			}
+			go handleConnection(conn, ch)
+		}
+	}()
+}
+
+func sendToRunningInstance(args []string) bool {
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	fmt.Fprint(conn, strings.Join(args, "\x00"))
+	return true
+}
+
+func main() {
+	// Restrict the Go runtime heap to reduce the overall virtual memory footprint.
+	// This keeps the process from reserving excessively large address space by default.
+	debug.SetMemoryLimit(128 * 1024 * 1024) // 128MB soft limit
+
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -mouse | -joystick | -keyboard | -static")
+		os.Exit(1)
+	}
+
+	if sendToRunningInstance(os.Args[1:]) {
+		return
+	}
+
+	cfg, err := config.LoadUserConfig("SAM", &config.UserConfig{})
+	if err != nil {
+		fmt.Println("Config load error:", err)
+	} else {
+		fmt.Println("Loaded config from:", cfg.IniPath)
+		dumpConfig(cfg)
+	}
+
+	commandChan := make(chan []string)
+	startServer(commandChan)
+	defer os.Remove(socketPath)
+
+	go commandProcessor(commandChan)
+	commandChan <- os.Args[1:]
+
+	select {}
 }
