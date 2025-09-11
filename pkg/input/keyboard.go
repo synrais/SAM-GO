@@ -62,8 +62,14 @@ func parseKeyboards() (map[string]string, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 
+		// Debug: Print every line to ensure we're scanning the correct lines
+		fmt.Println("Line read: ", line)
+
 		// Look for lines that contain 'Handlers=kbd'
 		if strings.Contains(line, "Handlers=") && strings.Contains(line, "kbd") {
+			// Debug: Print when we find a line containing 'Handlers=kbd'
+			fmt.Println("Found keyboard handler line: ", line)
+
 			// Collect the block of lines for each device
 			block := []string{line}
 			for scanner.Scan() {
@@ -74,12 +80,18 @@ func parseKeyboards() (map[string]string, error) {
 				block = append(block, line)
 			}
 
+			// Debug: Print the entire block to check what we're processing
+			fmt.Println("Collected block for keyboard device:", block)
+
 			// Extract device info from the block
 			name, sysfsID := extractDeviceInfo(block)
 			if sysfsID != "" {
 				devices[sysfsID] = name
 				// Debug: Print the sysfsID and device name
 				fmt.Printf("Extracted keys from cat /proc/bus/input/devices: sysfsID: %s → Name: %s\n", sysfsID, name)
+			} else {
+				// Debug: If sysfsID is empty, print a message
+				fmt.Println("No sysfsID found for this device.")
 			}
 		}
 	}
@@ -90,6 +102,7 @@ func parseKeyboards() (map[string]string, error) {
 
 	return devices, nil
 }
+
 
 // extractDeviceInfo extracts device name and sysfs ID from a block of lines in /proc/bus/input/devices
 func extractDeviceInfo(block []string) (string, string) {
