@@ -55,7 +55,7 @@ func direction(dx, dy int8) string {
 
 // String renders a human-friendly representation of the mouse event.
 func (e MouseEvent) String() string {
-	return fmt.Sprintf("[%d ms] %s: Buttons[%s] Move[%s]",
+	return fmt.Sprintf("[%d ms] Buttons[%s] Move[%s]",
 		e.Timestamp,
 		e.Device,
 		strings.Join(e.Buttons, ","),
