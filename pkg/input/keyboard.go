@@ -106,29 +106,26 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
     }
 
     for _, hiddev := range files {
-        // Directly get the hidraw number from the file name, which will give us /dev/hidrawX
-        hidrawNumber := filepath.Base(hiddev) // This will give us "hidraw0", "hidraw1", etc.
-
-        // The sysfsID we will get from the real path should match our device ID
+        // Resolve the symlink to get the actual device path
         realpath, err := os.Readlink(hiddev)
         if err != nil {
             fmt.Println("Error resolving symlink:", err)
             continue
         }
 
-        // Get sysfs ID, which is the last segment of the realpath
+        // Extract the sysfs ID from the realpath
         sysfsID := filepath.Base(realpath)
 
-        // If the sysfsID is found in the keyboards map, add the match
+        // Match sysfsID with keyboard entries
         if name, found := keyboards[sysfsID]; found {
-            // Using the hidraw number directly, no need for symlink resolution
-            devnode := fmt.Sprintf("/dev/%s", hidrawNumber)
+            // Construct the device node path
+            devnode := fmt.Sprintf("/dev/%s", filepath.Base(hiddev))
 
             // Add to matches list
             matches = append(matches, fmt.Sprintf("%s → %s", devnode, name))
 
             // Debugging: Show sysfsID matching result with hidraw number
-            fmt.Printf("Match found! HID device: /dev/%s → SysfsID: %s → \"%s\"\n", hidrawNumber, sysfsID, name)
+            fmt.Printf("Match found! HID device: %s → SysfsID: %s → \"%s\"\n", devnode, sysfsID, name)
         }
     }
 
