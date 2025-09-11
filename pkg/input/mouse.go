@@ -29,9 +29,9 @@ func direction(dx, dy int8) string {
 	var dir string
 
 	if dy < 0 {
-		dir += "up"
-	} else if dy > 0 {
 		dir += "down"
+	} else if dy > 0 {
+		dir += "up"
 	}
 
 	if dx < 0 {
