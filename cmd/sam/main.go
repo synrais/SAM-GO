@@ -68,7 +68,9 @@ func splitCommands(args []string) [][]string {
 func handleCommand(cmd string, args []string) {
 	switch cmd {
 	case "-list":
-		list.Run(args)
+		if err := list.Run(args); err != nil {
+			fmt.Fprintln(os.Stderr, "List failed:", err)
+		}
 	case "-run":
 		if err := run.Run(args); err != nil {
 			fmt.Fprintln(os.Stderr, "Run failed:", err)
