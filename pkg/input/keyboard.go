@@ -61,7 +61,6 @@ func parseKeyboards() (map[string]string, error) {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		fmt.Println(line) // Print each line to debug
 
 		// Look for lines that contain 'Handlers=kbd'
 		if strings.Contains(line, "Handlers=") && strings.Contains(line, "kbd") {
@@ -160,7 +159,7 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 				devnode := fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(realpath)))
 				matches = append(matches, fmt.Sprintf("%s → %s", devnode, v))
 				// Debug: Log the successful match
-				fmt.Printf("Match found! %s → %s\n", devnode, v)
+				fmt.Printf("Match found! /dev/%s → %s\n", filepath.Base(filepath.Dir(realpath)), v)
 			}
 		}
 	}
