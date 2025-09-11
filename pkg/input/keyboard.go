@@ -134,7 +134,7 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 		// The sysfsID we want is the last part of the realpath, which should look like '0003:258A:002A.0001'
 		sysfsID := filepath.Base(realpath) // This should get the HID ID like '0003:258A:002A.0001'
 
-		// Debug: Show the sysfs ID extracted from HIDraw
+		// Clean debug print: Show the sysfsID extracted from HIDraw
 		fmt.Printf("  Extracted HIDraw sysfsID from %s: %s\n", hiddev, sysfsID)
 
 		// Now, we want to print all the keyboard sysfsIDs and names to debug
@@ -143,16 +143,21 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 			fmt.Printf("    Extracted keyboard sysfsID: %s, Name: %s\n", k, v)
 		}
 
-		// Compare the extracted sysfsID from HIDraw and the keyboard sysfsID
-		if name, found := keyboards[sysfsID]; found {
-			// Match found: add it to the matched list
-			devnode := fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(realpath)))
-			matches = append(matches, fmt.Sprintf("%s → %s", devnode, name))
-			// Debug: Log the successful match
-			fmt.Printf("  Match found! %s → %s\n", devnode, name)
-		} else {
-			// Debug: No match found for this sysfs ID
-			fmt.Printf("  No match for sysfsID: %s\n", sysfsID)
+		// Compare the extracted sysfsID from HIDraw and the keyboard sysfsID (trimmed of spaces)
+		sysfsIDClean := strings.TrimSpace(sysfsID)
+		for k, v := range keyboards {
+			keyboardSysfsIDClean := strings.TrimSpace(k)
+
+			// Debug: Show cleaned sysfsIDs and compare them
+			fmt.Printf("    Comparing HIDraw sysfsID: '%s' with Keyboard sysfsID: '%s'\n", sysfsIDClean, keyboardSysfsIDClean)
+
+			if sysfsIDClean == keyboardSysfsIDClean {
+				// Match found: add it to the matched list
+				devnode := fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(realpath)))
+				matches = append(matches, fmt.Sprintf("%s → %s", devnode, v))
+				// Debug: Log the successful match
+				fmt.Printf("  Match found! %s → %s\n", devnode, v)
+			}
 		}
 	}
 
