@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unsafe"
 
 	"github.com/synrais/SAM-GO/pkg/assets"
 	"golang.org/x/sys/unix"
