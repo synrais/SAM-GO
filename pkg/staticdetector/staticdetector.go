@@ -24,7 +24,7 @@ const (
 	activityFile = "/tmp/.SAM_tmp/SAM_Screen_Activity"
 	logFile      = "/tmp/.SAM_tmp/SAM_Screen_Activity.log"
 	coreNameFile = "/tmp/CORENAME"
-	gameNameFile = "/tmp/SAM_Game.txt"
+	gameNameFile = "/tmp/Now_Playing.txt"
 	logMaxLines  = 50000
 
 	listDir         = "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
