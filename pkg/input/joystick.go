@@ -3,15 +3,15 @@ package input
 import (
 	"bufio"
 	"fmt"
-	"strings"
-	"time"
-	"golang.org/x/sys/unix"
 	"github.com/synrais/SAM-GO/pkg/assets"
+	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
-	"strconv"
-	"unsafe"
 	"sort"
+	"strconv"
+	"strings"
+	"time"
+	"unsafe"
 )
 
 const (
