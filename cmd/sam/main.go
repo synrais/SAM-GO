@@ -45,7 +45,28 @@ func dumpConfig(cfg *config.UserConfig) {
 	}
 }
 
-func handleCommand(cmd string, args []string) {	switch cmd {
+// splitCommands splits args into multiple command slices separated by "--".
+func splitCommands(args []string) [][]string {
+	var cmds [][]string
+	current := []string{}
+	for _, a := range args {
+		if a == "--" {
+			if len(current) > 0 {
+				cmds = append(cmds, current)
+				current = []string{}
+			}
+			continue
+		}
+		current = append(current, a)
+	}
+	if len(current) > 0 {
+		cmds = append(cmds, current)
+	}
+	return cmds
+}
+
+func handleCommand(cmd string, args []string) {
+	switch cmd {
 	case "-list":
 		list.Run(args)
 	case "-run":
@@ -72,7 +93,7 @@ func handleCommand(cmd string, args []string) {	switch cmd {
 		}
 	default:
 		fmt.Printf("Unknown tool: %s\n", cmd)
-			}
+	}
 }
 
 func commandProcessor(ch <-chan []string) {
@@ -80,20 +101,23 @@ func commandProcessor(ch <-chan []string) {
 		if len(args) == 0 {
 			continue
 		}
-		handleCommand(args[0], args[1:])
+		go handleCommand(args[0], args[1:])
 	}
 }
 
 func handleConnection(conn net.Conn, ch chan<- []string) {
 	defer conn.Close()
 	data, err := io.ReadAll(conn)
-	if err != nil {
+	if err != nil || len(data) == 0 {
 		return
 	}
-	if len(data) == 0 {
-		return
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		ch <- strings.Split(line, "\x00")
 	}
-	ch <- strings.Split(string(data), "\x00")
 }
 
 func startServer(ch chan<- []string) {
@@ -116,13 +140,17 @@ func startServer(ch chan<- []string) {
 	}()
 }
 
-func sendToRunningInstance(args []string) bool {
+func sendToRunningInstance(cmds [][]string) bool {
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
 		return false
 	}
 	defer conn.Close()
-	fmt.Fprint(conn, strings.Join(args, "\x00"))
+	parts := make([]string, 0, len(cmds))
+	for _, args := range cmds {
+		parts = append(parts, strings.Join(args, "\x00"))
+	}
+	fmt.Fprint(conn, strings.Join(parts, "\n"))
 	return true
 }
 
@@ -132,11 +160,13 @@ func main() {
 	debug.SetMemoryLimit(128 * 1024 * 1024) // 128MB soft limit
 
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -mouse | -joystick | -keyboard | -static")
+		fmt.Println("Usage: SAM <command> [flags] [-- <command> [flags] ...]")
 		os.Exit(1)
 	}
 
-	if sendToRunningInstance(os.Args[1:]) {
+	cmds := splitCommands(os.Args[1:])
+
+	if sendToRunningInstance(cmds) {
 		return
 	}
 
@@ -153,7 +183,9 @@ func main() {
 	defer os.Remove(socketPath)
 
 	go commandProcessor(commandChan)
-	commandChan <- os.Args[1:]
+	for _, cmd := range cmds {
+		commandChan <- cmd
+	}
 
 	select {}
 }
