@@ -191,6 +191,42 @@ func (kd *KeyboardDevice) ReadEvent() string {
 	return decodeReport(report)
 }
 
+// decodeReport decodes a keyboard event into human-readable output
+func decodeReport(report []byte) string {
+	// Handle decoding (similar to Python's decodeReport)
+	if len(report) != 8 {
+		return ""
+	}
+
+	if report[0] == 0x02 {
+		return ""
+	}
+	if report[0] != 0 && allZero(report[1:]) {
+		return ""
+	}
+
+	var output []string
+	for _, code := range report[2:8] {
+		if code == 0 {
+			continue
+		}
+		if keys, ok := SCAN_CODES[int(code)]; ok {
+			output = append(output, keys[0]) // Using lowercase key, can extend to shift/uppercase logic
+		}
+	}
+	return strings.Join(output, "")
+}
+
+// allZero checks if all bytes in a slice are zero
+func allZero(slice []byte) bool {
+	for _, b := range slice {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // monitorKeyboards monitors and processes keyboard events, matching devices and parsing reports
 func monitorKeyboards(out chan<- string) {
 	devices := make(map[string]*KeyboardDevice)
@@ -259,18 +295,4 @@ func StreamKeyboards() <-chan string {
 	out := make(chan string, 100) // Buffered channel
 	go monitorKeyboards(out)
 	return out
-}
-
-func main() {
-	// Initialize the scan codes
-	if err := loadScanCodes(); err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	// Start monitoring keyboards
-	out := StreamKeyboards()
-	for event := range out {
-		fmt.Println(event)
-	}
 }
