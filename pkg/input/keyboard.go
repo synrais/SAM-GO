@@ -1,4 +1,3 @@
-
 package input
 
 import (
@@ -250,7 +249,7 @@ func StreamKeyboards() <-chan string {
 					if _, err := unix.Read(int(pfd.Fd), buf); err == nil {
 						if s := decodeReport(buf); s != "" {
 							dev := fdmap[int(pfd.Fd)]
-							line := fmt.Sprintf("[%d ms] %s: %s", time.Now().UnixMilli(), dev.Path, s)
+							line := fmt.Sprintf("[%d ms] %s: %s", time.Now().UnixMilli(), filepath.Base(dev.Path), s)
 							out <- line
 						}
 					}
