@@ -22,12 +22,6 @@ var SCAN_CODES = map[int][]string{
 	// Add more codes here...
 }
 
-// loadScanCodes is no longer needed because SCAN_CODES is directly initialized
-func loadScanCodes() error {
-	// SCAN_CODES is already populated, no need for a file load
-	return nil
-}
-
 // parseKeyboards parses the /proc/bus/input/devices file and returns a map of keyboards (sysfsID -> name)
 func parseKeyboards() (map[string]string, error) {
 	devices := make(map[string]string)
