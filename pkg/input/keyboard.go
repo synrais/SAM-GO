@@ -11,7 +11,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const HOTPLUG_SCAN_INTERVAL = 2 * time.Second // seconds between rescans
+// HOTPLUG_SCAN_INTERVAL determines the delay between rescans
+const HOTPLUG_SCAN_INTERVAL = 2 * time.Second
 
 var SCAN_CODES = map[int][]string{}
 
@@ -185,6 +186,7 @@ func (kd *KeyboardDevice) ReadEvent() string {
 	report := make([]byte, 8) // Read 8-byte report
 	n, err := unix.Read(kd.fd, report)
 	if err != nil || n < 8 {
+		fmt.Printf("Failed to read event from %s → %v\n", kd.devnode, err)  // Debugging failed read
 		return ""
 	}
 	return decodeReport(report)
@@ -192,8 +194,8 @@ func (kd *KeyboardDevice) ReadEvent() string {
 
 // decodeReport decodes a keyboard event into human-readable output
 func decodeReport(report []byte) string {
-	// Handle decoding (similar to Python's decodeReport)
 	if len(report) != 8 {
+		fmt.Println("Invalid report length")  // Debugging invalid report length
 		return ""
 	}
 
@@ -204,16 +206,22 @@ func decodeReport(report []byte) string {
 		return ""
 	}
 
-	var output []string
-	for _, code := range report[2:8] {
+	keycodes := report[2:8]
+	fmt.Printf("Decoded report: %v\n", keycodes)  // Debugging the decoded keycodes
+	output := []string{}
+	for _, code := range keycodes {
 		if code == 0 {
 			continue
 		}
 		if keys, ok := SCAN_CODES[int(code)]; ok {
-			output = append(output, keys[0]) // Using lowercase key, can extend to shift/uppercase logic
+			fmt.Printf("Key found: %s\n", keys[0])  // Debugging individual key matches
+			output = append(output, keys[0])
 		}
 	}
-	return strings.Join(output, "")
+	if len(output) > 0 {
+		return strings.Join(output, "")
+	}
+	return ""
 }
 
 // allZero checks if all bytes in a slice are zero
@@ -271,6 +279,7 @@ func monitorKeyboards(out chan<- string) {
 		for _, dev := range devices {
 			output := dev.ReadEvent()
 			if output != "" {
+				fmt.Printf("Key output: %s\n", output)  // Debugging output
 				out <- output // Send decoded event to channel
 			}
 		}
@@ -294,4 +303,12 @@ func StreamKeyboards() <-chan string {
 	out := make(chan string, 100) // Buffered channel
 	go monitorKeyboards(out)
 	return out
+}
+
+// main function to run the monitor
+func main() {
+	out := StreamKeyboards()
+	for event := range out {
+		fmt.Println("Received event:", event)  // Print the received event
+	}
 }
