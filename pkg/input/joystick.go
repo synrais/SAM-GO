@@ -96,7 +96,6 @@ func chooseMapping(entries []*mappingEntry, guid string) map[string]string {
 		if eguid == guid && e.platform == "Linux" {
 			fmt.Printf("  -> SDL DB: Matched to '%s'\n", e.name)
 			return e.mapping
-			}
 		}
 	}
 	fmt.Printf("  -> No SDL match for GUID: %s\n", guid)
