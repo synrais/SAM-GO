@@ -1,5 +1,20 @@
 # SAM-GO
 SAM ported to GO
+
+## Running multiple commands
+
+SAM can execute several commands in parallel. Separate command groups with
+`--` and every group will run in its own goroutine:
+
+```
+SAM -list -s NES -- -run SuperMario -- -attract
+```
+
+If an instance is already running, the commands are forwarded to it through the
+UNIX socket at `/tmp/sam.sock`. The socket also accepts multiple commands in a
+single request when each line contains a command with its arguments separated by
+NUL characters (`\x00`).
+
 -----------
 SAM -list <flags>
 -----------
