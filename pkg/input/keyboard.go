@@ -122,8 +122,6 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 	// Debug: Print all HIDraw devices found in /sys/class/hidraw/
 	fmt.Println("HIDraw devices in /sys/class/hidraw/:")
 	for _, hiddev := range files {
-		fmt.Println("  HIDraw device:", hiddev) // Print each hidraw device path
-
 		// Resolve the symlink to get the real sysfs path
 		realpath, err := os.Readlink(hiddev)
 		if err != nil {
