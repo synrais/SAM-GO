@@ -131,7 +131,7 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 			continue
 		}
 
-		// The sysfsID we want is the last part of the realpath, which should look like '0003:258A:002A.0001'
+		// Extract the sysfsID from the last part of the realpath
 		sysfsID := filepath.Base(realpath) // This should get the HID ID like '0003:258A:002A.0001'
 
 		// Debug: Show the sysfs ID and check the match with keyboards
