@@ -1,1 +1,10 @@
 rm -rf ~/SAM-GO && git clone https://github.com/synrais/SAM-GO.git ~/SAM-GO && cd ~/SAM-GO && CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -ldflags "-s -w" -o /tmp/SAM ./cmd/sam/main.go && scp /tmp/SAM root@192.168.1.104:/media/fat/Scripts/.MiSTer_SAM/
+
+
+rm -rf ~/SAM-GO && \
+git clone https://github.com/synrais/SAM-GO.git ~/SAM-GO && \
+cd ~/SAM-GO && \
+go mod tidy -v && \
+CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 \
+go build -trimpath -ldflags "-s -w" -o /tmp/SAM ./cmd/sam/main.go && \
+scp /tmp/SAM root@192.168.1.104:/media/fat/Scripts/.MiSTer_SAM/
