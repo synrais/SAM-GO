@@ -31,7 +31,7 @@ func loadScanCodes() error {
 	}
 	defer file.Close()
 
-	// Parse the scan codes from the file (you may need to adjust this part based on your format)
+	// Parse the scan codes from the file
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -66,9 +66,6 @@ func parseKeyboards() (map[string]string, error) {
 
 		// Look for lines that contain 'Handlers=kbd'
 		if strings.Contains(line, "Handlers=") && strings.Contains(line, "kbd") {
-			// Log the handlers line
-			fmt.Println("Found keyboard handler:", line)
-
 			// Collect the block of lines for each device
 			block := []string{line}
 			for scanner.Scan() {
@@ -94,11 +91,6 @@ func parseKeyboards() (map[string]string, error) {
 	}
 
 	return devices, nil
-}
-
-// contains checks if a substring is present in a string
-func contains(str, substr string) bool {
-	return strings.Contains(str, substr)
 }
 
 // extractDeviceInfo extracts device name and sysfs ID from a block of lines in /proc/bus/input/devices
@@ -138,8 +130,10 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 			fmt.Println("Error resolving symlink:", err)
 			continue
 		}
-		// The sysfs ID should be the last part of the path (e.g. 0003:258A:002A.0001)
-		sysfsID := filepath.Base(realpath)
+
+		// Extract the sysfsID (this should be the penultimate part of the path)
+		sysfsIDParts := strings.Split(realpath, "/")
+		sysfsID := sysfsIDParts[len(sysfsIDParts)-2] // Adjust this based on actual path structure
 
 		// Debug: Show the sysfs ID and check the match with keyboards
 		fmt.Printf("  Checking HIDraw sysfsID: %s\n", sysfsID)
