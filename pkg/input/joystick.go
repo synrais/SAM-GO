@@ -33,12 +33,12 @@ func le16(x int) int {
 	return ((x & 0xFF) << 8) | ((x >> 8) & 0xFF)
 }
 
-func makeGUID(vid, pid, version int) string {
+func makeGUID(bus, vid, pid, version int) string {
 	if vid == 0 || pid == 0 {
 		return ""
 	}
-	return fmt.Sprintf("03000000%04x0000%04x0000%04x0000",
-		le16(vid), le16(pid), le16(version))
+	return fmt.Sprintf("%02x000000%04x0000%04x0000%04x0000",
+		bus&0xFF, le16(vid), le16(pid), le16(version))
 }
 
 type mappingEntry struct {
@@ -133,7 +133,7 @@ type JoystickDevice struct {
 	axmap   map[int]string
 }
 
-func getJSMetadata(path string) (string, int, int, int) {
+func getJSMetadata(path string) (string, int, int, int, int) {
 	base := filepath.Base(path)
 	sysdir := filepath.Join("/sys/class/input", base, "device")
 	readHex := func(fname string) int {
@@ -146,10 +146,11 @@ func getJSMetadata(path string) (string, int, int, int) {
 	}
 	name := stringMust(os.ReadFile(filepath.Join(sysdir, "name")))
 
+	bus := readHex("id/bustype")
 	vid := readHex("id/vendor")
 	pid := readHex("id/product")
 	ver := readHex("id/version")
-	return name, vid, pid, ver
+	return name, bus, vid, pid, ver
 }
 
 func stringMust(b []byte, _ error) string {
@@ -160,8 +161,8 @@ func stringMust(b []byte, _ error) string {
 }
 
 func openJoystickDevice(path string, sdlmap []*mappingEntry) (*JoystickDevice, error) {
-	name, vid, pid, ver := getJSMetadata(path)
-	guid := makeGUID(vid, pid, ver)
+	name, bus, vid, pid, ver := getJSMetadata(path)
+	guid := makeGUID(bus, vid, pid, ver)
 	mapping := map[string]string{}
 	if guid != "" {
 		mapping = chooseMapping(sdlmap, guid)
