@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 	"golang.org/x/sys/unix"
-	"syscall"
 )
 
 const HOTPLUG_SCAN_INTERVAL = 2 * time.Second // seconds between rescans
