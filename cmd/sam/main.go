@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"github.com/synrais/SAM-GO/pkg/attract"
 	"github.com/synrais/SAM-GO/pkg/config"
@@ -39,6 +40,10 @@ func dumpConfig(cfg *config.UserConfig) {
 }
 
 func main() {
+	// Restrict the Go runtime heap to reduce the overall virtual memory footprint.
+	// This keeps the process from reserving excessively large address space by default.
+	debug.SetMemoryLimit(128 * 1024 * 1024) // 128MB soft limit
+
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: SAM -list [flags] | -run [flags] | -attract [flags] | -mouse | -joystick | -keyboard")
 		os.Exit(1)
