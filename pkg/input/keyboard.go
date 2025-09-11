@@ -105,6 +105,7 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 		return nil, fmt.Errorf("Error in globbing hidraw devices: %v", err)
 	}
 
+	// Iterate through each hidraw device in the directory
 	for _, hiddev := range files {
 		// Resolve the symlink to get the actual device path
 		realpath, err := os.Readlink(hiddev)
@@ -119,7 +120,7 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 		// Match sysfsID with keyboard entries
 		if name, found := keyboards[sysfsID]; found {
 			// Construct the correct device node path: /dev/hidrawX
-			devnode := fmt.Sprintf("/dev/%s", filepath.Base(hiddev)) // Same logic as Python's os.path.basename(os.path.dirname(hiddev))
+			devnode := fmt.Sprintf("/dev/%s", filepath.Base(hiddev))
 
 			// Add to matches list
 			matches = append(matches, fmt.Sprintf("%s → %s", devnode, name))
