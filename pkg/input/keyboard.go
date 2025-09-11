@@ -1,20 +1,20 @@
-package main
+package input
 
 import (
 	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 	"golang.org/x/sys/unix"
-	"regexp"
 	"syscall"
 )
 
 const HOTPLUG_SCAN_INTERVAL = 2 * time.Second // seconds between rescans
 
-var SCAN_CODES = map[int][]string{} // The scan codes would be loaded in a similar way to the Python script
+var SCAN_CODES = map[int][]string{}
 
 // --- Load SCAN_CODES from external file (keyboardscancodes.txt) ---
 func loadScanCodes() error {
@@ -54,7 +54,6 @@ func loadScanCodes() error {
 func parseKeyboards() (map[string]string, error) {
 	devices := make(map[string]string)
 	block := []string{}
-
 	file, err := os.Open("/proc/bus/input/devices")
 	if err != nil {
 		return nil, fmt.Errorf("Error opening /proc/bus/input/devices: %v", err)
@@ -72,6 +71,8 @@ func parseKeyboards() (map[string]string, error) {
 				name, sysfsID := extractDeviceInfo(block)
 				if sysfsID != "" {
 					devices[sysfsID] = name
+					// Debug: Show sysfsID extraction result
+					fmt.Printf("Extracted keys from cat /proc/bus/input/devices: sysfsID: %s → Name: %s\n", sysfsID, name)
 				}
 			}
 			block = []string{} // Reset for the next device
@@ -85,6 +86,8 @@ func parseKeyboards() (map[string]string, error) {
 		name, sysfsID := extractDeviceInfo(block)
 		if sysfsID != "" {
 			devices[sysfsID] = name
+			// Debug: Show sysfsID extraction result
+			fmt.Printf("Extracted keys from cat /proc/bus/input/devices: sysfsID: %s → Name: %s\n", sysfsID, name)
 		}
 	}
 
@@ -112,7 +115,7 @@ func extractDeviceInfo(block []string) (string, string) {
 		}
 		if strings.HasPrefix(line, "S: Sysfs=") {
 			sysfsPath := strings.TrimSpace(strings.Split(line, "=")[1])
-			// Match the sysfsID using regex
+			// Match the sysfsID using regex (find the pattern)
 			match := sysfsPattern.FindString(sysfsPath)
 			if match != "" {
 				sysfsID = match
@@ -142,6 +145,8 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 		if name, found := keyboards[sysfsID]; found {
 			devnode := fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(realpath)))
 			matches = append(matches, fmt.Sprintf("%s → %s", devnode, name))
+			// Debug: Show sysfsID matching result
+			fmt.Printf("Match found! %s → %s\n", devnode, name)
 		}
 	}
 
