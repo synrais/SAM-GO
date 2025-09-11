@@ -131,27 +131,20 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 			continue
 		}
 
-		// The sysfsID we want is the last part of the realpath, which should look like '0003:258A:002A.0001'
+		// Extract sysfsID from HIDraw device symlink path
+		// The format is ../../../0003:258A:002A.0001
 		sysfsID := filepath.Base(realpath) // This should get the HID ID like '0003:258A:002A.0001'
 
-		// Clean debug print: Show the sysfsID extracted from HIDraw
+		// Debug: Show the sysfs ID extracted from HIDraw
 		fmt.Printf("  Extracted HIDraw sysfsID from %s: %s\n", hiddev, sysfsID)
 
 		// Now, we want to print all the keyboard sysfsIDs and names to debug
 		for k, v := range keyboards {
 			// Debug: Showing what we are trying to match against for each HIDraw device
 			fmt.Printf("    Extracted keyboard sysfsID: %s, Name: %s\n", k, v)
-		}
 
-		// Compare the extracted sysfsID from HIDraw and the keyboard sysfsID (trimmed of spaces)
-		sysfsIDClean := strings.TrimSpace(sysfsID)
-		for k, v := range keyboards {
-			keyboardSysfsIDClean := strings.TrimSpace(k)
-
-			// Debug: Show cleaned sysfsIDs and compare them
-			fmt.Printf("    Comparing HIDraw sysfsID: '%s' with Keyboard sysfsID: '%s'\n", sysfsIDClean, keyboardSysfsIDClean)
-
-			if sysfsIDClean == keyboardSysfsIDClean {
+			// Compare the sysfsID
+			if sysfsID == k {
 				// Match found: add it to the matched list
 				devnode := fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(realpath)))
 				matches = append(matches, fmt.Sprintf("%s → %s", devnode, v))
