@@ -89,16 +89,29 @@ func loadSDLDB() []*mappingEntry {
 	return entries
 }
 
-func chooseMapping(entries []*mappingEntry, guid string) map[string]string {
-	guid = strings.ToLower(guid)
-	for _, e := range entries {
-		eguid := strings.ToLower(e.guid)
-		if eguid == guid && e.platform == "Linux" {
-			fmt.Printf("  -> SDL DB: Matched to '%s'\n", e.name)
-			return e.mapping
+func chooseMapping(entries []*mappingEntry, bus, vid, pid, ver int) map[string]string {
+	attempts := []struct {
+		guid string
+		msg  string
+	}{
+		{makeGUID(bus, vid, pid, ver), "Exact match"},
+		{makeGUID(0, vid, pid, ver), "Close match (ignore bustype)"},
+		{makeGUID(0, vid, pid, 0), "Close match (ignore bustype & version)"},
+	}
+
+	for _, a := range attempts {
+		if a.guid == "" {
+			continue
+		}
+		g := strings.ToLower(a.guid)
+		for _, e := range entries {
+			if strings.ToLower(e.guid) == g && e.platform == "Linux" {
+				fmt.Printf("  -> SDL DB: %s to '%s'\n", a.msg, e.name)
+				return e.mapping
+			}
 		}
 	}
-	fmt.Printf("  -> No SDL match for GUID: %s\n", guid)
+	fmt.Printf("  -> No SDL match for GUID: %s\n", strings.ToLower(makeGUID(bus, vid, pid, ver)))
 	return map[string]string{}
 }
 
@@ -165,7 +178,7 @@ func openJoystickDevice(path string, sdlmap []*mappingEntry) (*JoystickDevice, e
 	guid := makeGUID(bus, vid, pid, ver)
 	mapping := map[string]string{}
 	if guid != "" {
-		mapping = chooseMapping(sdlmap, guid)
+		mapping = chooseMapping(sdlmap, bus, vid, pid, ver)
 	}
 	btnmap, axmap := invertMapping(mapping)
 
