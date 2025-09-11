@@ -14,12 +14,13 @@ import (
 // HOTPLUG_SCAN_INTERVAL determines the delay between rescans
 const HOTPLUG_SCAN_INTERVAL = 2 * time.Second
 
-// SCAN_CODES is the map for keyboard scan codes (Placeholder: Replace with actual scan codes)
-var SCAN_CODES = map[int][]string{
-	// Example placeholder values. Replace with your actual scan codes.
-	0x04: {"a", "A"}, 0x05: {"b", "B"}, 0x06: {"c", "C"}, 0x07: {"d", "D"},
-	0x08: {"e", "E"}, 0x09: {"f", "F"}, 0x0A: {"g", "G"}, 0x0B: {"h", "H"},
-	// Add more codes here...
+var SCAN_CODES = map[int][]string{}
+
+// --- Load SCAN_CODES from external file (keyboardscancodes.txt) ---
+// Function to load scan codes (your placeholder block can be inserted here)
+func loadScanCodes() error {
+	// Your code here to load scan codes...
+	return nil
 }
 
 // parseKeyboards parses the /proc/bus/input/devices file and returns a map of keyboards (sysfsID -> name)
@@ -66,37 +67,6 @@ func parseKeyboards() (map[string]string, error) {
 	return devices, nil
 }
 
-// Check if any block contains a keyboard handler
-func anyKeyboardHandlerInBlock(block []string) bool {
-	for _, line := range block {
-		if strings.Contains(line, "Handlers=") && strings.Contains(line, "kbd") {
-			return true
-		}
-	}
-	return false
-}
-
-// extractDeviceInfo extracts device name and sysfs ID from a block of lines in /proc/bus/input/devices
-func extractDeviceInfo(block []string) (string, string) {
-	var name, sysfsID string
-	sysfsPattern := regexp.MustCompile(`\b[0-9a-fA-F]+:[0-9a-fA-F]+:[0-9a-fA-F]+(?:\.[0-9]+)?\b`)
-
-	for _, line := range block {
-		if strings.HasPrefix(line, "N: ") {
-			name = strings.TrimSpace(strings.Split(line, "=")[1])
-		}
-		if strings.HasPrefix(line, "S: Sysfs=") {
-			sysfsPath := strings.TrimSpace(strings.Split(line, "=")[1])
-			// Match the sysfsID using regex (find the pattern)
-			match := sysfsPattern.FindString(sysfsPath)
-			if match != "" {
-				sysfsID = match
-			}
-		}
-	}
-	return name, sysfsID
-}
-
 // matchHidraws matches the sysfs IDs from keyboards to HIDraw device paths
 func matchHidraws(keyboards map[string]string) ([]string, error) {
 	matches := []string{}
@@ -116,9 +86,11 @@ func matchHidraws(keyboards map[string]string) ([]string, error) {
 		// If the sysfsID is found in the keyboards map, add the match
 		if name, found := keyboards[sysfsID]; found {
 			devnode := fmt.Sprintf("/dev/%s", filepath.Base(filepath.Dir(realpath)))
+
+			// Debug: Print sysfsID and device match information
+			fmt.Printf("Match found! HID device: %s → SysfsID: %s → %s\n", devnode, sysfsID, name)
+
 			matches = append(matches, fmt.Sprintf("%s → %s", devnode, name))
-			// Debug: Show sysfsID matching result
-			fmt.Printf("Match found! %s → %s\n", devnode, name)
 		}
 	}
 
@@ -138,7 +110,6 @@ func NewKeyboardDevice(devnode, name string) (*KeyboardDevice, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("[+] Opened device: %s → %s\n", devnode, name) // Debugging device opening
 	return &KeyboardDevice{
 		devnode: devnode,
 		name:    name,
@@ -159,18 +130,16 @@ func (kd *KeyboardDevice) ReadEvent() string {
 	report := make([]byte, 8) // Read 8-byte report
 	n, err := unix.Read(kd.fd, report)
 	if err != nil || n < 8 {
-		fmt.Printf("Failed to read event from %s → %v\n", kd.devnode, err) // Debugging failed read
+		fmt.Printf("Failed to read event from %s → %v\n", kd.devnode, err)  // Debugging failed read
 		return ""
 	}
-	// Debugging: Show raw data being read
-	fmt.Printf("Raw event data: %v\n", report)
 	return decodeReport(report)
 }
 
 // decodeReport decodes a keyboard event into human-readable output
 func decodeReport(report []byte) string {
 	if len(report) != 8 {
-		fmt.Println("Invalid report length") // Debugging invalid report length
+		fmt.Println("Invalid report length")  // Debugging invalid report length
 		return ""
 	}
 
@@ -182,14 +151,14 @@ func decodeReport(report []byte) string {
 	}
 
 	keycodes := report[2:8]
-	fmt.Printf("Decoded report: %v\n", keycodes) // Debugging the decoded keycodes
+	fmt.Printf("Decoded report: %v\n", keycodes)  // Debugging the decoded keycodes
 	output := []string{}
 	for _, code := range keycodes {
 		if code == 0 {
 			continue
 		}
 		if keys, ok := SCAN_CODES[int(code)]; ok {
-			fmt.Printf("Key found: %s\n", keys[0]) // Debugging individual key matches
+			fmt.Printf("Key found: %s\n", keys[0])  // Debugging individual key matches
 			output = append(output, keys[0])
 		}
 	}
@@ -254,7 +223,7 @@ func monitorKeyboards(out chan<- string) {
 		for _, dev := range devices {
 			output := dev.ReadEvent()
 			if output != "" {
-				fmt.Printf("Key output: %s\n", output) // Debugging output
+				fmt.Printf("Key output: %s\n", output)  // Debugging output
 				out <- output // Send decoded event to channel
 			}
 		}
@@ -284,6 +253,6 @@ func StreamKeyboards() <-chan string {
 func main() {
 	out := StreamKeyboards()
 	for event := range out {
-		fmt.Println("Received event:", event) // Print the received event
+		fmt.Println("Received event:", event)  // Print the received event
 	}
 }
