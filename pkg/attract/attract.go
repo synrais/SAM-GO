@@ -231,6 +231,11 @@ func Run(_ []string) {
 		name = strings.TrimSuffix(name, filepath.Ext(name))
 		fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, gamePath)
 
+		// Record current game and core
+		gameName := filepath.Base(gamePath)
+		content := fmt.Sprintf("[%s] %s", systemID, gameName)
+		_ = os.WriteFile("/tmp/Now_Playing.txt", []byte(content), 0644)
+
 		// Launch game
 		run.Run([]string{gamePath})
 
