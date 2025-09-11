@@ -239,8 +239,8 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string, progre
 }
 
 // Entry point for this tool when called from SAM
-func Run(args []string) {
-	fs := flag.NewFlagSet("list", flag.ExitOnError)
+func Run(args []string) error {
+	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 
 	// Default gamelist dir now points to SAM_Gamelists
 	defaultOut := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
@@ -253,7 +253,9 @@ func Run(args []string) {
 	noDupes := fs.Bool("nodupes", false, "filter out duplicate games")
 	overwrite := fs.Bool("overwrite", false, "overwrite existing gamelists if present")
 
-	_ = fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	// Load user config (for List.Exclude)
 	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
@@ -290,7 +292,7 @@ func Run(args []string) {
 		for _, r := range results {
 			fmt.Printf("%s:%s\n", strings.ToLower(samId(r.System.Id)), r.Path)
 		}
-		os.Exit(0)
+		return nil
 	}
 
 	systemPaths := games.GetSystemPaths(cfg, systems)
@@ -303,8 +305,7 @@ func Run(args []string) {
 	total := createGamelists(*gamelistDir, systemPathsMap, *progress, *quiet, *noDupes, *overwrite)
 
 	if total == 0 {
-		os.Exit(8)
-	} else {
-		os.Exit(0)
+		return fmt.Errorf("no games indexed")
 	}
+	return nil
 }
