@@ -12,7 +12,6 @@ import (
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/history"
 	"github.com/synrais/SAM-GO/pkg/input"
-	"github.com/synrais/SAM-GO/pkg/list"
 	"github.com/synrais/SAM-GO/pkg/run"
 	"github.com/synrais/SAM-GO/pkg/staticdetector"
 )
@@ -69,7 +68,7 @@ func splitCommands(args []string) [][]string {
 func handleCommand(cmd string, args []string) {
 	switch cmd {
 	case "-list":
-		if err := list.Run(args); err != nil {
+		if err := attract.RunList(args); err != nil {
 			fmt.Fprintln(os.Stderr, "List failed:", err)
 		}
 	case "-run":
