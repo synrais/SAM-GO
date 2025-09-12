@@ -71,19 +71,41 @@ type DisableRules struct {
 	Extensions []string `ini:"extensions,omitempty" delim:","`
 }
 
+type StaticDetectorOverride struct {
+	BlackThreshold  *float64 `ini:"blackthreshold,omitempty"`
+	StaticThreshold *float64 `ini:"staticthreshold,omitempty"`
+	SkipBlack       *bool    `ini:"skipblack,omitempty"`
+	WriteBlackList  *bool    `ini:"writeblacklist,omitempty"`
+	SkipStatic      *bool    `ini:"skipstatic,omitempty"`
+	WriteStaticList *bool    `ini:"writestaticlist,omitempty"`
+	Grace           *float64 `ini:"grace,omitempty"`
+}
+
+type StaticDetectorConfig struct {
+	BlackThreshold  float64                           `ini:"blackthreshold,omitempty"`
+	StaticThreshold float64                           `ini:"staticthreshold,omitempty"`
+	SkipBlack       bool                              `ini:"skipblack,omitempty"`
+	WriteBlackList  bool                              `ini:"writeblacklist,omitempty"`
+	SkipStatic      bool                              `ini:"skipstatic,omitempty"`
+	WriteStaticList bool                              `ini:"writestaticlist,omitempty"`
+	Grace           float64                           `ini:"grace,omitempty"`
+	Systems         map[string]StaticDetectorOverride `ini:"-"`
+}
+
 type UserConfig struct {
-	AppPath    string
-	IniPath    string
-	LaunchSync LaunchSyncConfig        `ini:"launchsync,omitempty"`
-	PlayLog    PlayLogConfig           `ini:"playlog,omitempty"`
-	Random     RandomConfig            `ini:"random,omitempty"`
-	Search     SearchConfig            `ini:"search,omitempty"`
-	Remote  RemoteConfig            `ini:"remote,omitempty"`
-	Nfc     NfcConfig               `ini:"nfc,omitempty"`
-	Systems SystemsConfig           `ini:"systems,omitempty"`
-	Attract AttractConfig           `ini:"attract,omitempty"`
-	List    ListConfig              `ini:"list,omitempty"`
-	Disable map[string]DisableRules `ini:"-"`
+	AppPath        string
+	IniPath        string
+	LaunchSync     LaunchSyncConfig        `ini:"launchsync,omitempty"`
+	PlayLog        PlayLogConfig           `ini:"playlog,omitempty"`
+	Random         RandomConfig            `ini:"random,omitempty"`
+	Search         SearchConfig            `ini:"search,omitempty"`
+	Remote         RemoteConfig            `ini:"remote,omitempty"`
+	Nfc            NfcConfig               `ini:"nfc,omitempty"`
+	Systems        SystemsConfig           `ini:"systems,omitempty"`
+	Attract        AttractConfig           `ini:"attract,omitempty"`
+	StaticDetector StaticDetectorConfig    `ini:"staticdetector,omitempty"`
+	List           ListConfig              `ini:"list,omitempty"`
+	Disable        map[string]DisableRules `ini:"-"`
 }
 
 func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error) {
@@ -107,7 +129,32 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 	defaultConfig.AppPath = exePath
 	defaultConfig.IniPath = iniPath
 	defaultConfig.Disable = make(map[string]DisableRules)
+	defaultConfig.StaticDetector.Systems = make(map[string]StaticDetectorOverride)
 
+	// ---- Default Static Detector settings ----
+	if defaultConfig.StaticDetector.BlackThreshold == 0 {
+		defaultConfig.StaticDetector.BlackThreshold = 30
+	}
+	if defaultConfig.StaticDetector.StaticThreshold == 0 {
+		defaultConfig.StaticDetector.StaticThreshold = 30
+	}
+	// default skip/write options
+	if !defaultConfig.StaticDetector.SkipBlack {
+		defaultConfig.StaticDetector.SkipBlack = true
+	}
+	if !defaultConfig.StaticDetector.WriteBlackList {
+		defaultConfig.StaticDetector.WriteBlackList = true
+	}
+	if !defaultConfig.StaticDetector.SkipStatic {
+		defaultConfig.StaticDetector.SkipStatic = true
+	}
+	if !defaultConfig.StaticDetector.WriteStaticList {
+		defaultConfig.StaticDetector.WriteStaticList = true
+	}
+	if defaultConfig.StaticDetector.Grace == 0 {
+		defaultConfig.StaticDetector.Grace = 25
+	}
+	
 	// ---- Default Attract settings ----
 	if defaultConfig.Attract.PlayTime == "" {
 		defaultConfig.Attract.PlayTime = "40" // default 40 seconds
@@ -152,14 +199,47 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 		return defaultConfig, err
 	}
 
-	// Parse disable.* rules
+	// Parse disable.* and staticdetector.* rules
 	for _, section := range cfg.Sections() {
 		secName := strings.ToLower(section.Name())
-		if strings.HasPrefix(secName, "disable.") {
+		switch {
+		case strings.HasPrefix(secName, "disable."):
 			sys := strings.TrimPrefix(secName, "disable.")
 			var rules DisableRules
 			_ = section.MapTo(&rules)
 			defaultConfig.Disable[sys] = rules
+		case strings.HasPrefix(secName, "staticdetector."):
+			sys := strings.TrimPrefix(secName, "staticdetector.")
+			var sc StaticDetectorOverride
+			if section.HasKey("blackthreshold") {
+				v, _ := section.Key("blackthreshold").Float64()
+				sc.BlackThreshold = &v
+			}
+			if section.HasKey("staticthreshold") {
+				v, _ := section.Key("staticthreshold").Float64()
+				sc.StaticThreshold = &v
+			}
+			if section.HasKey("skipblack") {
+				v, _ := section.Key("skipblack").Bool()
+				sc.SkipBlack = &v
+			}
+			if section.HasKey("writeblacklist") {
+				v, _ := section.Key("writeblacklist").Bool()
+				sc.WriteBlackList = &v
+			}
+			if section.HasKey("skipstatic") {
+				v, _ := section.Key("skipstatic").Bool()
+				sc.SkipStatic = &v
+			}
+			if section.HasKey("writestaticlist") {
+				v, _ := section.Key("writestaticlist").Bool()
+				sc.WriteStaticList = &v
+			}
+			if section.HasKey("grace") {
+				v, _ := section.Key("grace").Float64()
+				sc.Grace = &v
+			}
+			defaultConfig.StaticDetector.Systems[sys] = sc
 		}
 	}
 
