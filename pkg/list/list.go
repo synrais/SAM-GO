@@ -102,10 +102,10 @@ func writeAmigaVisionLists(gamelistDir string, paths []string) {
 	}
 
 	if len(gamesList) > 0 {
-		writeCustomList(gamelistDir, "amigavisiongames_gamelist.txt", gamesList)
+		writeCustomList(gamelistDir, "AmigaVisionGames_gamelist.txt", gamesList)
 	}
 	if len(demosList) > 0 {
-		writeCustomList(gamelistDir, "amigavisiondemos_gamelist.txt", demosList)
+		writeCustomList(gamelistDir, "AmigaVisionDemos_gamelist.txt", demosList)
 	}
 }
 
@@ -152,9 +152,9 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 			if !quiet {
 				fmt.Printf("Rebuilding %s (overwrite enabled)\n", systemId)
 			}
-			rebuilt++
+			// rebuilt will only increment if we actually find files
 		} else {
-			fresh++
+			// fresh will only increment if we actually find files
 		}
 
 		var systemFiles []string
@@ -188,6 +188,12 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 			sort.Strings(systemFiles)
 			totalGames += len(systemFiles)
 			writeGamelist(gamelistDir, systemId, systemFiles)
+
+			if exists {
+				rebuilt++
+			} else {
+				fresh++
+			}
 		} else {
 			emptySystems = append(emptySystems, systemId)
 		}
