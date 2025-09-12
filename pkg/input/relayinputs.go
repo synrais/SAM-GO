@@ -136,15 +136,28 @@ func runCommand(cmd string, back, next func()) {
 	if len(parts) == 0 {
 		return
 	}
-	if parts[0] == "history" && len(parts) > 1 {
-		switch parts[1] {
-		case "-back":
-			if back != nil {
-				back()
-			}
-		case "-next":
-			if next != nil {
-				next()
+	switch parts[0] {
+	case "back":
+		if back != nil {
+			back()
+		}
+		return
+	case "next":
+		if next != nil {
+			next()
+		}
+		return
+	case "history":
+		if len(parts) > 1 {
+			switch parts[1] {
+			case "-back":
+				if back != nil {
+					back()
+				}
+			case "-next":
+				if next != nil {
+					next()
+				}
 			}
 		}
 		return
