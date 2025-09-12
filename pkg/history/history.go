@@ -49,6 +49,37 @@ func writeLines(path string, lines []string) error {
 	return nil
 }
 
+func filterAllowed(allFiles []string, include, exclude []string) []string {
+	var filtered []string
+	for _, f := range allFiles {
+		base := strings.TrimSuffix(filepath.Base(f), "_gamelist.txt")
+		if len(include) > 0 {
+			match := false
+			for _, sys := range include {
+				if strings.EqualFold(strings.TrimSpace(sys), base) {
+					match = true
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+		}
+		skip := false
+		for _, sys := range exclude {
+			if strings.EqualFold(strings.TrimSpace(sys), base) {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+		filtered = append(filtered, f)
+	}
+	return filtered
+}
+
 func WriteNowPlaying(path string) error {
 	if err := os.WriteFile(nowPlayingFile, []byte(path), 0644); err != nil {
 		return err
