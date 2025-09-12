@@ -15,7 +15,7 @@ import (
 
 const (
 	nowPlayingFile = "/tmp/Now_Playing.txt"
-	historyFile    = "/tmp/History.txt"
+	historyFile    = "/tmp/.SAM_List/History.txt"
 )
 
 func readLines(path string) ([]string, error) {
@@ -36,6 +36,7 @@ func readLines(path string) ([]string, error) {
 }
 
 func writeLines(path string, lines []string) error {
+	_ = os.MkdirAll(filepath.Dir(path), 0777)
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -81,6 +82,7 @@ func filterAllowed(allFiles []string, include, exclude []string) []string {
 }
 
 func WriteNowPlaying(path string) error {
+	_ = os.MkdirAll(filepath.Dir(historyFile), 0777)
 	if err := os.WriteFile(nowPlayingFile, []byte(path), 0644); err != nil {
 		return err
 	}
@@ -96,6 +98,7 @@ func WriteNowPlaying(path string) error {
 }
 
 func writeNowPlayingTop(path string) error {
+	_ = os.MkdirAll(filepath.Dir(historyFile), 0777)
 	if err := os.WriteFile(nowPlayingFile, []byte(path), 0644); err != nil {
 		return err
 	}
@@ -111,6 +114,7 @@ func writeNowPlayingTop(path string) error {
 
 // SetNowPlaying updates the Now_Playing file without modifying history order.
 func SetNowPlaying(path string) error {
+	_ = os.MkdirAll(filepath.Dir(historyFile), 0777)
 	return os.WriteFile(nowPlayingFile, []byte(path), 0644)
 }
 
@@ -167,7 +171,7 @@ func Back() (string, bool) {
 
 // Play launches the provided path and records it as Now_Playing.
 func Play(path string) error {
-	if err := SetNowPlaying(path); err != nil {
+	if err := WriteNowPlaying(path); err != nil {
 		return err
 	}
 	return run.Run([]string{path})
