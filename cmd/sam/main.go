@@ -62,7 +62,7 @@ func splitCommands(args []string) [][]string {
 	return cmds
 }
 
-func handleCommand(cmd string, args []string) {
+func handleCommand(cfg *config.UserConfig, cmd string, args []string) {
 	switch cmd {
 	case "-list":
 		if err := attract.RunList(args); err != nil {
@@ -95,7 +95,7 @@ func handleCommand(cmd string, args []string) {
 			fmt.Println(line)
 		}
 	case "-static":
-		for line := range staticdetector.Stream() {
+		for line := range staticdetector.Stream(cfg) {
 			fmt.Println(line)
 		}
 	default:
@@ -108,7 +108,7 @@ func commandProcessor(ch <-chan []string) {
 		if len(args) == 0 {
 			continue
 		}
-		go handleCommand(args[0], args[1:])
+		go handleCommand(cfg, args[0], args[1:])
 	}
 }
 
@@ -189,7 +189,7 @@ func main() {
 	startServer(commandChan)
 	defer os.Remove(socketPath)
 
-	go commandProcessor(commandChan)
+	go commandProcessor(cfg, commandChan)
 	for _, cmd := range cmds {
 		commandChan <- cmd
 	}
