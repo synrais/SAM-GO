@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
-	"unsafe"
 
 	"github.com/synrais/SAM-GO/pkg/run"
 	"golang.org/x/sys/unix"
