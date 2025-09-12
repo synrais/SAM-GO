@@ -18,12 +18,13 @@ import (
 var (
 	LastPlayedSystem games.System
 	LastPlayedPath   string
+	LastPlayedName   string // basename without extension (or raw AmigaVision name)
 	LastStartTime    time.Time
 )
 
-// GetLastPlayed returns the last system, path, and start time.
-func GetLastPlayed() (system games.System, path string, start time.Time) {
-	return LastPlayedSystem, LastPlayedPath, LastStartTime
+// GetLastPlayed returns the last system, path, clean name, and start time.
+func GetLastPlayed() (system games.System, path, name string, start time.Time) {
+	return LastPlayedSystem, LastPlayedPath, LastPlayedName, LastStartTime
 }
 
 // internal helper to update globals
@@ -31,6 +32,15 @@ func setLastPlayed(system games.System, path string) {
 	LastPlayedSystem = system
 	LastPlayedPath = path
 	LastStartTime = time.Now()
+
+	// derive clean display name
+	if !strings.Contains(path, "/") && !strings.Contains(path, "\\") {
+		// AmigaVision-style: already just a name
+		LastPlayedName = path
+	} else {
+		base := filepath.Base(path)
+		LastPlayedName = strings.TrimSuffix(base, filepath.Ext(base))
+	}
 }
 
 // parseMglForGamePath opens an .mgl file and returns the <file> path, if any.
