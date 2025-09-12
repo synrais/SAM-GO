@@ -94,6 +94,15 @@ type StaticDetectorConfig struct {
 	Systems         map[string]StaticDetectorOverride `ini:"-"`
 }
 
+type InputDetectorConfig struct {
+	Mouse       bool              `ini:"mouse,omitempty"`
+	Keyboard    bool              `ini:"keyboard,omitempty"`
+	Joystick    bool              `ini:"joystick,omitempty"`
+	KeyboardMap map[string]string `ini:"-"`
+	MouseMap    map[string]string `ini:"-"`
+	JoystickMap map[string]string `ini:"-"`
+}
+
 type UserConfig struct {
 	AppPath        string
 	IniPath        string
@@ -106,6 +115,7 @@ type UserConfig struct {
 	Systems        SystemsConfig           `ini:"systems,omitempty"`
 	Attract        AttractConfig           `ini:"attract,omitempty"`
 	StaticDetector StaticDetectorConfig    `ini:"staticdetector,omitempty"`
+	InputDetector  InputDetectorConfig     `ini:"inputdetector,omitempty"`
 	List           ListConfig              `ini:"list,omitempty"`
 	Disable        map[string]DisableRules `ini:"-"`
 }
@@ -132,6 +142,20 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 	defaultConfig.IniPath = iniPath
 	defaultConfig.Disable = make(map[string]DisableRules)
 	defaultConfig.StaticDetector.Systems = make(map[string]StaticDetectorOverride)
+	defaultConfig.InputDetector.KeyboardMap = map[string]string{
+		"left":  "history -back",
+		"right": "history -next",
+	}
+	defaultConfig.InputDetector.MouseMap = map[string]string{
+		"swipeleft":  "history -back",
+		"swiperight": "history -next",
+	}
+	defaultConfig.InputDetector.JoystickMap = map[string]string{
+		"dpleft":  "history -back",
+		"dpright": "history -next",
+		"leftx-":  "history -back",
+		"leftx+":  "history -next",
+	}
 
 	// ---- Default Static Detector settings ----
 	if defaultConfig.StaticDetector.BlackThreshold == 0 {
@@ -199,6 +223,22 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 	// Map INI → struct (overrides defaults if provided)
 	if err := cfg.MapTo(defaultConfig); err != nil {
 		return defaultConfig, err
+	}
+
+	if sec, err := cfg.GetSection("inputdetector.keyboard"); err == nil {
+		for _, key := range sec.Keys() {
+			defaultConfig.InputDetector.KeyboardMap[strings.ToLower(key.Name())] = key.Value()
+		}
+	}
+	if sec, err := cfg.GetSection("inputdetector.mouse"); err == nil {
+		for _, key := range sec.Keys() {
+			defaultConfig.InputDetector.MouseMap[strings.ToLower(key.Name())] = key.Value()
+		}
+	}
+	if sec, err := cfg.GetSection("inputdetector.joystick"); err == nil {
+		for _, key := range sec.Keys() {
+			defaultConfig.InputDetector.JoystickMap[strings.ToLower(key.Name())] = key.Value()
+		}
 	}
 
 	// Parse disable.* and staticdetector.* rules
