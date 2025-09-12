@@ -253,9 +253,25 @@ func Stream() <-chan StaticEvent {
 			t1 := time.Now()
 
 			res.Header = int(res.Map[2])<<8 | int(res.Map[3])
-			res.Width = int(res.Map[6])<<8 | int(res.Map[7])
+			res.Width  = int(res.Map[6])<<8 | int(res.Map[7])
 			res.Height = int(res.Map[8])<<8 | int(res.Map[9])
-			res.Line = int(res.Map[10])<<8 | int(res.Map[11])
+			res.Line   = int(res.Map[10])<<8 | int(res.Map[11])
+
+			// Sanity check resolution before using it
+			const (
+				minWidth  = 128
+				minHeight = 128
+				maxWidth  = 2048
+				maxHeight = 2048
+			)
+			if res.Width < minWidth || res.Width > maxWidth ||
+			   res.Height < minHeight || res.Height > maxHeight ||
+			   res.Line < res.Width*3 || res.Line > maxWidth*4 {
+				// Skip this frame – prevents out-of-bounds crashes
+				fmt.Printf("Invalid resolution skipped: %dx%d (line=%d)\n", res.Width, res.Height, res.Line)
+				time.Sleep(time.Second / targetFPS)
+				continue
+			}
 
 			buf := make([]byte, 4096)
 			n, err := unix.Read(inFd, buf)
@@ -280,6 +296,7 @@ func Stream() <-chan StaticEvent {
 					offset += unix.SizeofInotifyEvent + int(ev.Len)
 				}
 			}
+
 
 			idx := 0
 			var sumR, sumG, sumB int
