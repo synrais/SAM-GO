@@ -1,6 +1,7 @@
 package run
 
 import (
+	"encoding/xml"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,41 @@ import (
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/mister"
 )
+
+// Globals to expose last played info
+var (
+	LastPlayedSystem games.System
+	LastPlayedPath   string
+)
+
+// internal helper to update globals
+func setLastPlayed(system games.System, path string) {
+	LastPlayedSystem = system
+	LastPlayedPath = path
+}
+
+// parseMglForGamePath opens an .mgl file and returns the <file> path, if any.
+type mglFile struct {
+	Path string `xml:"path,attr"`
+}
+type mglDoc struct {
+	Files []mglFile `xml:"file"`
+}
+
+func parseMglForGamePath(mglPath string) (string, error) {
+	data, err := os.ReadFile(mglPath)
+	if err != nil {
+		return "", err
+	}
+	var doc mglDoc
+	if err := xml.Unmarshal(data, &doc); err != nil {
+		return "", err
+	}
+	if len(doc.Files) == 0 {
+		return "", nil // valid MGL but no <file> entries
+	}
+	return doc.Files[0].Path, nil
+}
 
 func pathExists(path string) bool {
 	_, err := os.Stat(path)
@@ -86,16 +122,32 @@ func Run(args []string) error {
 			return fmt.Errorf("bind mount failed: %v", err)
 		}
 
+		// record last played (Amiga special case)
+		setLastPlayed(games.Systems["Amiga"], runPath)
+
 		// launch minimig core
 		return mister.LaunchCore(&config.UserConfig{}, games.Systems["Amiga"])
 	}
 
 	// Case 2: MGL file (case-insensitive extension check)
 	if strings.EqualFold(filepath.Ext(runPath), ".mgl") {
+		realPath, err := parseMglForGamePath(runPath)
+		if err == nil && realPath != "" {
+			if system, err := games.BestSystemMatch(&config.UserConfig{}, realPath); err == nil {
+				setLastPlayed(system, realPath)
+			} else {
+				// fallback: store generic MGL path if system not resolved
+				setLastPlayed(games.System{}, runPath)
+			}
+		} else {
+			// fallback: no <file> in MGL
+			setLastPlayed(games.System{}, runPath)
+		}
 		return mister.LaunchGenericFile(&config.UserConfig{}, runPath)
 	}
 
 	// Case 3: generic file path
 	system, _ := games.BestSystemMatch(&config.UserConfig{}, runPath)
+	setLastPlayed(system, runPath)
 	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
 }
