@@ -98,19 +98,23 @@ func WriteNowPlaying(path string) error {
 	return writeLines(historyFile, newHist)
 }
 
-func writeNowPlayingTop(path string) error {
+// WriteNowPlaying appends a new game to history if it's not already present.
+func WriteNowPlaying(path string) error {
 	_ = os.MkdirAll(filepath.Dir(historyFile), 0777)
 	if err := os.WriteFile(nowPlayingFile, []byte(path), 0644); err != nil {
 		return err
 	}
 	hist, _ := readLines(historyFile)
-	newHist := []string{path}
-	for _, h := range hist {
-		if h != path {
-			newHist = append(newHist, h)
-		}
+	if indexOf(hist, path) == -1 {
+		hist = append(hist, path)
 	}
-	return writeLines(historyFile, newHist)
+	return writeLines(historyFile, hist)
+}
+
+// updateNowPlaying only updates the Now_Playing file (no history mutation).
+func updateNowPlaying(path string) error {
+	_ = os.MkdirAll(filepath.Dir(historyFile), 0777)
+	return os.WriteFile(nowPlayingFile, []byte(path), 0644)
 }
 
 // SetNowPlaying updates the Now_Playing file without modifying history order.
@@ -172,7 +176,8 @@ func Back() (string, bool) {
 
 // Play launches the provided path and records it as Now_Playing.
 func Play(path string) error {
-	if err := WriteNowPlaying(path); err != nil {
+	// Only update the "Now Playing" file here.
+	if err := updateNowPlaying(path); err != nil {
 		return err
 	}
 	fmt.Println("[HISTORY] Now playing:", path)
