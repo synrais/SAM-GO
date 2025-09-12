@@ -91,22 +91,19 @@ func (r *resolution) Close() {
 
 // List helpers
 func isEntryInFile(path, game string) bool {
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-	buf := make([]byte, 4096)
-	for {
-		n, _ := f.Read(buf)
-		if n <= 0 {
-			break
-		}
-		if string(buf[:n]) == game {
-			return true
-		}
-	}
-	return false
+    f, err := os.Open(path)
+    if err != nil {
+        return false
+    }
+    defer f.Close()
+
+    scanner := bufio.NewScanner(f)
+    for scanner.Scan() {
+        if strings.TrimSpace(scanner.Text()) == game {
+            return true
+        }
+    }
+    return false
 }
 
 func addToFile(system, game, suffix string) {
@@ -310,6 +307,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 				}
 				if !changed {
 					if staticScreenRun == 0 {
+						// Mark when THIS static run began
 						staticStartTime = frameTime.Sub(run.LastStartTime).Seconds()
 					}
 					delta := frameTime.Sub(lastFrameTime).Seconds()
@@ -317,7 +315,9 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 						staticScreenRun += delta
 					}
 				} else {
+					// Moving again → reset run counters
 					staticScreenRun = 0
+					staticStartTime = 0
 				}
 				for i := 0; i < samples; i++ {
 					if currRGB[i] == prevRGB[i] {
