@@ -53,9 +53,20 @@ type SystemsConfig struct {
 }
 
 type AttractConfig struct {
-	PlayTime string   `ini:"playtime,omitempty"`
-	Random   bool     `ini:"random,omitempty"`
-	Systems  []string `ini:"systems,omitempty" delim:","`
+	PlayTime          string   `ini:"playtime,omitempty"`
+	Random            bool     `ini:"random,omitempty"`
+	Include           []string `ini:"include,omitempty" delim:","`
+	Exclude           []string `ini:"exclude,omitempty" delim:","`
+	UseBlacklist      bool     `ini:"useblacklist,omitempty"`
+	BlacklistInclude  []string `ini:"blacklist_include,omitempty" delim:","`
+	BlacklistExclude  []string `ini:"blacklist_exclude,omitempty" delim:","`
+	UseStaticlist     bool     `ini:"usestaticlist,omitempty"`
+	StaticlistInclude []string `ini:"staticlist_include,omitempty" delim:","`
+	StaticlistExclude []string `ini:"staticlist_exclude,omitempty" delim:","`
+	SkipafterStatic   int      `ini:"skipafterstatic,omitempty"`
+	UseRatedlist      bool     `ini:"useratedlist,omitempty"`
+	RatedlistInclude  []string `ini:"ratedlist_include,omitempty" delim:","`
+	RatedlistExclude  []string `ini:"ratedlist_exclude,omitempty" delim:","`
 }
 
 type ListConfig struct {
