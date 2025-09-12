@@ -211,7 +211,7 @@ func randomGame() (string, error) {
 	if err != nil || len(files) == 0 {
 		return "", errors.New("no gamelists")
 	}
-	files = filterAllowed(files, cfg.Attract.Systems)
+	files = filterAllowed(files, cfg.Attract.Include, cfg.Attract.Exclude)
 	if len(files) == 0 {
 		return "", errors.New("no gamelists match systems")
 	}
@@ -285,21 +285,4 @@ func disabled(system, gamePath string, cfg *config.UserConfig) bool {
 		}
 	}
 	return false
-}
-
-func filterAllowed(allFiles []string, systems []string) []string {
-	if len(systems) == 0 {
-		return allFiles
-	}
-	var filtered []string
-	for _, f := range allFiles {
-		base := strings.TrimSuffix(filepath.Base(f), "_gamelist.txt")
-		for _, sys := range systems {
-			if strings.EqualFold(strings.TrimSpace(sys), base) {
-				filtered = append(filtered, f)
-				break
-			}
-		}
-	}
-	return filtered
 }
