@@ -20,8 +20,8 @@ const socketPath = "/tmp/sam.sock"
 
 func dumpConfig(cfg *config.UserConfig) {
 	fmt.Printf("INI Debug ->\n")
-	fmt.Printf("  Attract: Systems=%v | PlayTime=%s | Random=%v\n",
-		cfg.Attract.Systems, cfg.Attract.PlayTime, cfg.Attract.Random)
+	fmt.Printf("  Attract: Include=%v | Exclude=%v | PlayTime=%s | Random=%v\n",
+		cfg.Attract.Include, cfg.Attract.Exclude, cfg.Attract.PlayTime, cfg.Attract.Random)
 	fmt.Printf("  List: Exclude=%v\n", cfg.List.Exclude)
 	fmt.Printf("  Search: Filter=%v | Sort=%s\n", cfg.Search.Filter, cfg.Search.Sort)
 	fmt.Printf("  LastPlayed: Name=%s | DisableLastPlayed=%v | RecentFolder=%s | DisableRecentFolder=%v\n",
