@@ -167,6 +167,14 @@ func Run(_ []string) {
 
 	listDir := "/tmp/.SAM_List"
 	fullDir := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
+	// Build gamelists before processing
+	listArgs := []string{}
+	if attractCfg.FreshListsEachLoad {
+		listArgs = append(listArgs, "-overwrite")
+	}
+	if err := RunList(listArgs); err != nil {
+		fmt.Fprintln(os.Stderr, "List build failed:", err)
+	}
 
 	ProcessLists(listDir, fullDir, cfg)
 
