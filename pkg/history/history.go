@@ -3,9 +3,13 @@ package history
 import (
 	"bufio"
 	"errors"
+	"math/rand"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/run"
 )
 
@@ -31,30 +35,47 @@ func readLines(path string) ([]string, error) {
 	return lines, sc.Err()
 }
 
-func appendLine(path, line string) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+func writeLines(path string, lines []string) error {
+	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	_, err = f.WriteString(line + "\n")
-	return err
+	for _, l := range lines {
+		if _, err := f.WriteString(l + "\n"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// WriteNowPlaying records the current file and appends it to history if new.
 func WriteNowPlaying(path string) error {
 	if err := os.WriteFile(nowPlayingFile, []byte(path), 0644); err != nil {
 		return err
 	}
-	hist, err := readLines(historyFile)
-	if err == nil {
-		for _, h := range hist {
-			if h == path {
-				return nil
-			}
+	hist, _ := readLines(historyFile)
+	newHist := make([]string, 0, len(hist)+1)
+	for _, h := range hist {
+		if h != path {
+			newHist = append(newHist, h)
 		}
 	}
-	return appendLine(historyFile, path)
+	newHist = append(newHist, path)
+	return writeLines(historyFile, newHist)
+}
+
+func writeNowPlayingTop(path string) error {
+	if err := os.WriteFile(nowPlayingFile, []byte(path), 0644); err != nil {
+		return err
+	}
+	hist, _ := readLines(historyFile)
+	newHist := []string{path}
+	for _, h := range hist {
+		if h != path {
+			newHist = append(newHist, h)
+		}
+	}
+	return writeLines(historyFile, newHist)
 }
 
 func readNowPlaying() (string, error) {
@@ -118,23 +139,138 @@ func Play(path string) error {
 
 // PlayNext moves to the next entry in history and launches it.
 func PlayNext() error {
-	p, ok := Next()
-	if !ok {
-		return errors.New("no next history")
+	if p, ok := Next(); ok {
+		return Play(p)
 	}
-	return Play(p)
+	p, err := randomGame()
+	if err != nil {
+		return err
+	}
+	if err := WriteNowPlaying(p); err != nil {
+		return err
+	}
+	return run.Run([]string{p})
 }
 
 // PlayBack moves to the previous entry in history and launches it.
 func PlayBack() error {
-	p, ok := Back()
-	if !ok {
-		return errors.New("no previous history")
+	if p, ok := Back(); ok {
+		return Play(p)
 	}
-	return Play(p)
+	p, err := randomGame()
+	if err != nil {
+		return err
+	}
+	if err := writeNowPlayingTop(p); err != nil {
+		return err
+	}
+	return run.Run([]string{p})
 }
 
 func NowPlayingPath() string {
 	p, _ := readNowPlaying()
 	return p
+}
+
+func randomGame() (string, error) {
+	cfg, err := config.LoadUserConfig("SAM", &config.UserConfig{})
+	if err != nil {
+		return "", err
+	}
+	listDir := "/tmp/.SAM_List"
+	files, err := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
+	if err != nil || len(files) == 0 {
+		return "", errors.New("no gamelists")
+	}
+	files = filterAllowed(files, cfg.Attract.Systems)
+	if len(files) == 0 {
+		return "", errors.New("no gamelists match systems")
+	}
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for len(files) > 0 {
+		listFile := files[r.Intn(len(files))]
+		lines, err := readLines(listFile)
+		if err != nil || len(lines) == 0 {
+			for i, f := range files {
+				if f == listFile {
+					files = append(files[:i], files[i+1:]...)
+					break
+				}
+			}
+			continue
+		}
+		index := 0
+		if cfg.Attract.Random {
+			index = r.Intn(len(lines))
+		}
+		gamePath := lines[index]
+		systemID := strings.TrimSuffix(filepath.Base(listFile), "_gamelist.txt")
+		if disabled(systemID, gamePath, cfg) {
+			lines = append(lines[:index], lines[index+1:]...)
+			_ = writeLines(listFile, lines)
+			continue
+		}
+		lines = append(lines[:index], lines[index+1:]...)
+		_ = writeLines(listFile, lines)
+		return gamePath, nil
+	}
+	return "", errors.New("no playable games")
+}
+
+func matchesPattern(s, pattern string) bool {
+	p := strings.ToLower(pattern)
+	s = strings.ToLower(s)
+	if strings.HasPrefix(p, "*") && strings.HasSuffix(p, "*") {
+		return strings.Contains(s, strings.Trim(p, "*"))
+	}
+	if strings.HasPrefix(p, "*") {
+		return strings.HasSuffix(s, strings.TrimPrefix(p, "*"))
+	}
+	if strings.HasSuffix(p, "*") {
+		return strings.HasPrefix(s, strings.TrimSuffix(p, "*"))
+	}
+	return s == p
+}
+
+func disabled(system, gamePath string, cfg *config.UserConfig) bool {
+	rules, ok := cfg.Disable[system]
+	if !ok {
+		return false
+	}
+	base := filepath.Base(gamePath)
+	ext := filepath.Ext(gamePath)
+	dir := filepath.Base(filepath.Dir(gamePath))
+	for _, f := range rules.Folders {
+		if matchesPattern(dir, f) {
+			return true
+		}
+	}
+	for _, f := range rules.Files {
+		if matchesPattern(base, f) {
+			return true
+		}
+	}
+	for _, e := range rules.Extensions {
+		if strings.EqualFold(ext, e) {
+			return true
+		}
+	}
+	return false
+}
+
+func filterAllowed(allFiles []string, systems []string) []string {
+	if len(systems) == 0 {
+		return allFiles
+	}
+	var filtered []string
+	for _, f := range allFiles {
+		base := strings.TrimSuffix(filepath.Base(f), "_gamelist.txt")
+		for _, sys := range systems {
+			if strings.EqualFold(strings.TrimSpace(sys), base) {
+				filtered = append(filtered, f)
+				break
+			}
+		}
+	}
+	return filtered
 }
