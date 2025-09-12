@@ -152,7 +152,7 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 			lines := parseLines(string(data))
 			totalGames += len(lines)
 
-			// skip normal rebuild unless Amiga (special case)
+			// skip normal rebuild
 			if !strings.EqualFold(systemId, "Amiga") {
 				continue
 			}
@@ -205,36 +205,63 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 
 		// Handle AmigaVision special lists
 		if strings.EqualFold(systemId, "Amiga") {
+			// file paths for AmigaVision special lists
 			gamesListPath := filepath.Join(gamelistDir, "AmigaVisionGames_gamelist.txt")
 			demosListPath := filepath.Join(gamelistDir, "AmigaVisionDemos_gamelist.txt")
 
-			_, gamesErr := os.Stat(gamesListPath)
-			_, demosErr := os.Stat(demosListPath)
+			_, gErr := os.Stat(gamesListPath)
+			_, dErr := os.Stat(demosListPath)
+			gamesExists := (gErr == nil)
+			demosExists := (dErr == nil)
 
-			amigaCount := writeAmigaVisionLists(gamelistDir, paths)
+			amigaCount := 0
+			if overwrite || !(gamesExists && demosExists) {
+				amigaCount = writeAmigaVisionLists(gamelistDir, paths)
+			}
+
 			if amigaCount > 0 {
 				totalGames += amigaCount
 
-				// Treat each file as its own entry
-				if amigaCount > 0 {
-					if gamesErr == nil {
+				// log and count Games list
+				if len(parseLines(strings.Join([]string{gamesListPath}, ""))) > 0 {
+					if gamesExists {
 						if overwrite {
+							if !quiet {
+								fmt.Println("Rebuilding AmigaVisionGames (overwrite enabled)")
+							}
 							rebuilt++
 						} else {
+							if !quiet {
+								fmt.Println("Reusing AmigaVisionGames: gamelist already exists")
+							}
 							reused++
 						}
 					} else {
+						if !quiet {
+							fmt.Println("Fresh AmigaVisionGames list created")
+						}
 						fresh++
 					}
 				}
-				if amigaCount > 0 {
-					if demosErr == nil {
+
+				// log and count Demos list
+				if len(parseLines(strings.Join([]string{demosListPath}, ""))) > 0 {
+					if demosExists {
 						if overwrite {
+							if !quiet {
+								fmt.Println("Rebuilding AmigaVisionDemos (overwrite enabled)")
+							}
 							rebuilt++
 						} else {
+							if !quiet {
+								fmt.Println("Reusing AmigaVisionDemos: gamelist already exists")
+							}
 							reused++
 						}
 					} else {
+						if !quiet {
+							fmt.Println("Fresh AmigaVisionDemos list created")
+						}
 						fresh++
 					}
 				}
