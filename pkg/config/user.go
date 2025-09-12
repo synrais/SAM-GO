@@ -123,6 +123,9 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 	}
 	// NOTE: Random is a bool (false by default). We force true here.
 	defaultConfig.Attract.Random = true
+	if defaultConfig.Attract.SkipafterStatic == 0 {
+		defaultConfig.Attract.SkipafterStatic = 10
+	}
 
 	// Return early if INI file doesn’t exist
 	if _, err := os.Stat(iniPath); os.IsNotExist(err) {
