@@ -1,6 +1,7 @@
 package staticdetector
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -95,13 +96,10 @@ func isEntryInFile(path, game string) bool {
 		return false
 	}
 	defer f.Close()
-	buf := make([]byte, 4096)
-	for {
-		n, _ := f.Read(buf)
-		if n <= 0 {
-			break
-		}
-		if string(buf[:n]) == game {
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		if scanner.Text() == game {
 			return true
 		}
 	}
@@ -167,6 +165,7 @@ func Stream() <-chan StaticEvent {
 		}
 		defer res.Close()
 
+		uptimeStart := run.LastStartTime
 		staticScreenRun := 0.0
 		staticStartTime := 0.0
 		sampleFrames := 0
@@ -261,7 +260,7 @@ func Stream() <-chan StaticEvent {
 				}
 				if !changed {
 					if staticScreenRun == 0 {
-						staticStartTime = frameTime.Sub(run.LastStartTime).Seconds()
+						staticStartTime = frameTime.Sub(uptimeStart).Seconds()
 					}
 					delta := frameTime.Sub(lastFrameTime).Seconds()
 					if delta > 0 {
@@ -280,14 +279,14 @@ func Stream() <-chan StaticEvent {
 			firstFrame = false
 			lastFrameTime = frameTime
 
-			uptime := time.Since(run.LastStartTime).Seconds()
+			uptime := frameTime.Sub(uptimeStart).Seconds()
 
 			domHex := rgbToHex(domR, domG, domB)
 			avgHex := rgbToHex(avgR, avgG, avgB)
 			domName := nearestColorName(domR, domG, domB)
 			avgName := nearestColorName(avgR, avgG, avgB)
 
-			// Use run.go globals for naming
+			// Use run.go globals
 			system := run.LastPlayedSystem.Name
 			game := fmt.Sprintf("[%s] %s", system, run.LastPlayedName)
 
