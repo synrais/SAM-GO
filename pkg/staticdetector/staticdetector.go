@@ -1,7 +1,6 @@
 package staticdetector
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -96,10 +95,13 @@ func isEntryInFile(path, game string) bool {
 		return false
 	}
 	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		if scanner.Text() == game {
+	buf := make([]byte, 4096)
+	for {
+		n, _ := f.Read(buf)
+		if n <= 0 {
+			break
+		}
+		if string(buf[:n]) == game {
 			return true
 		}
 	}
@@ -165,22 +167,36 @@ func Stream() <-chan StaticEvent {
 		}
 		defer res.Close()
 
-		uptimeStart := run.LastStartTime
 		staticScreenRun := 0.0
 		staticStartTime := 0.0
 		sampleFrames := 0
 		lastFrameTime := time.Now()
 		firstFrame := true
 
+		lastGame := ""
+		alreadyBlacklisted := false
+		alreadyStaticlisted := false
+
 		maxSamples := (2048 / defaultStep) * (2048 / defaultStep)
 		prevRGB := make([]uint32, maxSamples)
 		currRGB := make([]uint32, maxSamples)
 
-		alreadyBlacklisted := false
-		alreadyStaticlisted := false
-
 		for {
 			t1 := time.Now()
+
+			// detect game change from run.go
+			currentGame := fmt.Sprintf("[%s] %s", run.LastPlayedSystem.Name, run.LastPlayedName)
+			if currentGame != lastGame {
+				// reset all counters when a new game starts
+				lastGame = currentGame
+				staticScreenRun = 0
+				staticStartTime = 0
+				sampleFrames = 0
+				firstFrame = true
+				lastFrameTime = time.Now()
+				alreadyBlacklisted = false
+				alreadyStaticlisted = false
+			}
 
 			res.Header = int(res.Map[2])<<8 | int(res.Map[3])
 			res.Width = int(res.Map[6])<<8 | int(res.Map[7])
@@ -260,7 +276,7 @@ func Stream() <-chan StaticEvent {
 				}
 				if !changed {
 					if staticScreenRun == 0 {
-						staticStartTime = frameTime.Sub(uptimeStart).Seconds()
+						staticStartTime = frameTime.Sub(run.LastStartTime).Seconds()
 					}
 					delta := frameTime.Sub(lastFrameTime).Seconds()
 					if delta > 0 {
@@ -279,16 +295,16 @@ func Stream() <-chan StaticEvent {
 			firstFrame = false
 			lastFrameTime = frameTime
 
-			uptime := frameTime.Sub(uptimeStart).Seconds()
+			// uptime comes straight from run.go
+			uptime := frameTime.Sub(run.LastStartTime).Seconds()
 
 			domHex := rgbToHex(domR, domG, domB)
 			avgHex := rgbToHex(avgR, avgG, avgB)
 			domName := nearestColorName(domR, domG, domB)
 			avgName := nearestColorName(avgR, avgG, avgB)
 
-			// Use run.go globals
 			system := run.LastPlayedSystem.Name
-			game := fmt.Sprintf("[%s] %s", system, run.LastPlayedName)
+			game := currentGame
 
 			if avgHex == "#000000" && staticScreenRun > blackThreshold && !alreadyBlacklisted {
 				addToFile(system, game, "_blacklist.txt")
