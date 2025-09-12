@@ -127,19 +127,28 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 
 	totalGames := 0
 	fresh, rebuilt, reused := 0, 0, 0
+	var emptySystems []string
 
 	for systemId, paths := range systemPaths {
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
 
 		// check if list already exists
-		_, exists := os.Stat(gamelistPath)
-		if !overwrite && exists == nil {
+		_, err := os.Stat(gamelistPath)
+		exists := (err == nil)
+
+		if !overwrite && exists {
 			if !quiet {
 				fmt.Printf("Reusing %s: gamelist already exists\n", systemId)
 			}
 			reused++
+
+			// count games in reused list
+			data, _ := os.ReadFile(gamelistPath)
+			lines := parseLines(string(data))
+			totalGames += len(lines)
+
 			continue
-		} else if overwrite && exists == nil {
+		} else if overwrite && exists {
 			if !quiet {
 				fmt.Printf("Rebuilding %s (overwrite enabled)\n", systemId)
 			}
@@ -179,6 +188,8 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 			sort.Strings(systemFiles)
 			totalGames += len(systemFiles)
 			writeGamelist(gamelistDir, systemId, systemFiles)
+		} else {
+			emptySystems = append(emptySystems, systemId)
 		}
 
 		if strings.EqualFold(systemId, "Amiga") {
@@ -212,6 +223,10 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 		} else {
 			fmt.Printf("Indexing complete (%d games in %ds)\n", totalGames, taken)
 			fmt.Printf("Summary: %d fresh, %d rebuilt, %d reused\n", fresh, rebuilt, reused)
+
+			if len(emptySystems) > 0 {
+				fmt.Printf("No games found for: %s\n", strings.Join(emptySystems, ", "))
+			}
 		}
 	}
 
