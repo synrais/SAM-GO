@@ -103,7 +103,7 @@ func handleCommand(cfg *config.UserConfig, cmd string, args []string) {
 	}
 }
 
-func commandProcessor(ch <-chan []string) {
+func commandProcessor(cfg *config.UserConfig, ch <-chan []string) {
 	for args := range ch {
 		if len(args) == 0 {
 			continue
