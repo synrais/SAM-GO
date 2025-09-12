@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/history"
 	"github.com/synrais/SAM-GO/pkg/run"
 )
 
@@ -46,17 +47,6 @@ func writeLines(path string, lines []string) error {
 		_, _ = tmp.WriteString(l + "\n")
 	}
 	return os.Rename(tmp.Name(), path)
-}
-
-// appendLine appends a single line to a file.
-func appendLine(path string, line string) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = f.WriteString(line + "\n")
-	return err
 }
 
 // parsePlayTime handles "40" or "40-130"
@@ -122,7 +112,7 @@ func disabled(system string, gamePath string, cfg *config.UserConfig) bool {
 
 // rebuildLists calls SAM -list to regenerate gamelists.
 func rebuildLists(listDir string) []string {
-	fmt.Println("⚠️  All gamelists empty. Rebuilding with SAM -list...")
+	fmt.Println("All gamelists empty. Rebuilding with SAM -list...")
 
 	exe, _ := os.Executable()
 	cmd := exec.Command(exe, "-list")
@@ -132,7 +122,7 @@ func rebuildLists(listDir string) []string {
 
 	refreshed, _ := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
 	if len(refreshed) > 0 {
-		fmt.Printf("✓ Rebuilt %d gamelists, resuming Attract Mode.\n", len(refreshed))
+		fmt.Printf("Rebuilt %d gamelists, resuming Attract Mode.\n", len(refreshed))
 	}
 	return refreshed
 }
@@ -162,7 +152,6 @@ func Run(_ []string) {
 	attractCfg := cfg.Attract
 
 	listDir := "/tmp/.SAM_List"
-	historyFile := "/tmp/.SAM_History.txt"
 
 	// Collect gamelists
 	allFiles, err := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
@@ -184,11 +173,22 @@ func Run(_ []string) {
 	fmt.Println("Attract mode running. Ctrl-C to exit.")
 
 	for {
+		if next, ok := history.Next(); ok {
+			name := filepath.Base(next)
+			name = strings.TrimSuffix(name, filepath.Ext(name))
+			fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, next)
+			_ = history.WriteNowPlaying(next)
+			run.Run([]string{next})
+			wait := parsePlayTime(attractCfg.PlayTime, r)
+			time.Sleep(wait)
+			continue
+		}
+
 		// Stop if no files left
 		if len(files) == 0 {
 			files = filterAllowed(rebuildLists(listDir), attractCfg.Systems)
 			if len(files) == 0 {
-				fmt.Println("❌ Failed to rebuild gamelists, exiting.")
+				fmt.Println("Failed to rebuild gamelists, exiting.")
 				return
 			}
 		}
@@ -231,20 +231,13 @@ func Run(_ []string) {
 		name = strings.TrimSuffix(name, filepath.Ext(name))
 		fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, gamePath)
 
-		// Record current game and core
-		gameName := filepath.Base(gamePath)
-		content := fmt.Sprintf("[%s] %s", systemID, gameName)
-		_ = os.WriteFile("/tmp/Now_Playing.txt", []byte(content), 0644)
-
-		// Launch game
+		// Record current game and launch
+		_ = history.WriteNowPlaying(gamePath)
 		run.Run([]string{gamePath})
 
 		// Update list
 		lines = append(lines[:index], lines[index+1:]...)
 		_ = writeLines(listFile, lines)
-
-		// Append history
-		_ = appendLine(historyFile, gamePath)
 
 		// Wait
 		wait := parsePlayTime(attractCfg.PlayTime, r)
