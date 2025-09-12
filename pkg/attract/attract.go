@@ -127,20 +127,34 @@ func rebuildLists(listDir string) []string {
 	return refreshed
 }
 
-// filterAllowed applies system restriction case-insensitively.
-func filterAllowed(allFiles []string, systems []string) []string {
-	if len(systems) == 0 {
-		return allFiles
-	}
+// filterAllowed applies include/exclude restrictions case-insensitively.
+func filterAllowed(allFiles []string, include, exclude []string) []string {
 	var filtered []string
 	for _, f := range allFiles {
 		base := strings.TrimSuffix(filepath.Base(f), "_gamelist.txt")
-		for _, sys := range systems {
+		if len(include) > 0 {
+			match := false
+			for _, sys := range include {
+				if strings.EqualFold(strings.TrimSpace(sys), base) {
+					match = true
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+		}
+		skip := false
+		for _, sys := range exclude {
 			if strings.EqualFold(strings.TrimSpace(sys), base) {
-				filtered = append(filtered, f)
+				skip = true
 				break
 			}
 		}
+		if skip {
+			continue
+		}
+		filtered = append(filtered, f)
 	}
 	return filtered
 }
@@ -152,6 +166,9 @@ func Run(_ []string) {
 	attractCfg := cfg.Attract
 
 	listDir := "/tmp/.SAM_List"
+	fullDir := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
+
+	ProcessLists(listDir, fullDir, cfg)
 
 	// Collect gamelists
 	allFiles, err := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
@@ -161,9 +178,9 @@ func Run(_ []string) {
 	}
 
 	// Restrict to allowed systems up front
-	files := filterAllowed(allFiles, attractCfg.Systems)
+	files := filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
 	if len(files) == 0 {
-		fmt.Println("No gamelists match Systems in INI")
+		fmt.Println("No gamelists match Include/Exclude in INI")
 		os.Exit(1)
 	}
 
@@ -186,7 +203,10 @@ func Run(_ []string) {
 
 		// Stop if no files left
 		if len(files) == 0 {
-			files = filterAllowed(rebuildLists(listDir), attractCfg.Systems)
+			rebuildLists(listDir)
+			ProcessLists(listDir, fullDir, cfg)
+			allFiles, _ = filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
+			files = filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
 			if len(files) == 0 {
 				fmt.Println("Failed to rebuild gamelists, exiting.")
 				return
@@ -214,7 +234,7 @@ func Run(_ []string) {
 		if attractCfg.Random {
 			index = r.Intn(len(lines))
 		}
-		gamePath := lines[index]
+		ts, gamePath := ParseLine(lines[index])
 
 		// System from filename
 		systemID := strings.TrimSuffix(filepath.Base(listFile), "_gamelist.txt")
@@ -242,5 +262,32 @@ func Run(_ []string) {
 		// Wait
 		wait := parsePlayTime(attractCfg.PlayTime, r)
 		time.Sleep(wait)
+		if attractCfg.UseStaticlist {
+			start := time.Now()
+			norm := normalizeName(gamePath)
+			deadline := start.Add(wait)
+			var skipAt time.Time
+			if ts > 0 {
+				skipDuration := time.Duration(ts*float64(time.Second)) + time.Duration(attractCfg.SkipafterStatic)*time.Second
+				skipAt = start.Add(skipDuration)
+			}
+			for time.Now().Before(deadline) {
+				time.Sleep(time.Second)
+				if !skipAt.IsZero() && time.Now().After(skipAt) {
+					break
+				}
+				newTs := ReadStaticTimestamp(fullDir, systemID, norm)
+				if newTs > 0 && newTs != ts {
+					ts = newTs
+					skipDuration := time.Duration(newTs*float64(time.Second)) + time.Duration(attractCfg.SkipafterStatic)*time.Second
+					skipAt = start.Add(skipDuration)
+					if time.Now().After(skipAt) {
+						break
+					}
+				}
+			}
+		} else {
+			time.Sleep(wait)
+		}
 	}
 }
