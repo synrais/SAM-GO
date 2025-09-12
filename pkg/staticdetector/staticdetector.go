@@ -257,18 +257,18 @@ func Stream() <-chan StaticEvent {
 			res.Line = int(res.Map[10])<<8 | int(res.Map[11])
 
 			// Sanity check resolution before using it
+			valid := true
 			const (
-				minWidth  = 128
-				minHeight = 128
+				minWidth  = 64
+				minHeight = 64
 				maxWidth  = 2048
 				maxHeight = 2048
 			)
 			if res.Width < minWidth || res.Width > maxWidth ||
 				res.Height < minHeight || res.Height > maxHeight ||
 				res.Line < res.Width*3 || res.Line > maxWidth*4 {
-				fmt.Printf("Invalid resolution skipped: %dx%d (line=%d)\n", res.Width, res.Height, res.Line)
-				time.Sleep(time.Second / targetFPS)
-				continue
+				// Treat as invalid → but don’t skip, just fake a black pixel
+				valid = false
 			}
 
 			buf := make([]byte, 4096)
@@ -296,22 +296,30 @@ func Stream() <-chan StaticEvent {
 
 			idx := 0
 			var sumR, sumG, sumB int
-			for y := 0; y < res.Height; y += defaultStep {
-				row := res.Map[res.Header+y*res.Line:]
-				for x := 0; x < res.Width; x += defaultStep {
-					off := x * 3
-					if off+2 < res.Line {
-						r := row[off]
-						g := row[off+1]
-						b := row[off+2]
-						currRGB[idx] = uint32(r)<<16 | uint32(g)<<8 | uint32(b)
-						sumR += int(r)
-						sumG += int(g)
-						sumB += int(b)
-						idx++
+			if !valid {
+				// Fake single black pixel
+				currRGB[0] = 0
+				sumR, sumG, sumB = 0, 0, 0
+				idx = 1
+			} else {
+				for y := 0; y < res.Height; y += defaultStep {
+					row := res.Map[res.Header+y*res.Line:]
+					for x := 0; x < res.Width; x += defaultStep {
+						off := x * 3
+						if off+2 < res.Line {
+							r := row[off]
+							g := row[off+1]
+							b := row[off+2]
+							currRGB[idx] = uint32(r)<<16 | uint32(g)<<8 | uint32(b)
+							sumR += int(r)
+							sumG += int(g)
+							sumB += int(b)
+							idx++
+						}
 					}
 				}
 			}
+
 			samples := idx
 			if samples <= 0 {
 				continue
