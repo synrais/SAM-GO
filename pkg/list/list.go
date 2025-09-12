@@ -81,37 +81,46 @@ func writeCustomList(dir, filename string, entries []string) {
 	_ = utils.MoveFile(tmp.Name(), path)
 }
 
-func writeAmigaVisionLists(gamelistDir string, paths []string) int {
-	var gamesList, demosList []string
-	written := 0
-
+func writeAmigaVisionGamesList(gamelistDir string, paths []string) int {
+	var gamesList []string
 	for _, path := range paths {
 		filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
 				return nil
 			}
-			switch strings.ToLower(d.Name()) {
-			case "games.txt":
+			if strings.EqualFold(d.Name(), "games.txt") {
 				data, _ := os.ReadFile(p)
 				gamesList = append(gamesList, parseLines(string(data))...)
-			case "demos.txt":
+			}
+			return nil
+		})
+	}
+	if len(gamesList) > 0 {
+		writeCustomList(gamelistDir, "AmigaVisionGames_gamelist.txt", gamesList)
+		return len(gamesList)
+	}
+	return 0
+}
+
+func writeAmigaVisionDemosList(gamelistDir string, paths []string) int {
+	var demosList []string
+	for _, path := range paths {
+		filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			if strings.EqualFold(d.Name(), "demos.txt") {
 				data, _ := os.ReadFile(p)
 				demosList = append(demosList, parseLines(string(data))...)
 			}
 			return nil
 		})
 	}
-
-	if len(gamesList) > 0 {
-		writeCustomList(gamelistDir, "AmigaVisionGames_gamelist.txt", gamesList)
-		written += len(gamesList)
-	}
 	if len(demosList) > 0 {
 		writeCustomList(gamelistDir, "AmigaVisionDemos_gamelist.txt", demosList)
-		written += len(demosList)
+		return len(demosList)
 	}
-
-	return written
+	return 0
 }
 
 func createGamelists(gamelistDir string, systemPaths map[string][]string,
@@ -152,7 +161,7 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 			lines := parseLines(string(data))
 			totalGames += len(lines)
 
-			// skip normal rebuild
+			// skip normal rebuild unless Amiga
 			if !strings.EqualFold(systemId, "Amiga") {
 				continue
 			}
@@ -203,53 +212,49 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 			emptySystems = append(emptySystems, systemId)
 		}
 
-		// ---- AmigaVision special handling ----
+		// Handle AmigaVision special lists
 		if strings.EqualFold(systemId, "Amiga") {
-			visionLists := map[string]string{
-				"AmigaVisionGames": "AmigaVisionGames_gamelist.txt",
-				"AmigaVisionDemos": "AmigaVisionDemos_gamelist.txt",
+			// Games list
+			gamesListPath := filepath.Join(gamelistDir, "AmigaVisionGames_gamelist.txt")
+			_, gamesErr := os.Stat(gamesListPath)
+			gamesExists := (gamesErr == nil)
+
+			gamesCount := 0
+			if overwrite || !gamesExists {
+				gamesCount = writeAmigaVisionGamesList(gamelistDir, paths)
 			}
-
-			for visionId, filename := range visionLists {
-				visionPath := filepath.Join(gamelistDir, filename)
-				_, err := os.Stat(visionPath)
-				exists := (err == nil)
-
-				visionCount := 0
-				if overwrite || !exists {
-					// rebuild them
-					visionCount = writeAmigaVisionLists(gamelistDir, paths)
-				}
-
-				// if file exists, count lines regardless
-				if exists {
-					data, _ := os.ReadFile(visionPath)
-					lines := parseLines(string(data))
-					visionCount = len(lines)
-				}
-
-				if visionCount > 0 {
-					totalGames += visionCount
-					if exists {
-						if overwrite {
-							if !quiet {
-								fmt.Printf("Rebuilding %s (overwrite enabled)\n", visionId)
-							}
-							rebuilt++
-						} else {
-							if !quiet {
-								fmt.Printf("Reusing %s: gamelist already exists\n", visionId)
-							}
-							reused++
-						}
+			if gamesCount > 0 {
+				totalGames += gamesCount
+				if gamesExists {
+					if overwrite {
+						rebuilt++
 					} else {
-						if !quiet {
-							fmt.Printf("Fresh %s list created\n", visionId)
-						}
-						fresh++
+						reused++
 					}
 				} else {
-					emptySystems = append(emptySystems, visionId)
+					fresh++
+				}
+			}
+
+			// Demos list
+			demosListPath := filepath.Join(gamelistDir, "AmigaVisionDemos_gamelist.txt")
+			_, demosErr := os.Stat(demosListPath)
+			demosExists := (demosErr == nil)
+
+			demosCount := 0
+			if overwrite || !demosExists {
+				demosCount = writeAmigaVisionDemosList(gamelistDir, paths)
+			}
+			if demosCount > 0 {
+				totalGames += demosCount
+				if demosExists {
+					if overwrite {
+						rebuilt++
+					} else {
+						reused++
+					}
+				} else {
+					fresh++
 				}
 			}
 		}
