@@ -73,13 +73,17 @@ func pathExists(path string) bool {
 
 func bindMount(src, dst string) error {
 	_ = os.MkdirAll(dst, 0755)
-	cmd := exec.Command("mount", "-o", "bind", src, dst)
-	return cmd.Run()
+	cmd := exec.Command("/bin/mount", "--bind", src, dst)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("mount failed: %v (output: %s)", err, string(out))
+	}
+	return nil
 }
 
 func unmount(path string) {
-	// ignore errors – unmount may fail if nothing is mounted
-	_ = exec.Command("umount", path).Run()
+	cmd := exec.Command("/bin/umount", path)
+	_ = cmd.Run() // ignore errors, same as shell script
 }
 
 func findAmigaShared() string {
@@ -108,14 +112,13 @@ func findAmigaShared() string {
 }
 
 // Run launches a game or AmigaVision target.
-// It no longer exits the process – caller handles errors.
 func Run(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("Usage: SAM -run <path-or-name>")
 	}
 	runPath := args[0]
 
-	// Case 1: AmigaVision name (anything without slash/backslash)
+	// Case 1: AmigaVision name (no slash/backslash → special case)
 	if !strings.ContainsAny(runPath, "/\\") {
 		amigaShared := findAmigaShared()
 		if amigaShared == "" {
@@ -127,17 +130,21 @@ func Run(args []string) error {
 		_ = os.MkdirAll(tmpShared, 0755)
 
 		// copy real shared into tmp
-		_ = exec.Command("cp", "-a", amigaShared+"/.", tmpShared).Run()
+		if out, err := exec.Command("/bin/cp", "-a", amigaShared+"/.", tmpShared).CombinedOutput(); err != nil {
+			fmt.Printf("[WARN] copy shared failed: %v (output: %s)\n", err, string(out))
+		}
 
 		// write ags_boot file
 		bootFile := filepath.Join(tmpShared, "ags_boot")
 		content := runPath + "\n\n"
-		_ = os.WriteFile(bootFile, []byte(content), 0644)
+		if err := os.WriteFile(bootFile, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write ags_boot: %v", err)
+		}
 
 		// bind mount over real shared
 		unmount(amigaShared)
 		if err := bindMount(tmpShared, amigaShared); err != nil {
-			return fmt.Errorf("bind mount failed: %v", err)
+			return err
 		}
 
 		// record last played (Amiga special case)
@@ -147,18 +154,16 @@ func Run(args []string) error {
 		return mister.LaunchCore(&config.UserConfig{}, games.Systems["Amiga"])
 	}
 
-	// Case 2: MGL file (case-insensitive extension check)
+	// Case 2: MGL file
 	if strings.EqualFold(filepath.Ext(runPath), ".mgl") {
 		realPath, err := parseMglForGamePath(runPath)
 		if err == nil && realPath != "" {
 			if system, err := games.BestSystemMatch(&config.UserConfig{}, realPath); err == nil {
 				setLastPlayed(system, realPath)
 			} else {
-				// fallback: store generic MGL path if system not resolved
 				setLastPlayed(games.System{}, runPath)
 			}
 		} else {
-			// fallback: no <file> in MGL
 			setLastPlayed(games.System{}, runPath)
 		}
 		return mister.LaunchGenericFile(&config.UserConfig{}, runPath)
