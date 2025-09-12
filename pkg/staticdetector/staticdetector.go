@@ -5,9 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/synrais/SAM-GO/pkg/run"
+	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/history"
 	"golang.org/x/sys/unix"
 )
 
@@ -18,9 +21,7 @@ const (
 	defaultStep = 8
 	targetFPS   = 30
 
-	listDir         = "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
-	blackThreshold  = 30.0
-	staticThreshold = 30.0
+	listDir = "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
 )
 
 // NamedColor represents a well known color and its RGB components.
@@ -152,8 +153,11 @@ func (e StaticEvent) String() string {
 }
 
 // Stream launches the static screen detector and streams events.
-func Stream() <-chan StaticEvent {
+func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 	out := make(chan StaticEvent, 1)
+
+	baseCfg := cfg.StaticDetector
+	overrides := cfg.StaticDetector.Systems
 
 	go func() {
 		defer close(out)
@@ -174,8 +178,9 @@ func Stream() <-chan StaticEvent {
 		firstFrame := true
 
 		lastGame := ""
-		alreadyBlacklisted := false
-		alreadyStaticlisted := false
+		handledBlack := false
+		handledStatic := false
+		currCfg := baseCfg
 
 		maxSamples := (2048 / defaultStep) * (2048 / defaultStep)
 		prevRGB := make([]uint32, maxSamples)
@@ -194,8 +199,34 @@ func Stream() <-chan StaticEvent {
 				sampleFrames = 0
 				firstFrame = true
 				lastFrameTime = time.Now()
-				alreadyBlacklisted = false
-				alreadyStaticlisted = false
+				handledBlack = false
+				handledStatic = false
+
+				currCfg = baseCfg
+				sysName := strings.ToLower(run.LastPlayedSystem.Name)
+				if ov, ok := overrides[sysName]; ok {
+					if ov.BlackThreshold != nil {
+						currCfg.BlackThreshold = *ov.BlackThreshold
+					}
+					if ov.StaticThreshold != nil {
+						currCfg.StaticThreshold = *ov.StaticThreshold
+					}
+					if ov.SkipBlack != nil {
+						currCfg.SkipBlack = *ov.SkipBlack
+					}
+					if ov.WriteBlackList != nil {
+						currCfg.WriteBlackList = *ov.WriteBlackList
+					}
+					if ov.SkipStatic != nil {
+						currCfg.SkipStatic = *ov.SkipStatic
+					}
+					if ov.WriteStaticList != nil {
+						currCfg.WriteStaticList = *ov.WriteStaticList
+					}
+					if ov.Grace != nil {
+						currCfg.Grace = *ov.Grace
+					}
+				}
 			}
 
 			res.Header = int(res.Map[2])<<8 | int(res.Map[3])
@@ -306,14 +337,26 @@ func Stream() <-chan StaticEvent {
 			system := run.LastPlayedSystem.Name
 			game := currentGame
 
-			if avgHex == "#000000" && staticScreenRun > blackThreshold && !alreadyBlacklisted {
-				addToFile(system, game, "_blacklist.txt")
-				alreadyBlacklisted = true
-			}
-			if avgHex != "#000000" && staticScreenRun > staticThreshold && !alreadyStaticlisted {
-				entry := fmt.Sprintf("<%.0f> %s", staticStartTime, game)
-				addToFile(system, entry, "_staticlist.txt")
-				alreadyStaticlisted = true
+			if uptime > currCfg.Grace {
+				if avgHex == "#000000" && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
+					if currCfg.WriteBlackList {
+						addToFile(system, game, "_blacklist.txt")
+					}
+					if currCfg.SkipBlack {
+						_ = history.PlayNext()
+					}
+					handledBlack = true
+				}
+				if avgHex != "#000000" && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
+					if currCfg.WriteStaticList {
+						entry := fmt.Sprintf("<%.0f> %s", staticStartTime, game)
+						addToFile(system, entry, "_staticlist.txt")
+					}
+					if currCfg.SkipStatic {
+						_ = history.PlayNext()
+					}
+					handledStatic = true
+				}
 			}
 
 			event := StaticEvent{
