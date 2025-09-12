@@ -167,7 +167,6 @@ func Stream() <-chan StaticEvent {
 		}
 		defer res.Close()
 
-		uptimeStart := run.LastStartTime
 		staticScreenRun := 0.0
 		staticStartTime := 0.0
 		sampleFrames := 0
@@ -262,7 +261,7 @@ func Stream() <-chan StaticEvent {
 				}
 				if !changed {
 					if staticScreenRun == 0 {
-						staticStartTime = frameTime.Sub(uptimeStart).Seconds()
+						staticStartTime = frameTime.Sub(run.LastStartTime).Seconds()
 					}
 					delta := frameTime.Sub(lastFrameTime).Seconds()
 					if delta > 0 {
@@ -281,16 +280,16 @@ func Stream() <-chan StaticEvent {
 			firstFrame = false
 			lastFrameTime = frameTime
 
-			uptime := frameTime.Sub(uptimeStart).Seconds()
+			uptime := time.Since(run.LastStartTime).Seconds()
 
 			domHex := rgbToHex(domR, domG, domB)
 			avgHex := rgbToHex(avgR, avgG, avgB)
 			domName := nearestColorName(domR, domG, domB)
 			avgName := nearestColorName(avgR, avgG, avgB)
 
-			// Use run.go globals
+			// Use run.go globals for naming
 			system := run.LastPlayedSystem.Name
-			game := run.LastPlayedName
+			game := fmt.Sprintf("[%s] %s", system, run.LastPlayedName)
 
 			if avgHex == "#000000" && staticScreenRun > blackThreshold && !alreadyBlacklisted {
 				addToFile(system, game, "_blacklist.txt")
