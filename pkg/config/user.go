@@ -57,6 +57,7 @@ type AttractConfig struct {
 	StaticlistInclude  []string `ini:"staticlist_include,omitempty" delim:","`
 	StaticlistExclude  []string `ini:"staticlist_exclude,omitempty" delim:","`
 	SkipafterStatic    int      `ini:"skipafterstatic,omitempty"`
+	UseStaticDetector  bool     `ini:"usestaticdetector,omitempty"`
 	UseRatedlist       bool     `ini:"useratedlist,omitempty"`
 	RatedlistInclude   []string `ini:"ratedlist_include,omitempty" delim:","`
 	RatedlistExclude   []string `ini:"ratedlist_exclude,omitempty" delim:","`
