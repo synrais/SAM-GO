@@ -1,16 +1,14 @@
 package staticdetector
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 	"unsafe"
 
+	"github.com/synrais/SAM-GO/pkg/run"
 	"golang.org/x/sys/unix"
 )
 
@@ -20,12 +18,6 @@ const (
 
 	defaultStep = 8
 	targetFPS   = 30
-
-	activityFile = "/tmp/.SAM_tmp/SAM_Screen_Activity"
-	logFile      = "/tmp/.SAM_tmp/SAM_Screen_Activity.log"
-	coreNameFile = "/tmp/CORENAME"
-	gameNameFile = "/tmp/Now_Playing.txt"
-	logMaxLines  = 50000
 
 	listDir         = "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
 	blackThreshold  = 30.0
@@ -69,18 +61,6 @@ func rgbToHex(r, g, b int) string {
 	return fmt.Sprintf("#%02X%02X%02X", r&0xFF, g&0xFF, b&0xFF)
 }
 
-func readTmpTxt(path string) string {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return "Unknown"
-	}
-	s := strings.TrimSpace(string(b))
-	if s == "" {
-		return "Unknown"
-	}
-	return s
-}
-
 type resolution struct {
 	Header int
 	Width  int
@@ -109,47 +89,20 @@ func (r *resolution) Close() {
 	}
 }
 
-func nowSeconds() float64 {
-	return float64(time.Now().UnixNano()) / 1e9
-}
-
 // List helpers
-
-func extractSystem(game string) string {
-	open := strings.LastIndex(game, "(")
-	close := strings.LastIndex(game, ")")
-	var system string
-	if open >= 0 && close > open {
-		system = game[open+1 : close]
-	} else {
-		system = "unknown"
-	}
-	system = strings.ReplaceAll(system, " ", "_")
-	system = strings.ToLower(system)
-	return system
-}
-
-func stripSystemFromGame(game string) string {
-	clean := game
-	if lp := strings.LastIndex(clean, "("); lp >= 0 {
-		if rp := strings.LastIndex(clean, ")"); rp >= 0 && rp > lp {
-			if lp > 0 {
-				clean = strings.TrimSpace(clean[:lp-1])
-			}
-		}
-	}
-	return clean
-}
-
 func isEntryInFile(path, game string) bool {
 	f, err := os.Open(path)
 	if err != nil {
 		return false
 	}
 	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		if scanner.Text() == game {
+	buf := make([]byte, 4096)
+	for {
+		n, _ := f.Read(buf)
+		if n <= 0 {
+			break
+		}
+		if string(buf[:n]) == game {
 			return true
 		}
 	}
@@ -215,17 +168,7 @@ func Stream() <-chan StaticEvent {
 		}
 		defer res.Close()
 
-		inFd, err := unix.InotifyInit1(unix.IN_NONBLOCK)
-		if err != nil {
-			fmt.Println("inotify init:", err)
-			return
-		}
-		defer unix.Close(inFd)
-		_, _ = unix.InotifyAddWatch(inFd, "/tmp", unix.IN_CREATE|unix.IN_MODIFY|unix.IN_ATTRIB)
-
-		game := readTmpTxt(gameNameFile)
-
-		uptimeStart := time.Now()
+		uptimeStart := run.LastStartTime
 		staticScreenRun := 0.0
 		staticStartTime := 0.0
 		sampleFrames := 0
@@ -235,15 +178,6 @@ func Stream() <-chan StaticEvent {
 		maxSamples := (2048 / defaultStep) * (2048 / defaultStep)
 		prevRGB := make([]uint32, maxSamples)
 		currRGB := make([]uint32, maxSamples)
-
-		logf, err := os.Create(logFile)
-		if err != nil {
-			logf = nil
-		}
-		if logf != nil {
-			defer logf.Close()
-		}
-		logLines := 0
 
 		alreadyBlacklisted := false
 		alreadyStaticlisted := false
@@ -256,50 +190,18 @@ func Stream() <-chan StaticEvent {
 			res.Height = int(res.Map[8])<<8 | int(res.Map[9])
 			res.Line = int(res.Map[10])<<8 | int(res.Map[11])
 
-			// Sanity check resolution before using it
+			// Sanity check resolution
 			valid := true
-			const (
-				minWidth  = 64
-				minHeight = 64
-				maxWidth  = 2048
-				maxHeight = 2048
-			)
-			if res.Width < minWidth || res.Width > maxWidth ||
-				res.Height < minHeight || res.Height > maxHeight ||
-				res.Line < res.Width*3 || res.Line > maxWidth*4 {
-				// Treat as invalid → but don’t skip, just fake a black pixel
+			if res.Width < 64 || res.Width > 2048 ||
+				res.Height < 64 || res.Height > 2048 ||
+				res.Line < res.Width*3 || res.Line > 2048*4 {
 				valid = false
-			}
-
-			buf := make([]byte, 4096)
-			n, err := unix.Read(inFd, buf)
-			if err == nil && n > 0 {
-				offset := 0
-				for offset < n {
-					ev := (*unix.InotifyEvent)(unsafe.Pointer(&buf[offset]))
-					nameBytes := buf[offset+unix.SizeofInotifyEvent : offset+unix.SizeofInotifyEvent+int(ev.Len)]
-					name := strings.TrimRight(string(nameBytes), "\x00")
-					if name == "CORENAME" {
-						uptimeStart = time.Now()
-						staticScreenRun = 0
-						sampleFrames = 0
-						lastFrameTime = time.Now()
-						firstFrame = true
-						alreadyBlacklisted = false
-						alreadyStaticlisted = false
-					} else if name == "Now_Playing.txt" {
-						game = readTmpTxt(gameNameFile)
-					}
-					offset += unix.SizeofInotifyEvent + int(ev.Len)
-				}
 			}
 
 			idx := 0
 			var sumR, sumG, sumB int
 			if !valid {
-				// Fake single black pixel
 				currRGB[0] = 0
-				sumR, sumG, sumB = 0, 0, 0
 				idx = 1
 			} else {
 				for y := 0; y < res.Height; y += defaultStep {
@@ -384,20 +286,19 @@ func Stream() <-chan StaticEvent {
 
 			domHex := rgbToHex(domR, domG, domB)
 			avgHex := rgbToHex(avgR, avgG, avgB)
-
 			domName := nearestColorName(domR, domG, domB)
 			avgName := nearestColorName(avgR, avgG, avgB)
 
+			// Use run.go globals
+			system := run.LastPlayedSystem.Name
+			game := run.LastPlayedName
+
 			if avgHex == "#000000" && staticScreenRun > blackThreshold && !alreadyBlacklisted {
-				system := extractSystem(game)
-				clean := stripSystemFromGame(game)
-				addToFile(system, clean, "_blacklist.txt")
+				addToFile(system, game, "_blacklist.txt")
 				alreadyBlacklisted = true
 			}
 			if avgHex != "#000000" && staticScreenRun > staticThreshold && !alreadyStaticlisted {
-				system := extractSystem(game)
-				clean := stripSystemFromGame(game)
-				entry := fmt.Sprintf("%s | StaticStart=%.1fs", clean, staticStartTime)
+				entry := fmt.Sprintf("<%.0f> %s", staticStartTime, game)
 				addToFile(system, entry, "_staticlist.txt")
 				alreadyStaticlisted = true
 			}
@@ -417,50 +318,6 @@ func Stream() <-chan StaticEvent {
 				Game:         game,
 			}
 			out <- event
-
-			type jsonRGB struct {
-				Hex  string `json:"hex"`
-				Name string `json:"name"`
-			}
-			type jsonStatic struct {
-				Uptime       float64 `json:"uptime"`
-				Frames       int     `json:"frames"`
-				StaticScreen struct {
-					Current float64 `json:"current_s"`
-				} `json:"static_screen"`
-				Resolution  string  `json:"resolution"`
-				DominantRGB jsonRGB `json:"dominant_rgb"`
-				AverageRGB  jsonRGB `json:"average_rgb"`
-				Game        string  `json:"game"`
-			}
-			j := jsonStatic{
-				Uptime:      uptime,
-				Frames:      sampleFrames,
-				Resolution:  fmt.Sprintf("%dx%d", res.Width, res.Height),
-				DominantRGB: jsonRGB{Hex: domHex, Name: domName},
-				AverageRGB:  jsonRGB{Hex: avgHex, Name: avgName},
-				Game:        game,
-			}
-			j.StaticScreen.Current = staticScreenRun
-
-			if af, err := os.Create(activityFile); err == nil {
-				enc := json.NewEncoder(af)
-				enc.SetEscapeHTML(false)
-				_ = enc.Encode(j)
-				af.Close()
-			}
-
-			if logf != nil {
-				enc := json.NewEncoder(logf)
-				enc.SetEscapeHTML(false)
-				_ = enc.Encode(j)
-				logLines++
-				if logLines >= logMaxLines {
-					logf.Close()
-					logf, _ = os.Create(logFile)
-					logLines = 0
-				}
-			}
 
 			elapsed := time.Since(t1)
 			frameDur := time.Second / targetFPS
