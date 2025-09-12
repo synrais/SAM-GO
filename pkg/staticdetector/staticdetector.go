@@ -2,6 +2,7 @@ package staticdetector
 
 import (
 	"fmt"
+	"bufio"
 	"os"
 	"path/filepath"
 	"sort"
@@ -99,7 +100,7 @@ func isEntryInFile(path, game string) bool {
 
     scanner := bufio.NewScanner(f)
     for scanner.Scan() {
-        if strings.TrimSpace(scanner.Text()) == game {
+        if scanner.Text() == game {
             return true
         }
     }
