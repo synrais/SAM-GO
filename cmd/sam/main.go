@@ -24,9 +24,6 @@ func dumpConfig(cfg *config.UserConfig) {
 		cfg.Attract.Include, cfg.Attract.Exclude, cfg.Attract.PlayTime, cfg.Attract.Random)
 	fmt.Printf("  List: Exclude=%v\n", cfg.List.Exclude)
 	fmt.Printf("  Search: Filter=%v | Sort=%s\n", cfg.Search.Filter, cfg.Search.Sort)
-	fmt.Printf("  LastPlayed: Name=%s | DisableLastPlayed=%v | RecentFolder=%s | DisableRecentFolder=%v\n",
-		cfg.LastPlayed.Name, cfg.LastPlayed.DisableLastPlayed,
-		cfg.LastPlayed.RecentFolderName, cfg.LastPlayed.DisableRecentFolder)
 	fmt.Printf("  Remote: Mdns=%v | SyncSSHKeys=%v | CustomLogo=%s | AnnounceGameUrl=%s\n",
 		cfg.Remote.MdnsService, cfg.Remote.SyncSSHKeys,
 		cfg.Remote.CustomLogo, cfg.Remote.AnnounceGameUrl)
