@@ -13,6 +13,7 @@ import (
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/history"
+	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/run"
 	"github.com/synrais/SAM-GO/pkg/staticdetector"
 )
@@ -182,9 +183,13 @@ func Run(_ []string) {
 	if attractCfg.UseStaticDetector {
 		go func() {
 			for ev := range staticdetector.Stream(cfg) {
-            fmt.Println(ev) // print the detector output
+				fmt.Println(ev) // print the detector output
 			}
 		}()
+	}
+
+	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
+		input.RelayInputs(cfg, func() { _ = history.PlayBack() }, func() { _ = history.PlayNext() })
 	}
 
 	// Collect gamelists
