@@ -13,39 +13,7 @@ import (
 	"time"
 )
 
-// SAM uses slightly different system IDs.
-var idMap = map[string]string{
-	"Gameboy":        "gb",
-	"GameboyColor":   "gbc",
-	"GameGear":       "gg",
-	"Nintendo64":     "n64",
-	"MasterSystem":   "sms",
-	"Sega32X":        "s32x",
-	"SuperGameboy":   "sgb",
-	"TurboGrafx16":   "tgfx16",
-	"TurboGrafx16CD": "tgfx16cd",
-}
-
-func samId(id string) string {
-	if id, ok := idMap[id]; ok {
-		return id
-	}
-	return id
-}
-
-func reverseId(id string) string {
-	for k, v := range idMap {
-		if strings.EqualFold(v, id) {
-			return k
-		}
-	}
-	return id
-}
-
 func gamelistFilename(systemId string) string {
-	if id, ok := idMap[systemId]; ok {
-		return strings.ToLower(id) + "_gamelist.txt"
-	}
 	return strings.ToLower(systemId) + "_gamelist.txt"
 }
 
@@ -270,15 +238,9 @@ func Run(args []string) error {
 		}
 	} else {
 		for _, filterId := range strings.Split(*filter, ",") {
-			filterId = strings.TrimSpace(strings.ToLower(filterId))
-			systemId := reverseId(filterId)
+			filterId = strings.TrimSpace(filterId)
 
-			if system, ok := games.Systems[systemId]; ok {
-				systems = append(systems, system)
-				continue
-			}
-
-			system, err := games.LookupSystem(systemId)
+			system, err := games.LookupSystem(filterId)
 			if err != nil {
 				continue
 			}
@@ -290,7 +252,7 @@ func Run(args []string) error {
 	if *detect {
 		results := games.GetActiveSystemPaths(cfg, systems)
 		for _, r := range results {
-			fmt.Printf("%s:%s\n", strings.ToLower(samId(r.System.Id)), r.Path)
+			fmt.Printf("%s:%s\n", strings.ToLower(r.System.Id), r.Path)
 		}
 		return nil
 	}
