@@ -143,18 +143,18 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 	defaultConfig.Disable = make(map[string]DisableRules)
 	defaultConfig.StaticDetector.Systems = make(map[string]StaticDetectorOverride)
 	defaultConfig.InputDetector.KeyboardMap = map[string]string{
-		"left":  "history -back",
-		"right": "history -next",
+		"left":  "back",
+		"right": "next",
 	}
 	defaultConfig.InputDetector.MouseMap = map[string]string{
-		"swipeleft":  "history -back",
-		"swiperight": "history -next",
+		"swipeleft":  "back",
+		"swiperight": "next",
 	}
 	defaultConfig.InputDetector.JoystickMap = map[string]string{
-		"dpleft":  "history -back",
-		"dpright": "history -next",
-		"leftx-":  "history -back",
-		"leftx+":  "history -next",
+		"dpleft":  "back",
+		"dpright": "next",
+		"leftx-":  "back",
+		"leftx+":  "next",
 	}
 
 	// ---- Default Static Detector settings ----
