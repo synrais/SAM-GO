@@ -360,7 +360,7 @@ func Stream() <-chan StaticEvent {
 						staticStartTime = frameTime.Sub(uptimeStart).Seconds()
 					}
 					delta := frameTime.Sub(lastFrameTime).Seconds()
-					if delta > 0 && seenChange {
+				    if delta > 0 {
 						staticScreenRun += delta
 					}
 				} else {
