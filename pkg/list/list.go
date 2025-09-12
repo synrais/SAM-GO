@@ -81,8 +81,9 @@ func writeCustomList(dir, filename string, entries []string) {
 	_ = utils.MoveFile(tmp.Name(), path)
 }
 
-func writeAmigaVisionLists(gamelistDir string, paths []string) {
+func writeAmigaVisionLists(gamelistDir string, paths []string) int {
 	var gamesList, demosList []string
+	written := 0
 
 	for _, path := range paths {
 		filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
@@ -103,10 +104,47 @@ func writeAmigaVisionLists(gamelistDir string, paths []string) {
 
 	if len(gamesList) > 0 {
 		writeCustomList(gamelistDir, "AmigaVisionGames_gamelist.txt", gamesList)
+		written += len(gamesList)
 	}
 	if len(demosList) > 0 {
 		writeCustomList(gamelistDir, "AmigaVisionDemos_gamelist.txt", demosList)
+		written += len(demosList)
 	}
+
+	return written
+}
+
+func writeAmigaVisionLists(gamelistDir string, paths []string) int {
+	var gamesList, demosList []string
+	written := 0
+
+	for _, path := range paths {
+		filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			switch strings.ToLower(d.Name()) {
+			case "games.txt":
+				data, _ := os.ReadFile(p)
+				gamesList = append(gamesList, parseLines(string(data))...)
+			case "demos.txt":
+				data, _ := os.ReadFile(p)
+				demosList = append(demosList, parseLines(string(data))...)
+			}
+			return nil
+		})
+	}
+
+	if len(gamesList) > 0 {
+		writeCustomList(gamelistDir, "AmigaVisionGames_gamelist.txt", gamesList)
+		written += len(gamesList)
+	}
+	if len(demosList) > 0 {
+		writeCustomList(gamelistDir, "AmigaVisionDemos_gamelist.txt", demosList)
+		written += len(demosList)
+	}
+
+	return written
 }
 
 func createGamelists(gamelistDir string, systemPaths map[string][]string,
@@ -152,7 +190,6 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 			if !quiet {
 				fmt.Printf("Rebuilding %s (overwrite enabled)\n", systemId)
 			}
-			// rebuilt will only increment if we actually find files
 		}
 
 		var systemFiles []string
@@ -196,8 +233,17 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 			emptySystems = append(emptySystems, systemId)
 		}
 
+		// Handle AmigaVision special lists
 		if strings.EqualFold(systemId, "Amiga") {
-			writeAmigaVisionLists(gamelistDir, paths)
+			amigaCount := writeAmigaVisionLists(gamelistDir, paths)
+			if amigaCount > 0 {
+				totalGames += amigaCount
+				if exists {
+					rebuilt++
+				} else {
+					fresh++
+				}
+			}
 		}
 	}
 
