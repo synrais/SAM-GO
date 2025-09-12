@@ -177,7 +177,7 @@ func Run(_ []string) {
 			name := filepath.Base(next)
 			name = strings.TrimSuffix(name, filepath.Ext(name))
 			fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, next)
-			_ = history.WriteNowPlaying(next)
+			_ = history.SetNowPlaying(next)
 			run.Run([]string{next})
 			wait := parsePlayTime(attractCfg.PlayTime, r)
 			time.Sleep(wait)
