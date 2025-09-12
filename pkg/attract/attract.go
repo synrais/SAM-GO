@@ -14,6 +14,7 @@ import (
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/history"
 	"github.com/synrais/SAM-GO/pkg/run"
+	"github.com/synrais/SAM-GO/pkg/staticdetector"
 )
 
 // readLines reads all non-empty lines from a file.
@@ -177,6 +178,13 @@ func Run(_ []string) {
 	}
 
 	ProcessLists(listDir, fullDir, cfg)
+
+	if attractCfg.UseStaticDetector {
+		go func() {
+			for range staticdetector.Stream(cfg) {
+			}
+		}()
+	}
 
 	// Collect gamelists
 	allFiles, err := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
