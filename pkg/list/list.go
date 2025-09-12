@@ -153,8 +153,6 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 				fmt.Printf("Rebuilding %s (overwrite enabled)\n", systemId)
 			}
 			// rebuilt will only increment if we actually find files
-		} else {
-			// fresh will only increment if we actually find files
 		}
 
 		var systemFiles []string
@@ -208,13 +206,16 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 	_ = os.RemoveAll(tmpDir)
 	_ = os.MkdirAll(tmpDir, 0755)
 
+	copied := 0
 	filepath.Walk(gamelistDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return nil
 		}
 		if strings.HasSuffix(info.Name(), "_gamelist.txt") {
 			dest := filepath.Join(tmpDir, info.Name())
-			_ = utils.CopyFile(path, dest)
+			if err := utils.CopyFile(path, dest); err == nil {
+				copied++
+			}
 		}
 		return nil
 	})
@@ -232,6 +233,10 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 
 			if len(emptySystems) > 0 {
 				fmt.Printf("No games found for: %s\n", strings.Join(emptySystems, ", "))
+			}
+
+			if copied > 0 {
+				fmt.Printf("%d lists copied to tmp for this session\n", copied)
 			}
 		}
 	}
