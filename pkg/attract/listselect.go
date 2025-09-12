@@ -1,7 +1,7 @@
 package attract
 
 import (
-	"fmt"
+	"bufio"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -10,137 +10,174 @@ import (
 	"github.com/synrais/SAM-GO/pkg/config"
 )
 
-const listSourceDir = "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
-
-func normalizeName(path string) string {
-	base := filepath.Base(path)
+// normalizeName converts a file path or name to lowercase base name without extension.
+func normalizeName(p string) string {
+	base := filepath.Base(p)
 	ext := filepath.Ext(base)
-	return strings.TrimSuffix(strings.ToLower(base), strings.ToLower(ext))
+	return strings.ToLower(strings.TrimSuffix(base, ext))
 }
 
-func containsSystem(list []string, system string) bool {
-	for _, s := range list {
-		if strings.EqualFold(strings.TrimSpace(s), system) {
+func containsInsensitive(list []string, item string) bool {
+	for _, v := range list {
+		if strings.EqualFold(strings.TrimSpace(v), item) {
 			return true
 		}
 	}
 	return false
 }
 
-func systemAllowed(include, exclude []string, system string) bool {
-	if len(include) > 0 && !containsSystem(include, system) {
+func allowedFor(system string, include, exclude []string) bool {
+	if len(include) > 0 && !containsInsensitive(include, system) {
 		return false
 	}
-	if containsSystem(exclude, system) {
+	if containsInsensitive(exclude, system) {
 		return false
 	}
 	return true
 }
 
-func loadNameSet(path string) map[string]bool {
-	lines, err := readLines(path)
+func readNameSet(path string) map[string]struct{} {
+	f, err := os.Open(path)
 	if err != nil {
 		return nil
 	}
-	set := make(map[string]bool)
-	for _, l := range lines {
-		set[normalizeName(l)] = true
+	defer f.Close()
+	set := make(map[string]struct{})
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		set[strings.ToLower(line)] = struct{}{}
 	}
 	return set
 }
 
-func loadStaticMap(path string) map[string]string {
-	lines, err := readLines(path)
+func readStaticMap(path string) map[string]string {
+	f, err := os.Open(path)
 	if err != nil {
 		return nil
 	}
+	defer f.Close()
 	m := make(map[string]string)
-	for _, l := range lines {
-		parts := strings.SplitN(l, " ", 2)
-		if len(parts) < 2 {
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
 			continue
 		}
 		ts := strings.TrimSpace(parts[0])
-		name := strings.TrimSpace(parts[1])
-		m[normalizeName(name)] = ts
+		name := strings.ToLower(strings.TrimSpace(parts[1]))
+		m[name] = ts
 	}
 	return m
 }
 
-// ProcessLists filters gamelists in tmpDir according to config.
-func ProcessLists(tmpDir string, cfg *config.UserConfig) {
-	ls := cfg.ListSelect
+// ProcessLists applies blacklist, staticlist, ratedlist, and include/exclude filtering.
+func ProcessLists(tmpDir, fullDir string, cfg *config.UserConfig) {
 	files, _ := filepath.Glob(filepath.Join(tmpDir, "*_gamelist.txt"))
+	for _, f := range files {
+		system := strings.TrimSuffix(filepath.Base(f), "_gamelist.txt")
 
-	for _, file := range files {
-		system := strings.TrimSuffix(filepath.Base(file), "_gamelist.txt")
-
-		if len(ls.Include) > 0 && !containsSystem(ls.Include, system) {
-			_ = os.Remove(file)
+		if len(cfg.Attract.Include) > 0 && !containsInsensitive(cfg.Attract.Include, system) {
+			_ = os.Remove(f)
 			continue
 		}
-		if containsSystem(ls.Exclude, system) {
-			_ = os.Remove(file)
+		if containsInsensitive(cfg.Attract.Exclude, system) {
+			_ = os.Remove(f)
 			continue
 		}
 
-		lines, err := readLines(file)
+		lines, err := readLines(f)
 		if err != nil {
 			continue
 		}
 
-		if ls.UseBlacklist && systemAllowed(ls.BlacklistInclude, ls.BlacklistExclude, system) {
-			bl := loadNameSet(filepath.Join(listSourceDir, system+"_blacklist.txt"))
-			if len(bl) > 0 {
-				var out []string
-				for _, line := range lines {
-					if !bl[normalizeName(line)] {
-						out = append(out, line)
+		// Rated list (whitelist)
+		if cfg.Attract.UseRatedlist && allowedFor(system, cfg.Attract.RatedlistInclude, cfg.Attract.RatedlistExclude) {
+			rated := readNameSet(filepath.Join(fullDir, system+"_ratedlist.txt"))
+			if rated != nil {
+				var kept []string
+				for _, l := range lines {
+					if _, ok := rated[normalizeName(l)]; ok {
+						kept = append(kept, l)
 					}
 				}
-				lines = out
+				lines = kept
 			}
 		}
 
-		if ls.UseRatedlist && systemAllowed(ls.RatedlistInclude, ls.RatedlistExclude, system) {
-			rl := loadNameSet(filepath.Join(listSourceDir, system+"_ratedlist.txt"))
-			if len(rl) > 0 {
-				var out []string
-				for _, line := range lines {
-					if rl[normalizeName(line)] {
-						out = append(out, line)
+		// Blacklist
+		if cfg.Attract.UseBlacklist && allowedFor(system, cfg.Attract.BlacklistInclude, cfg.Attract.BlacklistExclude) {
+			bl := readNameSet(filepath.Join(fullDir, system+"_blacklist.txt"))
+			if bl != nil {
+				var kept []string
+				for _, l := range lines {
+					if _, ok := bl[normalizeName(l)]; !ok {
+						kept = append(kept, l)
 					}
 				}
-				lines = out
+				lines = kept
 			}
 		}
 
-		if ls.UseStaticlist && systemAllowed(ls.StaticlistInclude, ls.StaticlistExclude, system) {
-			sm := loadStaticMap(filepath.Join(listSourceDir, system+"_staticlist.txt"))
-			if len(sm) > 0 {
-				for i, line := range lines {
-					if ts, ok := sm[normalizeName(line)]; ok {
-						lines[i] = fmt.Sprintf("<%s>%s", ts, line)
+		// Static list timestamps
+		if cfg.Attract.UseStaticlist && allowedFor(system, cfg.Attract.StaticlistInclude, cfg.Attract.StaticlistExclude) {
+			sm := readStaticMap(filepath.Join(fullDir, system+"_staticlist.txt"))
+			if sm != nil {
+				for i, l := range lines {
+					name := normalizeName(l)
+					if ts, ok := sm[name]; ok {
+						lines[i] = "<" + ts + ">" + l
 					}
 				}
 			}
 		}
 
-		_ = writeLines(file, lines)
+		_ = writeLines(f, lines)
 	}
 }
 
-// ParseTimestamp extracts timestamp and clean path from a list entry.
-func ParseTimestamp(line string) (string, int64) {
+// ParseLine separates an optional <timestamp> prefix from a gamelist line.
+func ParseLine(line string) (float64, string) {
 	if strings.HasPrefix(line, "<") {
 		if idx := strings.Index(line, ">"); idx > 1 {
-			ts := line[1:idx]
-			rest := strings.TrimSpace(line[idx+1:])
-			if t, err := strconv.ParseInt(ts, 10, 64); err == nil {
-				return rest, t
-			}
-			return rest, 0
+			tsStr := line[1:idx]
+			rest := line[idx+1:]
+			ts, _ := strconv.ParseFloat(tsStr, 64)
+			return ts, rest
 		}
 	}
-	return line, 0
+	return 0, line
+}
+
+// ReadStaticTimestamp returns the timestamp for a game from the static list.
+func ReadStaticTimestamp(fullDir, system, game string) float64 {
+	path := filepath.Join(fullDir, system+"_staticlist.txt")
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if normalizeName(parts[1]) == game {
+			ts, _ := strconv.ParseFloat(parts[0], 64)
+			return ts
+		}
+	}
+	return 0
 }
