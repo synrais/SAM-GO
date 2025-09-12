@@ -3,6 +3,7 @@ package history
 import (
 	"bufio"
 	"errors"
+	"fmt"   
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -174,28 +175,26 @@ func Play(path string) error {
 	if err := WriteNowPlaying(path); err != nil {
 		return err
 	}
+	fmt.Println("[HISTORY] Now playing:", path)
 	return run.Run([]string{path})
 }
 
 // PlayNext moves to the next entry in history and launches it.
 func PlayNext() error {
 	if p, ok := Next(); ok {
-		return Play(p)
+		return Play(p) // <-- always go through Play()
 	}
 	p, err := randomGame()
 	if err != nil {
 		return err
 	}
-	if err := WriteNowPlaying(p); err != nil {
-		return err
-	}
-	return run.Run([]string{p})
+	return Play(p) // <-- ensures history + debug + timer reset
 }
 
 // PlayBack moves to the previous entry in history and launches it.
 func PlayBack() error {
 	if p, ok := Back(); ok {
-		return Play(p)
+		return Play(p) // <-- ensures history + debug + timer reset
 	}
 	return nil
 }
