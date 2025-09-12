@@ -189,11 +189,13 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 		for {
 			t1 := time.Now()
 
-			// detect game change from run.go
-			currentGame := fmt.Sprintf("[%s] %s", run.LastPlayedSystem.Name, run.LastPlayedName)
-			if currentGame != lastGame {
+			// game identifiers
+			displayGame := fmt.Sprintf("[%s] %s", run.LastPlayedSystem.Name, run.LastPlayedName) // for logs
+			cleanGame := run.LastPlayedName // for writing to lists
+
+			if displayGame != lastGame {
 				// reset all counters when a new game starts
-				lastGame = currentGame
+				lastGame = displayGame
 				staticScreenRun = 0
 				staticStartTime = 0
 				sampleFrames = 0
@@ -202,6 +204,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 				handledBlack = false
 				handledStatic = false
 
+				// reload overrides if any
 				currCfg = baseCfg
 				sysName := strings.ToLower(run.LastPlayedSystem.Name)
 				if ov, ok := overrides[sysName]; ok {
@@ -335,12 +338,12 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 			avgName := nearestColorName(avgR, avgG, avgB)
 
 			system := run.LastPlayedSystem.Name
-			game := currentGame
 
+			// black/static detection
 			if uptime > currCfg.Grace {
 				if avgHex == "#000000" && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
 					if currCfg.WriteBlackList {
-						addToFile(system, game, "_blacklist.txt")
+						addToFile(system, cleanGame, "_blacklist.txt")
 					}
 					if currCfg.SkipBlack {
 						_ = history.PlayNext()
@@ -349,7 +352,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 				}
 				if avgHex != "#000000" && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
 					if currCfg.WriteStaticList {
-						entry := fmt.Sprintf("<%.0f> %s", staticStartTime, game)
+						entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
 						addToFile(system, entry, "_staticlist.txt")
 					}
 					if currCfg.SkipStatic {
@@ -371,7 +374,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 				DominantName: domName,
 				AverageHex:   avgHex,
 				AverageName:  avgName,
-				Game:         game,
+				Game:         displayGame, // console/logging
 			}
 			out <- event
 
