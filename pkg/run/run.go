@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
@@ -17,12 +18,19 @@ import (
 var (
 	LastPlayedSystem games.System
 	LastPlayedPath   string
+	LastStartTime    time.Time
 )
+
+// GetLastPlayed returns the last system, path, and start time.
+func GetLastPlayed() (system games.System, path string, start time.Time) {
+	return LastPlayedSystem, LastPlayedPath, LastStartTime
+}
 
 // internal helper to update globals
 func setLastPlayed(system games.System, path string) {
 	LastPlayedSystem = system
 	LastPlayedPath = path
+	LastStartTime = time.Now()
 }
 
 // parseMglForGamePath opens an .mgl file and returns the <file> path, if any.
