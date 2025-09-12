@@ -203,67 +203,53 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 			emptySystems = append(emptySystems, systemId)
 		}
 
-		// Handle AmigaVision special lists
+		// ---- AmigaVision special handling ----
 		if strings.EqualFold(systemId, "Amiga") {
-			// file paths for AmigaVision special lists
-			gamesListPath := filepath.Join(gamelistDir, "AmigaVisionGames_gamelist.txt")
-			demosListPath := filepath.Join(gamelistDir, "AmigaVisionDemos_gamelist.txt")
-
-			_, gErr := os.Stat(gamesListPath)
-			_, dErr := os.Stat(demosListPath)
-			gamesExists := (gErr == nil)
-			demosExists := (dErr == nil)
-
-			amigaCount := 0
-			if overwrite || !(gamesExists && demosExists) {
-				amigaCount = writeAmigaVisionLists(gamelistDir, paths)
+			visionLists := map[string]string{
+				"AmigaVisionGames": "AmigaVisionGames_gamelist.txt",
+				"AmigaVisionDemos": "AmigaVisionDemos_gamelist.txt",
 			}
 
-			if amigaCount > 0 {
-				totalGames += amigaCount
+			for visionId, filename := range visionLists {
+				visionPath := filepath.Join(gamelistDir, filename)
+				_, err := os.Stat(visionPath)
+				exists := (err == nil)
 
-				// log and count Games list
-				if len(parseLines(strings.Join([]string{gamesListPath}, ""))) > 0 {
-					if gamesExists {
-						if overwrite {
-							if !quiet {
-								fmt.Println("Rebuilding AmigaVisionGames (overwrite enabled)")
-							}
-							rebuilt++
-						} else {
-							if !quiet {
-								fmt.Println("Reusing AmigaVisionGames: gamelist already exists")
-							}
-							reused++
-						}
-					} else {
-						if !quiet {
-							fmt.Println("Fresh AmigaVisionGames list created")
-						}
-						fresh++
-					}
+				visionCount := 0
+				if overwrite || !exists {
+					// rebuild them
+					visionCount = writeAmigaVisionLists(gamelistDir, paths)
 				}
 
-				// log and count Demos list
-				if len(parseLines(strings.Join([]string{demosListPath}, ""))) > 0 {
-					if demosExists {
+				// if file exists, count lines regardless
+				if exists {
+					data, _ := os.ReadFile(visionPath)
+					lines := parseLines(string(data))
+					visionCount = len(lines)
+				}
+
+				if visionCount > 0 {
+					totalGames += visionCount
+					if exists {
 						if overwrite {
 							if !quiet {
-								fmt.Println("Rebuilding AmigaVisionDemos (overwrite enabled)")
+								fmt.Printf("Rebuilding %s (overwrite enabled)\n", visionId)
 							}
 							rebuilt++
 						} else {
 							if !quiet {
-								fmt.Println("Reusing AmigaVisionDemos: gamelist already exists")
+								fmt.Printf("Reusing %s: gamelist already exists\n", visionId)
 							}
 							reused++
 						}
 					} else {
 						if !quiet {
-							fmt.Println("Fresh AmigaVisionDemos list created")
+							fmt.Printf("Fresh %s list created\n", visionId)
 						}
 						fresh++
 					}
+				} else {
+					emptySystems = append(emptySystems, visionId)
 				}
 			}
 		}
