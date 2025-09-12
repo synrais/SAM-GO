@@ -14,25 +14,25 @@ import (
 )
 
 func gamelistFilename(systemId string) string {
-    return systemId + "_gamelist.txt"
+	return systemId + "_gamelist.txt"
 }
 
 func writeGamelist(gamelistDir string, systemId string, files []string) {
-    gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
-    tmpPath, err := os.CreateTemp("", "gamelist-*.txt")
-    if err != nil {
-        panic(err)
-    }
+	gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
+	tmpPath, err := os.CreateTemp("", "gamelist-*.txt")
+	if err != nil {
+		panic(err)
+	}
 
-    for _, file := range files {
-        _, _ = tmpPath.WriteString(file + "\n")
-    }
-    _ = tmpPath.Sync()
-    _ = tmpPath.Close()
+	for _, file := range files {
+		_, _ = tmpPath.WriteString(file + "\n")
+	}
+	_ = tmpPath.Sync()
+	_ = tmpPath.Close()
 
-    if err := utils.MoveFile(tmpPath.Name(), gamelistPath); err != nil {
-        panic(err)
-    }
+	if err := utils.MoveFile(tmpPath.Name(), gamelistPath); err != nil {
+		panic(err)
+	}
 }
 
 func filterUniqueWithMGL(files []string) []string {
@@ -109,7 +109,9 @@ func writeAmigaVisionLists(gamelistDir string, paths []string) {
 	}
 }
 
-func createGamelists(gamelistDir string, systemPaths map[string][]string, progress bool, quiet bool, filter bool, overwrite bool) int {
+func createGamelists(gamelistDir string, systemPaths map[string][]string,
+	progress bool, quiet bool, filter bool, overwrite bool) int {
+
 	start := time.Now()
 
 	if !quiet && !progress {
@@ -124,16 +126,26 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string, progre
 	currentStep := 0
 
 	totalGames := 0
+	fresh, rebuilt, reused := 0, 0, 0
+
 	for systemId, paths := range systemPaths {
-		// --- Skip if gamelist already exists and overwrite=false ---
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
-		if !overwrite {
-			if _, err := os.Stat(gamelistPath); err == nil {
-				if !quiet {
-					fmt.Printf("Skipping %s: gamelist already exists\n", systemId)
-				}
-				continue
+
+		// check if list already exists
+		_, exists := os.Stat(gamelistPath)
+		if !overwrite && exists == nil {
+			if !quiet {
+				fmt.Printf("Reusing %s: gamelist already exists\n", systemId)
 			}
+			reused++
+			continue
+		} else if overwrite && exists == nil {
+			if !quiet {
+				fmt.Printf("Rebuilding %s (overwrite enabled)\n", systemId)
+			}
+			rebuilt++
+		} else {
+			fresh++
 		}
 
 		var systemFiles []string
@@ -163,7 +175,6 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string, progre
 			systemFiles = filterUniqueWithMGL(systemFiles)
 		}
 
-		// Sort files instantly, so gamelists are always ordered
 		if len(systemFiles) > 0 {
 			sort.Strings(systemFiles)
 			totalGames += len(systemFiles)
@@ -200,6 +211,7 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string, progre
 			fmt.Println("XXX")
 		} else {
 			fmt.Printf("Indexing complete (%d games in %ds)\n", totalGames, taken)
+			fmt.Printf("Summary: %d fresh, %d rebuilt, %d reused\n", fresh, rebuilt, reused)
 		}
 	}
 
@@ -230,7 +242,6 @@ func Run(args []string) error {
 
 	var systems []games.System
 	if *filter == "all" {
-		// Respect [List] Exclude in ini
 		if len(cfg.List.Exclude) > 0 {
 			systems = games.AllSystemsExcept(cfg.List.Exclude)
 		} else {
