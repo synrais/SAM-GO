@@ -25,14 +25,6 @@ type SearchConfig struct {
 	Sort   string   `ini:"sort,omitempty"`
 }
 
-type LastPlayedConfig struct {
-	Name                string `ini:"name,omitempty"`
-	LastPlayedName      string `ini:"last_played_name,omitempty"`
-	DisableLastPlayed   bool   `ini:"disable_last_played,omitempty"`
-	RecentFolderName    string `ini:"recent_folder_name,omitempty"`
-	DisableRecentFolder bool   `ini:"disable_recent_folder,omitempty"`
-}
-
 type RemoteConfig struct {
 	MdnsService     bool   `ini:"mdns_service,omitempty"`
 	SyncSSHKeys     bool   `ini:"sync_ssh_keys,omitempty"`
@@ -86,13 +78,12 @@ type UserConfig struct {
 	PlayLog    PlayLogConfig           `ini:"playlog,omitempty"`
 	Random     RandomConfig            `ini:"random,omitempty"`
 	Search     SearchConfig            `ini:"search,omitempty"`
-	LastPlayed LastPlayedConfig        `ini:"lastplayed,omitempty"`
-	Remote     RemoteConfig            `ini:"remote,omitempty"`
-	Nfc        NfcConfig               `ini:"nfc,omitempty"`
-	Systems    SystemsConfig           `ini:"systems,omitempty"`
-	Attract    AttractConfig           `ini:"attract,omitempty"`
-	List       ListConfig              `ini:"list,omitempty"`
-	Disable    map[string]DisableRules `ini:"-"`
+	Remote  RemoteConfig            `ini:"remote,omitempty"`
+	Nfc     NfcConfig               `ini:"nfc,omitempty"`
+	Systems SystemsConfig           `ini:"systems,omitempty"`
+	Attract AttractConfig           `ini:"attract,omitempty"`
+	List    ListConfig              `ini:"list,omitempty"`
+	Disable map[string]DisableRules `ini:"-"`
 }
 
 func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error) {
