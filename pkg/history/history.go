@@ -158,10 +158,9 @@ func Back() (string, bool) {
 	return "", false
 }
 
-// Play launches the provided path and records it as Now_Playing.
+// Play launches the provided path and records it in history and Now_Playing.
 func Play(path string) error {
-	// Only update the "Now Playing" file here.
-	if err := updateNowPlaying(path); err != nil {
+	if err := WriteNowPlaying(path); err != nil {
 		return err
 	}
 	fmt.Println("[HISTORY] Now playing:", path)
