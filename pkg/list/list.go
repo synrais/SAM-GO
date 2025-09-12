@@ -14,25 +14,25 @@ import (
 )
 
 func gamelistFilename(systemId string) string {
-	return strings.ToLower(systemId) + "_gamelist.txt"
+    return systemId + "_gamelist.txt"
 }
 
 func writeGamelist(gamelistDir string, systemId string, files []string) {
-	gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
-	tmpPath, err := os.CreateTemp("", "gamelist-*.txt")
-	if err != nil {
-		panic(err)
-	}
+    gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
+    tmpPath, err := os.CreateTemp("", "gamelist-*.txt")
+    if err != nil {
+        panic(err)
+    }
 
-	for _, file := range files {
-		_, _ = tmpPath.WriteString(file + "\n")
-	}
-	_ = tmpPath.Sync()
-	_ = tmpPath.Close()
+    for _, file := range files {
+        _, _ = tmpPath.WriteString(file + "\n")
+    }
+    _ = tmpPath.Sync()
+    _ = tmpPath.Close()
 
-	if err := utils.MoveFile(tmpPath.Name(), gamelistPath); err != nil {
-		panic(err)
-	}
+    if err := utils.MoveFile(tmpPath.Name(), gamelistPath); err != nil {
+        panic(err)
+    }
 }
 
 func filterUniqueWithMGL(files []string) []string {
