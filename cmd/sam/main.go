@@ -10,6 +10,7 @@ import (
 
 	"github.com/synrais/SAM-GO/pkg/attract"
 	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/history"
 	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/list"
 	"github.com/synrais/SAM-GO/pkg/run"
@@ -77,6 +78,14 @@ func handleCommand(cmd string, args []string) {
 		}
 	case "-attract":
 		attract.Run(args)
+	case "-back":
+		if err := history.PlayBack(); err != nil {
+			fmt.Fprintln(os.Stderr, "Back failed:", err)
+		}
+	case "-next":
+		if err := history.PlayNext(); err != nil {
+			fmt.Fprintln(os.Stderr, "Next failed:", err)
+		}
 	case "-mouse":
 		for line := range input.StreamMouse() {
 			fmt.Println(line)
