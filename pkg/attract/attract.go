@@ -259,16 +259,17 @@ func Run(_ []string) {
 		lines = append(lines[:index], lines[index+1:]...)
 		_ = writeLines(listFile, lines)
 
-		// Wait
+		// Decide target wait
 		wait := parsePlayTime(attractCfg.PlayTime, r)
-		time.Sleep(wait)
+
 		if attractCfg.UseStaticlist {
 			start := time.Now()
 			norm := normalizeName(gamePath)
 			deadline := start.Add(wait)
 			var skipAt time.Time
 			if ts > 0 {
-				skipDuration := time.Duration(ts*float64(time.Second)) + time.Duration(attractCfg.SkipafterStatic)*time.Second
+				skipDuration := time.Duration(ts*float64(time.Second)) +
+					time.Duration(attractCfg.SkipafterStatic)*time.Second
 				skipAt = start.Add(skipDuration)
 			}
 			for time.Now().Before(deadline) {
@@ -279,7 +280,8 @@ func Run(_ []string) {
 				newTs := ReadStaticTimestamp(fullDir, systemID, norm)
 				if newTs > 0 && newTs != ts {
 					ts = newTs
-					skipDuration := time.Duration(newTs*float64(time.Second)) + time.Duration(attractCfg.SkipafterStatic)*time.Second
+					skipDuration := time.Duration(newTs*float64(time.Second)) +
+						time.Duration(attractCfg.SkipafterStatic)*time.Second
 					skipAt = start.Add(skipDuration)
 					if time.Now().After(skipAt) {
 						break
