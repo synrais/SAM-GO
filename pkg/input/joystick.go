@@ -291,9 +291,20 @@ func StreamJoysticks() <-chan string {
 		}
 		defer unix.Close(inFd)
 
-		// Watch by-id symlinks (reliable for all input devices)
-		_, err = unix.InotifyAddWatch(inFd, "/dev/input/by-id",
-			unix.IN_CREATE|unix.IN_DELETE|unix.IN_MOVED_FROM|unix.IN_MOVED_TO)
+		watchDir := "/dev/input/by-id"
+		fallbackDir := "/dev/input"
+		dirToWatch := watchDir
+		if _, err := os.Stat(watchDir); os.IsNotExist(err) {
+			fmt.Println("[WARN] /dev/input/by-id not found, watching", fallbackDir)
+			dirToWatch = fallbackDir
+		}
+
+		addWatch := func(dir string) (int, error) {
+			return unix.InotifyAddWatch(inFd, dir,
+				unix.IN_CREATE|unix.IN_DELETE|unix.IN_MOVED_FROM|unix.IN_MOVED_TO)
+		}
+
+		wd, err := addWatch(dirToWatch)
 		if err != nil {
 			fmt.Println("inotify addwatch failed:", err)
 			return
@@ -303,9 +314,24 @@ func StreamJoysticks() <-chan string {
 		go func() {
 			buf := make([]byte, 4096)
 			for {
-				_, _ = unix.Read(inFd, buf) // block until something happens
-				// Any event here = device list changed, so rescan
+				n, _ := unix.Read(inFd, buf)
+				if n <= 0 {
+					continue
+				}
+				// Any event here = device list changed
 				rescan()
+
+				// If we were watching fallbackDir and by-id now exists → switch
+				if dirToWatch == fallbackDir {
+					if _, err := os.Stat(watchDir); err == nil {
+						fmt.Println("[INFO] /dev/input/by-id appeared, switching watch")
+						unix.InotifyRmWatch(inFd, uint32(wd))
+						if newWd, err := addWatch(watchDir); err == nil {
+							dirToWatch = watchDir
+							wd = newWd
+						}
+					}
+				}
 			}
 		}()
 
