@@ -82,22 +82,6 @@ func filterAllowed(allFiles []string, include, exclude []string) []string {
 	return filtered
 }
 
-func WriteNowPlaying(path string) error {
-	_ = os.MkdirAll(filepath.Dir(historyFile), 0777)
-	if err := os.WriteFile(nowPlayingFile, []byte(path), 0644); err != nil {
-		return err
-	}
-	hist, _ := readLines(historyFile)
-	newHist := make([]string, 0, len(hist)+1)
-	for _, h := range hist {
-		if h != path {
-			newHist = append(newHist, h)
-		}
-	}
-	newHist = append(newHist, path)
-	return writeLines(historyFile, newHist)
-}
-
 // WriteNowPlaying appends a new game to history if it's not already present.
 func WriteNowPlaying(path string) error {
 	_ = os.MkdirAll(filepath.Dir(historyFile), 0777)
