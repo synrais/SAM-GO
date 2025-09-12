@@ -152,7 +152,7 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 			lines := parseLines(string(data))
 			totalGames += len(lines)
 
-			// skip normal rebuild (except AmigaVision handled below)
+			// skip normal rebuild unless Amiga (special case)
 			if !strings.EqualFold(systemId, "Amiga") {
 				continue
 			}
@@ -208,51 +208,36 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 			gamesListPath := filepath.Join(gamelistDir, "AmigaVisionGames_gamelist.txt")
 			demosListPath := filepath.Join(gamelistDir, "AmigaVisionDemos_gamelist.txt")
 
-			_, errGames := os.Stat(gamesListPath)
-			gamesExists := (errGames == nil)
+			_, gamesErr := os.Stat(gamesListPath)
+			_, demosErr := os.Stat(demosListPath)
 
-			_, errDemos := os.Stat(demosListPath)
-			demosExists := (errDemos == nil)
-
-			amigaCount := 0
-			if overwrite || !(gamesExists && demosExists) {
-				if !quiet {
-					if overwrite && (gamesExists || demosExists) {
-						fmt.Println("Rebuilding AmigaVision (overwrite enabled)")
-					} else {
-						fmt.Println("Building AmigaVision lists")
-					}
-				}
-				amigaCount = writeAmigaVisionLists(gamelistDir, paths)
-			} else {
-				if !quiet {
-					fmt.Println("Reusing AmigaVision: gamelists already exist")
-				}
-
-				// Count games in existing AmigaVision lists
-				if gamesExists {
-					data, _ := os.ReadFile(gamesListPath)
-					lines := parseLines(string(data))
-					amigaCount += len(lines)
-				}
-				if demosExists {
-					data, _ := os.ReadFile(demosListPath)
-					lines := parseLines(string(data))
-					amigaCount += len(lines)
-				}
-			}
-
+			amigaCount := writeAmigaVisionLists(gamelistDir, paths)
 			if amigaCount > 0 {
 				totalGames += amigaCount
-				if overwrite && (gamesExists || demosExists) {
-					rebuilt++
-				} else if gamesExists || demosExists {
-					reused++
-				} else {
-					fresh++
+
+				// Treat each file as its own entry
+				if amigaCount > 0 {
+					if gamesErr == nil {
+						if overwrite {
+							rebuilt++
+						} else {
+							reused++
+						}
+					} else {
+						fresh++
+					}
 				}
-			} else {
-				emptySystems = append(emptySystems, "AmigaVision")
+				if amigaCount > 0 {
+					if demosErr == nil {
+						if overwrite {
+							rebuilt++
+						} else {
+							reused++
+						}
+					} else {
+						fresh++
+					}
+				}
 			}
 		}
 	}
