@@ -78,6 +78,11 @@ func writeNowPlayingTop(path string) error {
 	return writeLines(historyFile, newHist)
 }
 
+// SetNowPlaying updates the Now_Playing file without modifying history order.
+func SetNowPlaying(path string) error {
+	return os.WriteFile(nowPlayingFile, []byte(path), 0644)
+}
+
 func readNowPlaying() (string, error) {
 	b, err := os.ReadFile(nowPlayingFile)
 	if err != nil {
@@ -131,7 +136,7 @@ func Back() (string, bool) {
 
 // Play launches the provided path and records it as Now_Playing.
 func Play(path string) error {
-	if err := WriteNowPlaying(path); err != nil {
+	if err := SetNowPlaying(path); err != nil {
 		return err
 	}
 	return run.Run([]string{path})
@@ -157,14 +162,7 @@ func PlayBack() error {
 	if p, ok := Back(); ok {
 		return Play(p)
 	}
-	p, err := randomGame()
-	if err != nil {
-		return err
-	}
-	if err := writeNowPlayingTop(p); err != nil {
-		return err
-	}
-	return run.Run([]string{p})
+	return nil
 }
 
 func NowPlayingPath() string {
