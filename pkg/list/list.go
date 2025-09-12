@@ -152,7 +152,7 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 			lines := parseLines(string(data))
 			totalGames += len(lines)
 
-			// skip normal rebuild
+			// skip normal rebuild (except AmigaVision handled below)
 			if !strings.EqualFold(systemId, "Amiga") {
 				continue
 			}
@@ -228,18 +228,31 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 				if !quiet {
 					fmt.Println("Reusing AmigaVision: gamelists already exist")
 				}
-				reused++
+
+				// Count games in existing AmigaVision lists
+				if gamesExists {
+					data, _ := os.ReadFile(gamesListPath)
+					lines := parseLines(string(data))
+					amigaCount += len(lines)
+				}
+				if demosExists {
+					data, _ := os.ReadFile(demosListPath)
+					lines := parseLines(string(data))
+					amigaCount += len(lines)
+				}
 			}
 
 			if amigaCount > 0 {
 				totalGames += amigaCount
-				if gamesExists || demosExists {
-					if overwrite {
-						rebuilt++
-					}
+				if overwrite && (gamesExists || demosExists) {
+					rebuilt++
+				} else if gamesExists || demosExists {
+					reused++
 				} else {
 					fresh++
 				}
+			} else {
+				emptySystems = append(emptySystems, "AmigaVision")
 			}
 		}
 	}
