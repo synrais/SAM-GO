@@ -230,7 +230,6 @@ func Stream() <-chan StaticEvent {
 		staticStartTime := 0.0
 		sampleFrames := 0
 		lastFrameTime := time.Now()
-		seenChange := false
 		firstFrame := true
 
 		maxSamples := (2048 / defaultStep) * (2048 / defaultStep)
@@ -253,9 +252,9 @@ func Stream() <-chan StaticEvent {
 			t1 := time.Now()
 
 			res.Header = int(res.Map[2])<<8 | int(res.Map[3])
-			res.Width  = int(res.Map[6])<<8 | int(res.Map[7])
+			res.Width = int(res.Map[6])<<8 | int(res.Map[7])
 			res.Height = int(res.Map[8])<<8 | int(res.Map[9])
-			res.Line   = int(res.Map[10])<<8 | int(res.Map[11])
+			res.Line = int(res.Map[10])<<8 | int(res.Map[11])
 
 			// Sanity check resolution before using it
 			const (
@@ -265,9 +264,8 @@ func Stream() <-chan StaticEvent {
 				maxHeight = 2048
 			)
 			if res.Width < minWidth || res.Width > maxWidth ||
-			   res.Height < minHeight || res.Height > maxHeight ||
-			   res.Line < res.Width*3 || res.Line > maxWidth*4 {
-				// Skip this frame – prevents out-of-bounds crashes
+				res.Height < minHeight || res.Height > maxHeight ||
+				res.Line < res.Width*3 || res.Line > maxWidth*4 {
 				fmt.Printf("Invalid resolution skipped: %dx%d (line=%d)\n", res.Width, res.Height, res.Line)
 				time.Sleep(time.Second / targetFPS)
 				continue
@@ -285,7 +283,6 @@ func Stream() <-chan StaticEvent {
 						uptimeStart = time.Now()
 						staticScreenRun = 0
 						sampleFrames = 0
-						seenChange = false
 						lastFrameTime = time.Now()
 						firstFrame = true
 						alreadyBlacklisted = false
@@ -296,7 +293,6 @@ func Stream() <-chan StaticEvent {
 					offset += unix.SizeofInotifyEvent + int(ev.Len)
 				}
 			}
-
 
 			idx := 0
 			var sumR, sumG, sumB int
@@ -360,11 +356,10 @@ func Stream() <-chan StaticEvent {
 						staticStartTime = frameTime.Sub(uptimeStart).Seconds()
 					}
 					delta := frameTime.Sub(lastFrameTime).Seconds()
-				    if delta > 0 {
+					if delta > 0 {
 						staticScreenRun += delta
 					}
 				} else {
-					seenChange = true
 					staticScreenRun = 0
 				}
 				for i := 0; i < samples; i++ {
