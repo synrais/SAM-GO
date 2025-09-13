@@ -192,7 +192,7 @@ func Run(_ []string) {
 	// channel to break waits when skipping
 	skipCh := make(chan struct{}, 1)
 
-	// Hook inputs → history + skip signal
+	// Hook inputs → only adjust history + signal
 	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
 		input.RelayInputs(cfg,
 			func() { _ = history.PlayBack(); select { case skipCh <- struct{}{}: default: } },
