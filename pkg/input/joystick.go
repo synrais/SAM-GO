@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 )
@@ -76,10 +77,8 @@ func parseMappingLine(line string) *mappingEntry {
 // Use embedded DB content instead of file
 func loadSDLDB() []*mappingEntry {
 	var entries []*mappingEntry
-	// Access the embedded game controller DB content
-	content := assets.GameControllerDB // This is the embedded content from assets
+	content := assets.GameControllerDB
 
-	// Read the content line by line
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	for scanner.Scan() {
 		if e := parseMappingLine(scanner.Text()); e != nil {
@@ -247,161 +246,157 @@ func (j *JoystickDevice) readEvents() bool {
 	return changed
 }
 
-// -------- Streaming monitor with inotify hotplug ----------
+// -------- Singleton Streaming monitor ----------
+
+var (
+	joystickOnce sync.Once
+	joystickChan chan string
+)
 
 func StreamJoysticks() <-chan string {
-	out := make(chan string, 100)
-	sdlmap := loadSDLDB() // Use the embedded SDL DB content
+	joystickOnce.Do(func() {
+		joystickChan = make(chan string, 100)
+		sdlmap := loadSDLDB()
 
-	go func() {
-		defer close(out)
-		devices := map[string]*JoystickDevice{}
-
-		// Function to rescan all /dev/input/js* devices
-		rescan := func() {
-			paths, _ := filepath.Glob("/dev/input/js*")
-
-			// Add new ones
-			for _, path := range paths {
-				if _, ok := devices[path]; !ok {
-					if dev, err := openJoystickDevice(path, sdlmap); err == nil {
-						devices[path] = dev
-					}
-				}
-			}
-
-			// Remove vanished ones
-			for path, dev := range devices {
-				if _, err := os.Stat(path); os.IsNotExist(err) {
-					fmt.Printf("[-] Lost %s (%s)\n", dev.Path, dev.Name)
-					dev.close()
-					delete(devices, path)
-				}
-			}
-		}
-
-		// Initial scan
-		rescan()
-
-		// Inotify setup
-		inFd, err := unix.InotifyInit()
-		if err != nil {
-			fmt.Println("inotify init failed:", err)
-			return
-		}
-		defer unix.Close(inFd)
-
-		watchDir := "/dev/input/by-id"
-		fallbackDir := "/dev/input"
-		dirToWatch := watchDir
-		if _, err := os.Stat(watchDir); os.IsNotExist(err) {
-			fmt.Println("[WARN] /dev/input/by-id not found, watching", fallbackDir)
-			dirToWatch = fallbackDir
-		}
-
-		addWatch := func(dir string) (int, error) {
-			return unix.InotifyAddWatch(inFd, dir,
-				unix.IN_CREATE|unix.IN_DELETE|unix.IN_MOVED_FROM|unix.IN_MOVED_TO)
-		}
-
-		wd, err := addWatch(dirToWatch)
-		if err != nil {
-			fmt.Println("inotify addwatch failed:", err)
-			return
-		}
-
-		// Hotplug watcher
 		go func() {
-			buf := make([]byte, 4096)
-			for {
-				n, _ := unix.Read(inFd, buf)
-				if n <= 0 {
-					continue
-				}
-				// Any event here = device list changed
-				rescan()
+			defer close(joystickChan)
+			devices := map[string]*JoystickDevice{}
 
-				// If we were watching fallbackDir and by-id now exists → switch
-				if dirToWatch == fallbackDir {
-					if _, err := os.Stat(watchDir); err == nil {
-						fmt.Println("[INFO] /dev/input/by-id appeared, switching watch")
-						unix.InotifyRmWatch(inFd, uint32(wd))
-						if newWd, err := addWatch(watchDir); err == nil {
-							dirToWatch = watchDir
-							wd = newWd
+			rescan := func() {
+				paths, _ := filepath.Glob("/dev/input/js*")
+
+				for _, path := range paths {
+					if _, ok := devices[path]; !ok {
+						if dev, err := openJoystickDevice(path, sdlmap); err == nil {
+							devices[path] = dev
 						}
 					}
 				}
+
+				for path, dev := range devices {
+					if _, err := os.Stat(path); os.IsNotExist(err) {
+						fmt.Printf("[-] Lost %s (%s)\n", dev.Path, dev.Name)
+						dev.close()
+						delete(devices, path)
+					}
+				}
+			}
+
+			rescan()
+
+			inFd, err := unix.InotifyInit()
+			if err != nil {
+				fmt.Println("inotify init failed:", err)
+				return
+			}
+			defer unix.Close(inFd)
+
+			watchDir := "/dev/input/by-id"
+			fallbackDir := "/dev/input"
+			dirToWatch := watchDir
+			if _, err := os.Stat(watchDir); os.IsNotExist(err) {
+				fmt.Println("[WARN] /dev/input/by-id not found, watching", fallbackDir)
+				dirToWatch = fallbackDir
+			}
+
+			addWatch := func(dir string) (int, error) {
+				return unix.InotifyAddWatch(inFd, dir,
+					unix.IN_CREATE|unix.IN_DELETE|unix.IN_MOVED_FROM|unix.IN_MOVED_TO)
+			}
+
+			wd, err := addWatch(dirToWatch)
+			if err != nil {
+				fmt.Println("inotify addwatch failed:", err)
+				return
+			}
+
+			// Hotplug watcher
+			go func() {
+				buf := make([]byte, 4096)
+				for {
+					n, _ := unix.Read(inFd, buf)
+					if n <= 0 {
+						continue
+					}
+					rescan()
+					if dirToWatch == fallbackDir {
+						if _, err := os.Stat(watchDir); err == nil {
+							fmt.Println("[INFO] /dev/input/by-id appeared, switching watch")
+							unix.InotifyRmWatch(inFd, uint32(wd))
+							if newWd, err := addWatch(watchDir); err == nil {
+								dirToWatch = watchDir
+								wd = newWd
+							}
+						}
+					}
+				}
+			}()
+
+			// Main loop
+			for {
+				for _, dev := range devices {
+					if dev.FD < 0 {
+						if _, err := os.Stat(dev.Path); err == nil {
+							dev.reopen()
+						}
+						continue
+					}
+					if dev.readEvents() {
+						// Build button list
+						btnKeys := make([]int, 0, len(dev.btnmap))
+						for k := range dev.btnmap {
+							btnKeys = append(btnKeys, k)
+						}
+						sort.Ints(btnKeys)
+
+						btnParts := []string{}
+						for _, k := range btnKeys {
+							name := dev.btnmap[k]
+							if name == "" {
+								name = fmt.Sprintf("Btn%d", k)
+							}
+							state := "R"
+							if v, ok := dev.Buttons[k]; ok && v != 0 {
+								state = "P"
+							}
+							btnParts = append(btnParts, fmt.Sprintf("%s=%s", name, state))
+						}
+
+						// Build axis list
+						axKeys := make([]int, 0, len(dev.axmap))
+						for k := range dev.axmap {
+							axKeys = append(axKeys, k)
+						}
+						sort.Ints(axKeys)
+
+						axParts := []string{}
+						for _, k := range axKeys {
+							name := dev.axmap[k]
+							if name == "" {
+								name = fmt.Sprintf("Axis%d", k)
+							}
+							val := int16(0)
+							if v, ok := dev.Axes[k]; ok {
+								val = v
+							}
+							axParts = append(axParts, fmt.Sprintf("%s=%d", name, val))
+						}
+
+						line := fmt.Sprintf("[%d ms] %s: Buttons[%s] Axes[%s]",
+							time.Now().UnixMilli(),
+							filepath.Base(dev.Path),
+							strings.Join(btnParts, ", "),
+							strings.Join(axParts, ", "),
+						)
+
+						joystickChan <- line
+					}
+					dev.reopen()
+				}
+				time.Sleep(jsReadFrequency)
 			}
 		}()
+	})
 
-		// Main loop (read events + reopen)
-		for {
-			for _, dev := range devices {
-				if dev.FD < 0 {
-					if _, err := os.Stat(dev.Path); err == nil {
-						dev.reopen()
-					}
-					continue
-				}
-				if dev.readEvents() {
-					// ---- Build button list in order ----
-					btnKeys := make([]int, 0, len(dev.btnmap))
-					for k := range dev.btnmap {
-						btnKeys = append(btnKeys, k)
-					}
-					sort.Ints(btnKeys)
-
-					btnParts := []string{}
-					for _, k := range btnKeys {
-						name := dev.btnmap[k]
-						if name == "" {
-							name = fmt.Sprintf("Btn%d", k)
-						}
-						state := "R"
-						if v, ok := dev.Buttons[k]; ok && v != 0 {
-							state = "P"
-						}
-						btnParts = append(btnParts, fmt.Sprintf("%s=%s", name, state))
-					}
-
-					// ---- Build axis list in order ----
-					axKeys := make([]int, 0, len(dev.axmap))
-					for k := range dev.axmap {
-						axKeys = append(axKeys, k)
-					}
-					sort.Ints(axKeys)
-
-					axParts := []string{}
-					for _, k := range axKeys {
-						name := dev.axmap[k]
-						if name == "" {
-							name = fmt.Sprintf("Axis%d", k)
-						}
-						val := int16(0)
-						if v, ok := dev.Axes[k]; ok {
-							val = v
-						}
-						axParts = append(axParts, fmt.Sprintf("%s=%d", name, val))
-					}
-
-					// ---- Final line identical to Python ----
-					line := fmt.Sprintf("[%d ms] %s: Buttons[%s] Axes[%s]",
-						time.Now().UnixMilli(),
-						filepath.Base(dev.Path),
-						strings.Join(btnParts, ", "),
-						strings.Join(axParts, ", "),
-					)
-
-					out <- line
-				}
-				// Always reopen quietly
-				dev.reopen()
-			}
-
-			time.Sleep(jsReadFrequency)
-		}
-	}()
-
-	return out
+	return joystickChan
 }
