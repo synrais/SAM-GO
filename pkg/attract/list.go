@@ -151,7 +151,6 @@ func stripTimestamp(line string) string {
 	return line
 }
 
-// --- NEW: build Search.txt without system prefixes ---
 func buildSearchList(gamelistDir string) error {
 	searchPath := filepath.Join(gamelistDir, "Search.txt")
 	tmp, err := os.CreateTemp("", "search-*.txt")
@@ -170,13 +169,13 @@ func buildSearchList(gamelistDir string) error {
 		if err != nil {
 			continue
 		}
+
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
 			line := strings.TrimSpace(stripTimestamp(scanner.Text()))
 			if line == "" {
 				continue
 			}
-			// Only the path, no system prefix
 			_, _ = tmp.WriteString(line + "\n")
 		}
 		f.Close()
@@ -185,6 +184,11 @@ func buildSearchList(gamelistDir string) error {
 	_ = tmp.Sync()
 	_ = tmp.Close()
 	return utils.MoveFile(tmp.Name(), searchPath)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map[string][]string,
@@ -280,50 +284,42 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 
 		// ---- AmigaVision special handling ----
 		if strings.EqualFold(systemId, "Amiga") {
-			visionLists := map[string]string{
-				"AmigaVisionGames": "AmigaVisionGames_gamelist.txt",
-				"AmigaVisionDemos": "AmigaVisionDemos_gamelist.txt",
+			needGames := overwrite || !fileExists(filepath.Join(gamelistDir, "AmigaVisionGames_gamelist.txt"))
+			needDemos := overwrite || !fileExists(filepath.Join(gamelistDir, "AmigaVisionDemos_gamelist.txt"))
+
+			if needGames || needDemos {
+				count := writeAmigaVisionLists(gamelistDir, paths) // builds both
+				totalGames += count
+				if !quiet {
+					fmt.Printf("Rebuilt AmigaVision lists (%d entries)\n", count)
+				}
 			}
 
-			for visionId, filename := range visionLists {
+			for visionId, filename := range map[string]string{
+				"AmigaVisionGames": "AmigaVisionGames_gamelist.txt",
+				"AmigaVisionDemos": "AmigaVisionDemos_gamelist.txt",
+			} {
 				visionPath := filepath.Join(gamelistDir, filename)
-				_, err := os.Stat(visionPath)
-				exists := (err == nil)
-
-				visionCount := 0
-				if overwrite || !exists {
-					// rebuild them
-					visionCount = writeAmigaVisionLists(gamelistDir, paths)
-				}
-
-				// if file exists, count lines regardless
-				if exists {
+				if fileExists(visionPath) {
 					data, _ := os.ReadFile(visionPath)
 					lines := parseLines(string(data))
-					visionCount = len(lines)
-				}
-
-				if visionCount > 0 {
+					visionCount := len(lines)
 					totalGames += visionCount
-					if exists {
-						if overwrite {
-							if !quiet {
-								fmt.Printf("Rebuilding %s (overwrite enabled)\n", visionId)
-							}
-							rebuilt++
-						} else {
-							if !quiet {
-								fmt.Printf("Reusing %s: gamelist already exists\n", visionId)
-							}
-							reused++
+					if overwrite {
+						if !quiet {
+							fmt.Printf("Rebuilding %s (overwrite enabled)\n", visionId)
 						}
+						rebuilt++
 					} else {
 						if !quiet {
-							fmt.Printf("Fresh %s list created\n", visionId)
+							fmt.Printf("Reusing %s: gamelist already exists\n", visionId)
 						}
-						fresh++
+						reused++
 					}
 				} else {
+					if !quiet {
+						fmt.Printf("No entries found for %s\n", visionId)
+					}
 					emptySystems = append(emptySystems, visionId)
 				}
 			}
