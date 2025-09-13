@@ -72,7 +72,8 @@ func SearchAndPlay() {
 				}
 				// 🔑 Reset buffer after enter
 				sb.Reset()
-				fmt.Println("[RESET] Search cleared after enter")
+				fmt.Println("Search complete. Left Right keys to browse results.")
+				fmt.Println("Search again or ESC to resume attract")
 
 			case "ESC":
 				fmt.Println("[ESC] Exiting search mode")
