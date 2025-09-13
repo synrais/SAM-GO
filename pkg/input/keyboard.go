@@ -183,6 +183,12 @@ func StreamKeyboards() <-chan string {
 		defer close(out)
 		devices := map[string]*KeyboardDevice{}
 
+		var (
+			lastKey   string
+			lastEvent time.Time
+		)
+		const debounceDelay = 80 * time.Millisecond
+
 		rescan := func() {
 			kbs := parseKeyboards()
 			matches := matchHidraws(kbs)
@@ -252,6 +258,12 @@ func StreamKeyboards() <-chan string {
 					buf := make([]byte, 8)
 					if _, err := unix.Read(int(pfd.Fd), buf); err == nil {
 						if s := decodeReport(buf); s != "" {
+							now := time.Now()
+							if s == lastKey && now.Sub(lastEvent) < debounceDelay {
+								continue // suppress rapid duplicate
+							}
+							lastKey = s
+							lastEvent = now
 							out <- s
 						}
 					}
