@@ -62,7 +62,7 @@ func splitCommands(args []string) [][]string {
 	return cmds
 }
 
-func handleCommand(cfg *config.UserConfig, cmd string, args []string) {
+func handleCommand(cfg *config.UserConfig, cmd string, args []string, skipCh chan struct{}) {
 	switch cmd {
 	case "-list":
 		if err := attract.RunList(args); err != nil {
@@ -75,13 +75,13 @@ func handleCommand(cfg *config.UserConfig, cmd string, args []string) {
 	case "-attract":
 		attract.Run(args)
 	case "-back":
-    	if _, err := history.PlayBack(); err != nil {
-        	fmt.Fprintln(os.Stderr, "Back failed:", err)
-    	}
+		if _, err := history.PlayBack(); err != nil {
+			fmt.Fprintln(os.Stderr, "Back failed:", err)
+		}
 	case "-next":
-    	if _, err := history.PlayNext(); err != nil {
-        	fmt.Fprintln(os.Stderr, "Next failed:", err)
-    	}
+		if _, err := history.PlayNext(); err != nil {
+			fmt.Fprintln(os.Stderr, "Next failed:", err)
+		}
 	case "-mouse":
 		for line := range input.StreamMouse() {
 			fmt.Println(line)
@@ -95,20 +95,20 @@ func handleCommand(cfg *config.UserConfig, cmd string, args []string) {
 			fmt.Println(line)
 		}
 	case "-static":
-		for line := range staticdetector.Stream(cfg) {
-			fmt.Println(line)
+		for ev := range staticdetector.Stream(cfg, skipCh) {
+			fmt.Println(ev)
 		}
 	default:
 		fmt.Printf("Unknown tool: %s\n", cmd)
 	}
 }
 
-func commandProcessor(cfg *config.UserConfig, ch <-chan []string) {
+func commandProcessor(cfg *config.UserConfig, ch <-chan []string, skipCh chan struct{}) {
 	for args := range ch {
 		if len(args) == 0 {
 			continue
 		}
-		go handleCommand(cfg, args[0], args[1:])
+		go handleCommand(cfg, args[0], args[1:], skipCh)
 	}
 }
 
@@ -163,7 +163,6 @@ func sendToRunningInstance(cmds [][]string) bool {
 
 func main() {
 	// Restrict the Go runtime heap to reduce the overall virtual memory footprint.
-	// This keeps the process from reserving excessively large address space by default.
 	debug.SetMemoryLimit(128 * 1024 * 1024) // 128MB soft limit
 
 	if len(os.Args) < 2 {
@@ -186,10 +185,11 @@ func main() {
 	}
 
 	commandChan := make(chan []string)
+	skipCh := make(chan struct{}, 1) // shared skip channel for static detector
 	startServer(commandChan)
 	defer os.Remove(socketPath)
 
-	go commandProcessor(cfg, commandChan)
+	go commandProcessor(cfg, commandChan, skipCh)
 	for _, cmd := range cmds {
 		commandChan <- cmd
 	}
