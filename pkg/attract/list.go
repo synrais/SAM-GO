@@ -162,6 +162,7 @@ func buildSearchList(gamelistDir string) (int, error) {
 	}
 
 	count := 0
+	seen := make(map[string]struct{})
 	for _, path := range files {
 		f, err := os.Open(path)
 		if err != nil {
@@ -173,6 +174,10 @@ func buildSearchList(gamelistDir string) (int, error) {
 			if line == "" {
 				continue
 			}
+			if _, ok := seen[line]; ok {
+				continue
+			}
+			seen[line] = struct{}{}
 			_, _ = tmp.WriteString(line + "\n")
 			count++
 		}
@@ -184,6 +189,42 @@ func buildSearchList(gamelistDir string) (int, error) {
 	return count, utils.MoveFile(tmp.Name(), searchPath)
 }
 
+func buildMasterList(gamelistDir string) (int, error) {
+	masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
+	tmp, err := os.CreateTemp("", "master-*.txt")
+	if err != nil {
+		return 0, err
+	}
+	defer tmp.Close()
+
+	files, err := filepath.Glob(filepath.Join(gamelistDir, "*_gamelist.txt"))
+	if err != nil {
+		return 0, err
+	}
+	sort.Strings(files)
+
+	count := 0
+	for _, path := range files {
+		system := strings.TrimSuffix(filepath.Base(path), "_gamelist.txt")
+		_, _ = tmp.WriteString(fmt.Sprintf("### %s ###\n", system))
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		lines := parseLines(string(data))
+		sort.Strings(lines)
+		for _, line := range lines {
+			_, _ = tmp.WriteString(line + "\n")
+			count++
+		}
+		_, _ = tmp.WriteString("\n")
+	}
+
+	_ = tmp.Sync()
+	return count, utils.MoveFile(tmp.Name(), masterPath)
+}
+
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
@@ -193,177 +234,142 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 	progress bool, quiet bool, filter bool, overwrite bool) int {
 
 	start := time.Now()
-
 	if !quiet && !progress {
 		fmt.Println("Finding system folders...")
 	}
 
-	totalPaths := 0
-	for _, v := range systemPaths {
-		totalPaths += len(v)
-	}
-	totalSteps := totalPaths
-	currentStep := 0
-
+	// Results
 	totalGames := 0
 	fresh, rebuilt, reused := 0, 0, 0
 	var emptySystems []string
 
+	// Accumulators
+	globalSeen := make(map[string]struct{}) // dedupe Search.txt globally
+	var globalSearch []string
+	masterlist := make(map[string][]string)
+
+	// Build system gamelists
 	for systemId, paths := range systemPaths {
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
-
-		// check if list already exists
-		_, err := os.Stat(gamelistPath)
-		exists := (err == nil)
+		exists := fileExists(gamelistPath)
 
 		if !overwrite && exists {
 			if !quiet {
 				fmt.Printf("Reusing %s: gamelist already exists\n", systemId)
 			}
 			reused++
-
-			// count games in reused list
+			// Count entries (for reporting)
 			data, _ := os.ReadFile(gamelistPath)
 			lines := parseLines(string(data))
 			totalGames += len(lines)
+			continue
+		}
 
-			// skip normal rebuild
-			if !strings.EqualFold(systemId, "Amiga") {
-				continue
-			}
-		} else if overwrite && exists {
-			if !quiet {
-				fmt.Printf("Rebuilding %s (overwrite enabled)\n", systemId)
-			}
+		if exists && overwrite && !quiet {
+			fmt.Printf("Rebuilding %s (overwrite enabled)\n", systemId)
 		}
 
 		var systemFiles []string
 		for _, path := range paths {
-			if !quiet {
-				if progress {
-					fmt.Println("XXX")
-					fmt.Println(int(float64(currentStep) / float64(totalSteps) * 100))
-					fmt.Printf("Scanning %s (%s)\n", systemId, path)
-					fmt.Println("XXX")
-				} else {
-					fmt.Printf("Scanning %s: %s\n", systemId, path)
-				}
-			}
-
 			files, err := games.GetFiles(systemId, path)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				continue
 			}
 			systemFiles = append(systemFiles, files...)
-
-			currentStep++
 		}
 
-		// keep .mgl preference
+		// .mgl preference
 		if filter {
 			systemFiles = filterUniqueWithMGL(systemFiles)
 		}
-
-		// filter unwanted extensions
+		// Extension filtering
 		systemFiles = filterExtensions(systemFiles, systemId, cfg)
-
-		// dedupe by game name + extension (ignoring path)
-		seen := make(map[string]struct{})
+		// Dedup within system
+		seenSys := make(map[string]struct{})
 		deduped := systemFiles[:0]
 		for _, f := range systemFiles {
 			base := strings.TrimSuffix(strings.ToLower(filepath.Base(f)), filepath.Ext(f))
 			ext := strings.ToLower(filepath.Ext(f))
 			key := base + ext
-			if _, ok := seen[key]; ok {
+			if _, ok := seenSys[key]; ok {
 				continue
 			}
-			seen[key] = struct{}{}
+			seenSys[key] = struct{}{}
 			deduped = append(deduped, f)
 		}
 		systemFiles = deduped
 
-		if len(systemFiles) > 0 {
-			sort.Strings(systemFiles)
-			totalGames += len(systemFiles)
-			writeGamelist(gamelistDir, systemId, systemFiles)
-
-			if exists && overwrite {
-				rebuilt++
-			} else if exists {
-				reused++
-			} else {
-				fresh++
-			}
-		} else {
+		if len(systemFiles) == 0 {
 			emptySystems = append(emptySystems, systemId)
+			continue
 		}
 
-		// ---- AmigaVision special handling ----
-		if strings.EqualFold(systemId, "Amiga") {
-			gamesCount, demosCount := writeAmigaVisionLists(gamelistDir, paths)
+		sort.Strings(systemFiles)
+		totalGames += len(systemFiles)
 
-			for visionId, count := range map[string]int{
-				"AmigaVisionGames": gamesCount,
-				"AmigaVisionDemos": demosCount,
-			} {
-				visionPath := filepath.Join(gamelistDir, visionId+"_gamelist.txt")
-				exists := fileExists(visionPath)
+		// Write system gamelist
+		writeGamelist(gamelistDir, systemId, systemFiles)
+		if exists && overwrite {
+			rebuilt++
+		} else {
+			fresh++
+		}
 
-				if !quiet {
-					fmt.Printf("Scanning %s: %s\n", visionId, gamelistDir)
-				}
+		// Update Masterlist + global Search
+		for _, f := range systemFiles {
+			masterlist[systemId] = append(masterlist[systemId], f)
 
-				if overwrite || !exists {
-					if count > 0 {
-						totalGames += count
-						if exists && overwrite {
-							if !quiet {
-								fmt.Printf("Rebuilding %s (overwrite enabled)\n", visionId)
-							}
-							rebuilt++
-						} else {
-							if !quiet {
-								fmt.Printf("Fresh %s list created (%d entries)\n", visionId, count)
-							}
-							fresh++
-						}
-					} else {
-						emptySystems = append(emptySystems, visionId)
-					}
-				} else {
-					data, _ := os.ReadFile(visionPath)
-					lines := parseLines(string(data))
-					totalGames += len(lines)
-					if !quiet {
-						fmt.Printf("Reusing %s: gamelist already exists\n", visionId)
-					}
-					reused++
-				}
+			// Add to Search.txt (dedupe global)
+			line := stripTimestamp(f)
+			base := strings.TrimSpace(line)
+			if base == "" {
+				continue
+			}
+			if _, ok := globalSeen[base]; !ok {
+				globalSeen[base] = struct{}{}
+				globalSearch = append(globalSearch, base)
 			}
 		}
 	}
 
-	// Build or reuse Search.txt
-	searchPath := filepath.Join(gamelistDir, "Search.txt")
+	// Build Search.txt
 	if overwrite || fresh > 0 || rebuilt > 0 {
-		count, err := buildSearchList(gamelistDir)
-		if err != nil && !quiet {
-			fmt.Fprintln(os.Stderr, err)
-		} else if !quiet {
-			if overwrite {
-				fmt.Printf("Rebuilding Search.txt (%d entries, overwrite enabled)\n", count)
-			} else {
-				fmt.Printf("Fresh Search.txt created (%d entries)\n", count)
-			}
+		sort.Strings(globalSearch)
+		searchPath := filepath.Join(gamelistDir, "Search.txt")
+		tmp, _ := os.CreateTemp("", "search-*.txt")
+		for _, s := range globalSearch {
+			_, _ = tmp.WriteString(s + "\n")
 		}
-	} else {
-		if fileExists(searchPath) && !quiet {
-			fmt.Println("Reusing Search.txt: already up to date")
+		tmp.Close()
+		_ = utils.MoveFile(tmp.Name(), searchPath)
+
+		if !quiet {
+			fmt.Printf("Built Search.txt with %d entries\n", len(globalSearch))
 		}
 	}
 
-	// Copy only lists that match Include/Exclude into /tmp/.SAM_List
+	// Build Masterlist.txt
+	if overwrite || fresh > 0 || rebuilt > 0 {
+		masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
+		tmp, _ := os.CreateTemp("", "master-*.txt")
+		for system, entries := range masterlist {
+			sort.Strings(entries)
+			_, _ = tmp.WriteString(fmt.Sprintf("### %s (%d)\n", system, len(entries)))
+			for _, e := range entries {
+				_, _ = tmp.WriteString(e + "\n")
+			}
+			_, _ = tmp.WriteString("\n")
+		}
+		tmp.Close()
+		_ = utils.MoveFile(tmp.Name(), masterPath)
+
+		if !quiet {
+			fmt.Printf("Built Masterlist.txt with %d systems\n", len(masterlist))
+		}
+	}
+
+	// Copy to /tmp/.SAM_List (respect Attract Include/Exclude)
 	tmpDir := "/tmp/.SAM_List"
 	_ = os.RemoveAll(tmpDir)
 	_ = os.MkdirAll(tmpDir, 0755)
@@ -373,57 +379,33 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 		if !allowedFor(systemId, cfg.Attract.Include, cfg.Attract.Exclude) {
 			continue
 		}
-		name := gamelistFilename(systemId)
-		src := filepath.Join(gamelistDir, name)
+		src := filepath.Join(gamelistDir, gamelistFilename(systemId))
 		if fileExists(src) {
-			dest := filepath.Join(tmpDir, name)
+			dest := filepath.Join(tmpDir, gamelistFilename(systemId))
 			if err := utils.CopyFile(src, dest); err == nil {
 				copied++
 			}
 		}
 	}
 
-	// Copy AmigaVision lists only if allowed
-	for _, name := range []string{"AmigaVisionGames_gamelist.txt", "AmigaVisionDemos_gamelist.txt"} {
-		systemId := strings.TrimSuffix(name, "_gamelist.txt")
-		if !allowedFor(systemId, cfg.Attract.Include, cfg.Attract.Exclude) {
-			continue
-		}
+	// Always copy Search + Masterlist
+	for _, name := range []string{"Search.txt", "Masterlist.txt"} {
 		src := filepath.Join(gamelistDir, name)
 		if fileExists(src) {
 			dest := filepath.Join(tmpDir, name)
 			if err := utils.CopyFile(src, dest); err == nil {
 				copied++
 			}
-		}
-	}
-
-	// Always copy Search.txt
-	if fileExists(searchPath) {
-		dest := filepath.Join(tmpDir, "Search.txt")
-		if err := utils.CopyFile(searchPath, dest); err == nil {
-			copied++
 		}
 	}
 
 	if !quiet {
 		taken := int(time.Since(start).Seconds())
-		if progress {
-			fmt.Println("XXX")
-			fmt.Println("100")
-			fmt.Printf("Indexing complete (%d games in %ds)\n", totalGames, taken)
-			fmt.Println("XXX")
-		} else {
-			fmt.Printf("Indexing complete (%d games in %ds)\n", totalGames, taken)
-			fmt.Printf("Summary: %d fresh, %d rebuilt, %d reused\n", fresh, rebuilt, reused)
-
-			if len(emptySystems) > 0 {
-				fmt.Printf("No games found for: %s\n", strings.Join(emptySystems, ", "))
-			}
-
-			if copied > 0 {
-				fmt.Printf("%d lists copied to tmp for this session (including Search.txt)\n", copied)
-			}
+		fmt.Printf("Indexing complete (%d games in %ds)\n", totalGames, taken)
+		fmt.Printf("Summary: %d fresh, %d rebuilt, %d reused, %d copied\n",
+			fresh, rebuilt, reused, copied)
+		if len(emptySystems) > 0 {
+			fmt.Printf("No games found for: %s\n", strings.Join(emptySystems, ", "))
 		}
 	}
 
