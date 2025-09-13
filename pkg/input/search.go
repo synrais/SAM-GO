@@ -14,25 +14,25 @@ import (
 
 var searching atomic.Bool
 
-// GameEntry is one normalized entry in the index.
-type GameEntry struct {
-	Name string // normalized name (alnum only, lowercased, no brackets)
-	Ext  string // extension (smd, nes, zip, …)
-	Path string // original path line from gamelist
-}
-
+// --- Search state ---
 var (
 	gameIndex  []GameEntry
 	indexBuilt atomic.Bool
 )
+
+// GameEntry is one normalized entry in the index.
+type GameEntry struct {
+	Name string // normalized name (alnum only, lowercased, no brackets)
+	Ext  string // extension (smd, nes, zip, …)
+	Path string // original line from Search.txt
+}
 
 // IsSearching reports whether search mode is active.
 func IsSearching() bool {
 	return searching.Load()
 }
 
-// SearchAndPlay enters search mode: type a query, press Enter to search,
-// Left/Right cycle through results, Backspace always edits buffer, Escape exits.
+// SearchAndPlay enters search mode.
 func SearchAndPlay() {
 	fmt.Println("Attract mode paused")
 	fmt.Println("Search: type your game and press Enter")
@@ -48,7 +48,7 @@ func SearchAndPlay() {
 
 	var sb strings.Builder
 	var candidates []string
-	idx := 0
+	idx := -1
 
 	for line := range ch {
 		l := strings.ToLower(line)
@@ -57,57 +57,50 @@ func SearchAndPlay() {
 		for _, m := range matches {
 			switch m[1] {
 			case "enter":
-				fmt.Printf("[ENTER pressed] Raw query: %q\n", sb.String())
 				qn, qext := normalizeQuery(sb.String())
-				fmt.Printf("[NORMALIZED] Query=%q Ext=%q\n", qn, qext)
 				if qn != "" {
 					candidates = findMatches(qn, qext)
-					fmt.Printf("[MATCHES] Found %d candidates for query %q\n", len(candidates), qn)
-					for i, c := range candidates {
-						fmt.Printf("  %d: %s\n", i, c)
-					}
 					if len(candidates) > 0 {
 						idx = 0
-						fmt.Printf("[LAUNCH] Launching: %s\n", candidates[idx])
+						fmt.Printf("[ENTER] Launching: %s\n", candidates[idx])
 						launchGame(candidates[idx])
 					} else {
 						fmt.Println("[NO MATCH] No match found")
 					}
 				}
-				return // exit search mode
 			case "escape":
-				fmt.Println("[ESC pressed] Exiting search mode")
-				return // exit search mode
+				fmt.Println("[ESC] Exiting search mode")
+				return
 			case "backspace":
 				s := sb.String()
 				if len(s) > 0 {
 					sb.Reset()
 					sb.WriteString(s[:len(s)-1])
 				}
-				fmt.Printf("[BACKSPACE] Buffer now: %q\n", sb.String())
+				fmt.Printf("[BACKSPACE] Buffer: %q\n", sb.String())
 			case "left":
 				if len(candidates) > 0 && idx > 0 {
 					idx--
-					fmt.Printf("[LEFT] Switching to: %s\n", candidates[idx])
+					fmt.Printf("[LEFT] Launching: %s\n", candidates[idx])
 					launchGame(candidates[idx])
 				}
 			case "right":
 				if len(candidates) > 0 && idx < len(candidates)-1 {
 					idx++
-					fmt.Printf("[RIGHT] Switching to: %s\n", candidates[idx])
+					fmt.Printf("[RIGHT] Launching: %s\n", candidates[idx])
 					launchGame(candidates[idx])
 				}
 			}
 		}
 
-		// Regular text always updates the buffer
+		// Regular text input goes into buffer
 		l = re.ReplaceAllString(l, "")
 		for _, r := range l {
 			if r == '\n' || r == '\r' {
 				continue
 			}
 			sb.WriteRune(r)
-			fmt.Printf("[CHAR] Buffer now: %q\n", sb.String())
+			fmt.Printf("[CHAR] Buffer: %q\n", sb.String())
 		}
 	}
 }
@@ -122,36 +115,30 @@ func ensureIndex() {
 }
 
 func buildIndex() {
-	files, _ := filepath.Glob("/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists/*_gamelist.txt")
-	if len(files) == 0 {
-		fmt.Println("[DEBUG] No gamelist files found")
+	searchFile := "/tmp/.SAM_List/Search.txt"
+
+	f, err := os.Open(searchFile)
+	if err != nil {
+		fmt.Printf("[ERROR] Could not open %s: %v\n", searchFile, err)
 		return
 	}
+	defer f.Close()
 
-	for _, f := range files {
-		fmt.Printf("[DEBUG] Indexing file: %s\n", f)
-		file, err := os.Open(f)
-		if err != nil {
-			fmt.Printf("[ERROR] Failed to open %s: %v\n", f, err)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(stripTimestamp(scanner.Text()))
+		if line == "" {
 			continue
 		}
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			line := strings.TrimSpace(stripTimestamp(scanner.Text()))
-			if line == "" {
-				continue
-			}
-			name, ext := normalizeEntry(line)
-			gameIndex = append(gameIndex, GameEntry{
-				Name: name,
-				Ext:  ext,
-				Path: line,
-			})
-		}
-		file.Close()
+		name, ext := normalizeEntry(line)
+		gameIndex = append(gameIndex, GameEntry{
+			Name: name,
+			Ext:  ext,
+			Path: line,
+		})
 	}
 
-	fmt.Printf("[DEBUG] Indexed %d entries\n", len(gameIndex))
+	fmt.Printf("[DEBUG] Indexed %d entries from Search.txt\n", len(gameIndex))
 }
 
 // --- Matching ---
