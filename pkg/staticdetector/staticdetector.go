@@ -151,7 +151,7 @@ func (e StaticEvent) String() string {
 }
 
 // Stream launches the static screen detector and streams events.
-func Stream(cfg *config.UserConfig) <-chan StaticEvent {
+func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 	out := make(chan StaticEvent, 1)
 
 	baseCfg := cfg.StaticDetector
@@ -353,7 +353,8 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 						addToFile(system, cleanGame, "_blacklist.txt")
 					}
 					if currCfg.SkipBlack {
-						_, _ = history.Next() // just move forward
+						_, _ = history.Next()
+						select { case skipCh <- struct{}{}: default: }
 					}
 					handledBlack = true
 				}
@@ -363,7 +364,8 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 						addToFile(system, entry, "_staticlist.txt")
 					}
 					if currCfg.SkipStatic {
-						_, _ = history.Next() // just move forward
+						_, _ = history.Next()
+						select { case skipCh <- struct{}{}: default: }
 					}
 					handledStatic = true
 				}
@@ -381,7 +383,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 				DominantName: domName,
 				AverageHex:   avgHex,
 				AverageName:  avgName,
-				Game:         displayGame, // console/logging
+				Game:         displayGame,
 			}
 			out <- event
 
