@@ -1,6 +1,7 @@
 package input
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
@@ -23,17 +24,16 @@ func RelayInputs(cfg *config.UserConfig, back func(), next func()) {
 		go func() {
 			re := regexp.MustCompile(`<([^>]+)>`)
 			for line := range StreamKeyboards() {
-				l := strings.ToLower(line)
-				for _, m := range re.FindAllStringSubmatch(l, -1) {
-					performAction(cfg.InputDetector.KeyboardMap, m[1], back, next)
+				fmt.Println("[RAW KEYBOARD]", line) // debug raw event line
+
+				// Only extract <tokens> like <enter>, <a>, <escape>, etc.
+				for _, m := range re.FindAllStringSubmatch(line, -1) {
+					key := strings.ToLower(m[1])
+					fmt.Println("[TOKEN]", key) // debug clean token
+					performAction(cfg.InputDetector.KeyboardMap, key, back, next)
 				}
-				l = re.ReplaceAllString(l, "")
-				for _, r := range l {
-					if r == '\n' || r == '\r' || r == ' ' {
-						continue
-					}
-					performAction(cfg.InputDetector.KeyboardMap, string(r), back, next)
-				}
+				// 🔴 Removed raw character feeding from `line` here,
+				// so no more "hidraw1: ..." polluting search buffer.
 			}
 		}()
 	}
@@ -117,7 +117,9 @@ func performAction(m map[string]string, key string, back, next func()) {
 		return
 	}
 	if key == "`" {
+		fmt.Println("[INFO] Starting search mode…")
 		SearchAndPlay()
+		fmt.Println("[INFO] Exited search mode.")
 		return
 	}
 	if m != nil {
@@ -155,7 +157,9 @@ func runCommand(cmd string, back, next func()) {
 		}
 		return
 	case "search":
+		fmt.Println("[INFO] Starting search mode (via runCommand)…")
 		SearchAndPlay()
+		fmt.Println("[INFO] Exited search mode (via runCommand).")
 		return
 	case "history":
 		if len(parts) > 1 {
