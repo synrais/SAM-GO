@@ -19,27 +19,23 @@ import (
 const socketPath = "/tmp/sam.sock"
 
 func dumpConfig(cfg *config.UserConfig) {
-	fmt.Printf("INI Debug ->\n")
-	fmt.Printf("  Attract: Include=%v | Exclude=%v | PlayTime=%s | Random=%v\n",
-		cfg.Attract.Include, cfg.Attract.Exclude, cfg.Attract.PlayTime, cfg.Attract.Random)
-	fmt.Printf("  List: Exclude=%v\n", cfg.List.Exclude)
-	fmt.Printf("  Search: Filter=%v | Sort=%s\n", cfg.Search.Filter, cfg.Search.Sort)
-	fmt.Printf("  Remote: Mdns=%v | SyncSSHKeys=%v | CustomLogo=%s | AnnounceGameUrl=%s\n",
-		cfg.Remote.MdnsService, cfg.Remote.SyncSSHKeys,
-		cfg.Remote.CustomLogo, cfg.Remote.AnnounceGameUrl)
-	fmt.Printf("  NFC: ConnStr=%s | AllowCommands=%v | DisableSounds=%v | Probe=%v\n",
-		cfg.Nfc.ConnectionString, cfg.Nfc.AllowCommands,
-		cfg.Nfc.DisableSounds, cfg.Nfc.ProbeDevice)
-	fmt.Printf("  Systems: GamesFolder=%v | SetCore=%v\n",
-		cfg.Systems.GamesFolder, cfg.Systems.SetCore)
+    fmt.Printf("INI Debug ->\n")
+    fmt.Printf("  Attract: Include=%v | Exclude=%v | PlayTime=%s | Random=%v\n",
+        cfg.Attract.Include, cfg.Attract.Exclude, cfg.Attract.PlayTime, cfg.Attract.Random)
+    fmt.Printf("  List: Exclude=%v\n", cfg.List.Exclude)
 
-	if len(cfg.Disable) > 0 {
-		fmt.Printf("  Disable Rules:\n")
-		for sys, rules := range cfg.Disable {
-			fmt.Printf("    %s -> Folders=%v | Files=%v | Extensions=%v\n",
-				sys, rules.Folders, rules.Files, rules.Extensions)
-		}
-	}
+    if len(cfg.Systems.GamesFolder) > 0 || len(cfg.Systems.SetCore) > 0 {
+        fmt.Printf("  Systems: GamesFolder=%v | SetCore=%v\n",
+            cfg.Systems.GamesFolder, cfg.Systems.SetCore)
+    }
+
+    if len(cfg.Disable) > 0 {
+        fmt.Printf("  Disable Rules:\n")
+        for sys, rules := range cfg.Disable {
+            fmt.Printf("    %s -> Folders=%v | Files=%v | Extensions=%v\n",
+                sys, rules.Folders, rules.Files, rules.Extensions)
+        }
+    }
 }
 
 // splitCommands splits args into multiple command slices separated by "--".
