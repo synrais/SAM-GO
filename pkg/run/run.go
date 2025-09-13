@@ -22,12 +22,20 @@ var (
 	LastStartTime    time.Time
 )
 
+// Hook registry for modules that need to react to game start
+var onGameStart []func(games.System, string, string, time.Time)
+
+// RegisterOnGameStart lets other packages subscribe to game start events
+func RegisterOnGameStart(f func(games.System, string, string, time.Time)) {
+	onGameStart = append(onGameStart, f)
+}
+
 // GetLastPlayed returns the last system, path, clean name, and start time.
 func GetLastPlayed() (system games.System, path, name string, start time.Time) {
 	return LastPlayedSystem, LastPlayedPath, LastPlayedName, LastStartTime
 }
 
-// internal helper to update globals
+// internal helper to update globals and notify listeners
 func setLastPlayed(system games.System, path string) {
 	LastPlayedSystem = system
 	LastPlayedPath = path
@@ -40,6 +48,11 @@ func setLastPlayed(system games.System, path string) {
 	} else {
 		base := filepath.Base(path)
 		LastPlayedName = strings.TrimSuffix(base, filepath.Ext(base))
+	}
+
+	// notify all registered listeners
+	for _, f := range onGameStart {
+		f(LastPlayedSystem, LastPlayedPath, LastPlayedName, LastStartTime)
 	}
 }
 
