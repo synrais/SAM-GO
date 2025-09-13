@@ -145,6 +145,7 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 	defaultConfig.InputDetector.KeyboardMap = map[string]string{
 		"left":  "back",
 		"right": "next",
+		"`":     "search",
 	}
 	defaultConfig.InputDetector.MouseMap = map[string]string{
 		"swipeleft":  "back",
