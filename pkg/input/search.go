@@ -47,14 +47,14 @@ func SearchAndPlay() {
 	idx := -1
 
 	for line := range ch {
-		l := strings.ToLower(line)
-		matches := re.FindAllStringSubmatch(l, -1)
+		// Look for <TOKENS>
+		matches := re.FindAllStringSubmatch(line, -1)
 
 		for _, m := range matches {
-			key := strings.ToLower(m[1]) // normalize key names
+			key := strings.ToUpper(m[1]) // force uppercase for all special keys
 
 			switch key {
-			case "enter":
+			case "ENTER":
 				qn, qext := normalizeQuery(sb.String())
 				if qn != "" {
 					candidates = findMatches(qn, qext)
@@ -71,13 +71,13 @@ func SearchAndPlay() {
 				sb.Reset()
 				fmt.Println("[RESET] Search cleared after enter")
 
-			case "escape":
+			case "ESCAPE":
 				fmt.Println("[ESC] Exiting search mode")
 				searching.Store(false)
 				fmt.Println("Attract mode resumed")
 				return
 
-			case "backspace":
+			case "BACKSPACE":
 				s := sb.String()
 				if len(s) > 0 {
 					sb.Reset()
@@ -85,14 +85,14 @@ func SearchAndPlay() {
 				}
 				fmt.Printf("[BACKSPACE] Search: %q\n", sb.String())
 
-			case "left":
+			case "LEFT":
 				if len(candidates) > 0 && idx > 0 {
 					idx--
 					fmt.Printf("[LEFT] Launching: %s\n", candidates[idx])
 					launchGame(candidates[idx])
 				}
 
-			case "right":
+			case "RIGHT":
 				if len(candidates) > 0 && idx < len(candidates)-1 {
 					idx++
 					fmt.Printf("[RIGHT] Launching: %s\n", candidates[idx])
@@ -102,7 +102,7 @@ func SearchAndPlay() {
 		}
 
 		// Regular text input goes into buffer
-		l = re.ReplaceAllString(l, "")
+		l := re.ReplaceAllString(line, "")
 		for _, r := range l {
 			if r == '\n' || r == '\r' {
 				continue
