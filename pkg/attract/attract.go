@@ -163,14 +163,12 @@ func filterAllowed(allFiles []string, include, exclude []string) []string {
 
 // Run is the entry point for the attract tool.
 func Run(_ []string) {
-    // Load config
     cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
     attractCfg := cfg.Attract
 
     listDir := "/tmp/.SAM_List"
     fullDir := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
 
-    // Build gamelists before processing
     listArgs := []string{}
     if attractCfg.FreshListsEachLoad {
         listArgs = append(listArgs, "-overwrite")
@@ -178,56 +176,63 @@ func Run(_ []string) {
     if err := RunList(listArgs); err != nil {
         fmt.Fprintln(os.Stderr, "List build failed:", err)
     }
-
     ProcessLists(listDir, fullDir, cfg)
 
-    // channel to break waits when skipping
     skipCh := make(chan struct{}, 1)
+    backCh := make(chan struct{}, 1)
 
-    // Start static detector AFTER skipCh exists
     if attractCfg.UseStaticDetector {
         go func() {
             for ev := range staticdetector.Stream(cfg, skipCh) {
-                fmt.Println(ev) // print detector output
+                fmt.Println(ev)
             }
         }()
     }
 
-    // Hook inputs → back = history.Back, next = history.Next
+    // inputs → back = signal backCh, next = signal skipCh
     if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
         input.RelayInputs(cfg,
             func() { // Back
-                _, _ = history.Back()
-                select { case skipCh <- struct{}{}: default: }
+                select { case backCh <- struct{}{}: default: }
             },
             func() { // Next
-                _, _ = history.Next()
                 select { case skipCh <- struct{}{}: default: }
             },
         )
     }
 
-    // Collect gamelists
     allFiles, err := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
     if err != nil || len(allFiles) == 0 {
         fmt.Println("No gamelists found in", listDir)
         os.Exit(1)
     }
 
-    // Restrict to allowed systems up front
     files := filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
     if len(files) == 0 {
         fmt.Println("No gamelists match Include/Exclude in INI")
         os.Exit(1)
     }
 
-    // Seed random
     r := rand.New(rand.NewSource(time.Now().UnixNano()))
-
     fmt.Println("Attract mode running. Ctrl-C to exit.")
 
     for {
-        // --- check if history already has a next game ---
+        select {
+        // ---- handle BACK explicitly ----
+        case <-backCh:
+            if prev, ok := history.Back(); ok {
+                name := filepath.Base(prev)
+                name = strings.TrimSuffix(name, filepath.Ext(name))
+                fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, prev)
+                _ = history.SetNowPlaying(prev)
+                run.Run([]string{prev})
+            }
+            continue
+
+        default:
+        }
+
+        // ---- handle NEXT (history or fresh) ----
         if next, ok := history.Next(); ok {
             name := filepath.Base(next)
             name = strings.TrimSuffix(name, filepath.Ext(name))
@@ -239,11 +244,12 @@ func Run(_ []string) {
             select {
             case <-time.After(wait):
             case <-skipCh:
+            case <-backCh:
             }
             continue
         }
 
-        // Stop if no files left
+        // ---- pick a new random game ----
         if len(files) == 0 {
             rebuildLists(listDir)
             ProcessLists(listDir, fullDir, cfg)
@@ -255,13 +261,9 @@ func Run(_ []string) {
             }
         }
 
-        // Pick a random list
         listFile := files[r.Intn(len(files))]
-
-        // Load lines
         lines, err := readLines(listFile)
         if err != nil || len(lines) == 0 {
-            // remove exhausted list
             for i, f := range files {
                 if f == listFile {
                     files = append(files[:i], files[i+1:]...)
@@ -271,37 +273,29 @@ func Run(_ []string) {
             continue
         }
 
-        // Pick game
         index := 0
         if attractCfg.Random {
             index = r.Intn(len(lines))
         }
         ts, gamePath := ParseLine(lines[index])
-
-        // System from filename
         systemID := strings.TrimSuffix(filepath.Base(listFile), "_gamelist.txt")
 
-        // Apply disable rules
         if disabled(systemID, gamePath, cfg) {
             lines = append(lines[:index], lines[index+1:]...)
             _ = writeLines(listFile, lines)
             continue
         }
 
-        // Display
         name := filepath.Base(gamePath)
         name = strings.TrimSuffix(name, filepath.Ext(name))
         fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, gamePath)
 
-        // Record current game and launch
         _ = history.WriteNowPlaying(gamePath)
         run.Run([]string{gamePath})
 
-        // Update list
         lines = append(lines[:index], lines[index+1:]...)
         _ = writeLines(listFile, lines)
 
-        // Decide target wait
         wait := parsePlayTime(attractCfg.PlayTime, r)
 
         if attractCfg.UseStaticlist {
@@ -319,6 +313,8 @@ func Run(_ []string) {
                 case <-time.After(1 * time.Second):
                 case <-skipCh:
                     goto NextGame
+                case <-backCh:
+                    goto PrevGame
                 }
                 if !skipAt.IsZero() && time.Now().After(skipAt) {
                     break
@@ -338,8 +334,19 @@ func Run(_ []string) {
             select {
             case <-time.After(wait):
             case <-skipCh:
+            case <-backCh:
+                goto PrevGame
             }
         }
     NextGame:
+        continue
+    PrevGame:
+        if prev, ok := history.Back(); ok {
+            name := filepath.Base(prev)
+            name = strings.TrimSuffix(name, filepath.Ext(name))
+            fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, prev)
+            _ = history.SetNowPlaying(prev)
+            run.Run([]string{prev})
+        }
     }
 }
