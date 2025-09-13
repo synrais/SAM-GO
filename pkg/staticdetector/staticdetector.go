@@ -1,17 +1,17 @@
 package staticdetector
 
 import (
-	"fmt"
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/synrais/SAM-GO/pkg/run"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/history"
+	"github.com/synrais/SAM-GO/pkg/run"
 	"golang.org/x/sys/unix"
 )
 
@@ -229,7 +229,7 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 
 			// game identifiers
 			displayGame := fmt.Sprintf("[%s] %s", run.LastPlayedSystem.Name, run.LastPlayedName) // for logs
-			cleanGame := run.LastPlayedName // for writing to lists
+			cleanGame := run.LastPlayedName                                                      // for writing to lists
 
 			// detect game change → reset counters
 			if displayGame != lastGame {
@@ -275,8 +275,8 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 
 			samples := idx
 			if samples <= 0 {
-   			// No valid samples → skip processing, but still rate-limit
-    		time.Sleep(time.Second / targetFPS)
+				// No valid samples → skip processing, but still rate-limit
+				time.Sleep(time.Second / targetFPS)
 				continue
 			}
 			sampleFrames++
@@ -356,7 +356,10 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 					}
 					if currCfg.SkipBlack {
 						_, _ = history.Next()
-						select { case skipCh <- struct{}{}: default: }
+						select {
+						case skipCh <- struct{}{}:
+						default:
+						}
 					}
 					handledBlack = true
 				}
@@ -367,7 +370,10 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 					}
 					if currCfg.SkipStatic {
 						_, _ = history.Next()
-						select { case skipCh <- struct{}{}: default: }
+						select {
+						case skipCh <- struct{}{}:
+						default:
+						}
 					}
 					handledStatic = true
 				}
