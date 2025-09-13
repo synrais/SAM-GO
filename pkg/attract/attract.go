@@ -194,7 +194,7 @@ func Run(args []string) {
 	// Start static detector
 	if attractCfg.UseStaticDetector {
 		go func() {
-			for ev := range staticdetector.Stream(cfg, skipCh, silent) {
+			for ev := range staticdetector.Stream(cfg, skipCh) {
 				if !silent {
 					fmt.Println(ev)
 				}
