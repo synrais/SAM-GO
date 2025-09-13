@@ -162,7 +162,7 @@ func filterAllowed(allFiles []string, include, exclude []string) []string {
 }
 
 // Run is the entry point for the attract tool.
-func Run(_ []string) {
+func Run(args []string) {
 	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
 	attractCfg := cfg.Attract
 
@@ -183,11 +183,21 @@ func Run(_ []string) {
 	skipCh := make(chan struct{}, 1)
 	backCh := make(chan struct{}, 1)
 
+	// parse extra flags
+	silent := false
+	for _, a := range args {
+		if a == "-s" || a == "--silent" {
+			silent = true
+		}
+	}
+
 	// Start static detector
 	if attractCfg.UseStaticDetector {
 		go func() {
-			for ev := range staticdetector.Stream(cfg, skipCh) {
-				fmt.Println(ev)
+			for ev := range staticdetector.Stream(cfg, skipCh, silent) {
+				if !silent {
+					fmt.Println(ev)
+				}
 			}
 		}()
 	}
