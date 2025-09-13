@@ -248,9 +248,7 @@ func StreamKeyboards() <-chan string {
 					buf := make([]byte, 8)
 					if _, err := unix.Read(int(pfd.Fd), buf); err == nil {
 						if s := decodeReport(buf); s != "" {
-							dev := fdmap[int(pfd.Fd)]
-							line := fmt.Sprintf("[%d ms] %s: %s", time.Now().UnixMilli(), filepath.Base(dev.Path), s)
-							out <- line
+							out <- s
 						}
 					}
 				}
