@@ -92,19 +92,19 @@ func (r *resolution) Close() {
 
 // List helpers
 func isEntryInFile(path, game string) bool {
-    f, err := os.Open(path)
-    if err != nil {
-        return false
-    }
-    defer f.Close()
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
 
-    scanner := bufio.NewScanner(f)
-    for scanner.Scan() {
-        if scanner.Text() == game {
-            return true
-        }
-    }
-    return false
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		if scanner.Text() == game {
+			return true
+		}
+	}
+	return false
 }
 
 func addToFile(system, game, suffix string) {
@@ -353,7 +353,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 						addToFile(system, cleanGame, "_blacklist.txt")
 					}
 					if currCfg.SkipBlack {
-						_ = history.PlayNext()
+						_, _ = history.Next() // just move forward
 					}
 					handledBlack = true
 				}
@@ -363,7 +363,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 						addToFile(system, entry, "_staticlist.txt")
 					}
 					if currCfg.SkipStatic {
-						_ = history.PlayNext()
+						_, _ = history.Next() // just move forward
 					}
 					handledStatic = true
 				}
