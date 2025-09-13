@@ -218,7 +218,7 @@ func Run(_ []string) {
 
     for {
         select {
-        // ---- handle BACK explicitly ----
+        // ---- BACK ----
         case <-backCh:
             if prev, ok := history.Back(); ok {
                 name := filepath.Base(prev)
@@ -229,24 +229,18 @@ func Run(_ []string) {
             }
             continue
 
-        default:
-        }
-
-        // ---- handle NEXT (history or fresh) ----
-        if next, ok := history.Next(); ok {
-            name := filepath.Base(next)
-            name = strings.TrimSuffix(name, filepath.Ext(name))
-            fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, next)
-            _ = history.SetNowPlaying(next)
-            run.Run([]string{next})
-            wait := parsePlayTime(attractCfg.PlayTime, r)
-
-            select {
-            case <-time.After(wait):
-            case <-skipCh:
-            case <-backCh:
+        // ---- NEXT (history first) ----
+        case <-skipCh:
+            if next, ok := history.Next(); ok {
+                name := filepath.Base(next)
+                name = strings.TrimSuffix(name, filepath.Ext(name))
+                fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, next)
+                _ = history.SetNowPlaying(next)
+                run.Run([]string{next})
+                continue
             }
-            continue
+            // else fall through to fresh pick
+        default:
         }
 
         // ---- pick a new random game ----
