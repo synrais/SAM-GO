@@ -288,39 +288,30 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 			needDemos := overwrite || !fileExists(filepath.Join(gamelistDir, "AmigaVisionDemos_gamelist.txt"))
 
 			if needGames || needDemos {
-				count := writeAmigaVisionLists(gamelistDir, paths) // builds both
+				count := writeAmigaVisionLists(gamelistDir, paths)
 				totalGames += count
 				if !quiet {
 					fmt.Printf("Rebuilt AmigaVision lists (%d entries)\n", count)
 				}
-			}
-
-			for visionId, filename := range map[string]string{
-				"AmigaVisionGames": "AmigaVisionGames_gamelist.txt",
-				"AmigaVisionDemos": "AmigaVisionDemos_gamelist.txt",
-			} {
-				visionPath := filepath.Join(gamelistDir, filename)
-				if fileExists(visionPath) {
-					data, _ := os.ReadFile(visionPath)
-					lines := parseLines(string(data))
-					visionCount := len(lines)
-					totalGames += visionCount
-					if overwrite {
+				rebuilt++
+			} else {
+				// No rebuild, just count existing lists
+				for visionId, filename := range map[string]string{
+					"AmigaVisionGames": "AmigaVisionGames_gamelist.txt",
+					"AmigaVisionDemos": "AmigaVisionDemos_gamelist.txt",
+				} {
+					visionPath := filepath.Join(gamelistDir, filename)
+					if fileExists(visionPath) {
+						data, _ := os.ReadFile(visionPath)
+						lines := parseLines(string(data))
+						totalGames += len(lines)
 						if !quiet {
-							fmt.Printf("Rebuilding %s (overwrite enabled)\n", visionId)
-						}
-						rebuilt++
-					} else {
-						if !quiet {
-							fmt.Printf("Reusing %s: gamelist already exists\n", visionId)
+							fmt.Printf("Using existing %s (%d entries)\n", visionId, len(lines))
 						}
 						reused++
+					} else {
+						emptySystems = append(emptySystems, visionId)
 					}
-				} else {
-					if !quiet {
-						fmt.Printf("No entries found for %s\n", visionId)
-					}
-					emptySystems = append(emptySystems, visionId)
 				}
 			}
 		}
