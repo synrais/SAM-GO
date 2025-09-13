@@ -1,4 +1,4 @@
-package attract
+package run
 
 import (
 	"bufio"
