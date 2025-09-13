@@ -23,10 +23,10 @@ var (
 )
 
 // Hook registry for modules that need to react to game start
-var onGameStart []func(games.System, string, string, time.Time)
+var onGameStart []func(path, name string, start time.Time)
 
 // RegisterOnGameStart lets other packages subscribe to game start events
-func RegisterOnGameStart(f func(games.System, string, string, time.Time)) {
+func RegisterOnGameStart(f func(path, name string, start time.Time)) {
 	onGameStart = append(onGameStart, f)
 }
 
@@ -52,7 +52,7 @@ func setLastPlayed(system games.System, path string) {
 
 	// notify all registered listeners
 	for _, f := range onGameStart {
-		f(LastPlayedSystem, LastPlayedPath, LastPlayedName, LastStartTime)
+		f(LastPlayedPath, LastPlayedName, LastStartTime)
 	}
 }
 
