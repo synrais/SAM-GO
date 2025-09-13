@@ -71,7 +71,7 @@ func SearchAndPlay() {
 						fmt.Println("[NO MATCH] No match found")
 					}
 				}
-				// 🔑 Reset buffer after enter
+				// Reset buffer after enter
 				sb.Reset()
 				fmt.Println("Search complete. Left Right keys to browse results.")
 				fmt.Println("Search again or ESC to resume attract")
@@ -157,34 +157,42 @@ func buildIndex() {
 // --- Matching ---
 
 func findMatches(qn, qext string) []string {
-	ensureIndex()
+    ensureIndex()
 
-	type cand struct {
-		path string
-		dist int
-	}
-	var list []cand
+    var prefix, substring, fuzzy []string
 
-	for _, e := range gameIndex {
-		if qext != "" && qext != e.Ext {
-			continue
-		}
-		dist := levenshtein(qn, e.Name)
-		list = append(list, cand{path: e.Path, dist: dist})
-	}
+    for _, e := range gameIndex {
+        if qext != "" && qext != e.Ext {
+            continue
+        }
 
-	sort.Slice(list, func(i, j int) bool { return list[i].dist < list[j].dist })
+        if strings.HasPrefix(e.Name, qn) {
+            prefix = append(prefix, e.Path)
+        } else if strings.Contains(e.Name, qn) {
+            substring = append(substring, e.Path)
+        } else {
+            dist := levenshtein(qn, e.Name)
+            if dist <= 3 { // only allow close fuzzy matches
+                fuzzy = append(fuzzy, e.Path)
+            }
+        }
+    }
 
-	// Restrict to top 200 candidates
-	if len(list) > 200 {
-		list = list[:200]
-	}
+    // Sort for consistency
+    sort.Strings(prefix)
+    sort.Strings(substring)
+    sort.Strings(fuzzy)
 
-	out := make([]string, len(list))
-	for i, c := range list {
-		out[i] = c.path
-	}
-	return out
+    // Concatenate with priority
+    out := append(prefix, substring...)
+    out = append(out, fuzzy...)
+
+    // Restrict to top 200
+    if len(out) > 200 {
+        out = out[:200]
+    }
+
+    return out
 }
 
 // --- Helpers ---
