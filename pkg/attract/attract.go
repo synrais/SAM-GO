@@ -192,23 +192,11 @@ func Run(_ []string) {
 	// channel to break waits when skipping
 	skipCh := make(chan struct{}, 1)
 
-	// Hook inputs → adjust history and launch immediately
+	// Hook inputs → only advance history + signal
 	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
 		input.RelayInputs(cfg,
-			func() {
-				if p, err := history.PlayBack(); err == nil && p != "" {
-					_ = history.SetNowPlaying(p)
-					run.Run([]string{p})
-					select { case skipCh <- struct{}{}: default: }
-				}
-			},
-			func() {
-				if p, err := history.PlayNext(); err == nil && p != "" {
-					_ = history.SetNowPlaying(p)
-					run.Run([]string{p})
-					select { case skipCh <- struct{}{}: default: }
-				}
-			},
+			func() { _, _ = history.Back(); select { case skipCh <- struct{}{}: default: } },
+			func() { _, _ = history.Next(); select { case skipCh <- struct{}{}: default: } },
 		)
 	}
 
@@ -232,6 +220,7 @@ func Run(_ []string) {
 	fmt.Println("Attract mode running. Ctrl-C to exit.")
 
 	for {
+		// --- check if history already has a next game ---
 		if next, ok := history.Next(); ok {
 			name := filepath.Base(next)
 			name = strings.TrimSuffix(name, filepath.Ext(name))
