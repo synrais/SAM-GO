@@ -75,12 +75,12 @@ func handleCommand(cfg *config.UserConfig, cmd string, args []string) {
 	case "-attract":
 		attract.Run(args)
 	case "-back":
-    	if _, ok := history.PlayBack(); !ok {
-        	fmt.Fprintln(os.Stderr, "Back failed: no previous game")
+    	if _, err := history.PlayBack(); err != nil {
+        	fmt.Fprintln(os.Stderr, "Back failed:", err)
     	}
 	case "-next":
-    	if _, ok := history.PlayNext(); !ok {
-        	fmt.Fprintln(os.Stderr, "Next failed: no next game")
+    	if _, err := history.PlayNext(); err != nil {
+        	fmt.Fprintln(os.Stderr, "Next failed:", err)
     	}
 	case "-mouse":
 		for line := range input.StreamMouse() {
