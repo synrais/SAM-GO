@@ -109,9 +109,8 @@ func writeCustomList(dir, filename string, entries []string) {
 	_ = utils.MoveFile(tmp.Name(), path)
 }
 
-func writeAmigaVisionLists(gamelistDir string, paths []string) int {
+func writeAmigaVisionLists(gamelistDir string, paths []string) (int, int) {
 	var gamesList, demosList []string
-	written := 0
 
 	for _, path := range paths {
 		filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
@@ -132,14 +131,12 @@ func writeAmigaVisionLists(gamelistDir string, paths []string) int {
 
 	if len(gamesList) > 0 {
 		writeCustomList(gamelistDir, "AmigaVisionGames_gamelist.txt", gamesList)
-		written += len(gamesList)
 	}
 	if len(demosList) > 0 {
 		writeCustomList(gamelistDir, "AmigaVisionDemos_gamelist.txt", demosList)
-		written += len(demosList)
 	}
 
-	return written
+	return len(gamesList), len(demosList)
 }
 
 func stripTimestamp(line string) string {
@@ -151,31 +148,20 @@ func stripTimestamp(line string) string {
 	return line
 }
 
-func buildSearchList(gamelistDir string, overwrite bool, quiet bool) {
+func buildSearchList(gamelistDir string) (int, error) {
 	searchPath := filepath.Join(gamelistDir, "Search.txt")
-	exists := fileExists(searchPath)
-
-	if exists && !overwrite {
-		if !quiet {
-			data, _ := os.ReadFile(searchPath)
-			lines := parseLines(string(data))
-			fmt.Printf("Reusing Search.txt: already exists (%d entries)\n", len(lines))
-		}
-		return
-	}
-
 	tmp, err := os.CreateTemp("", "search-*.txt")
 	if err != nil {
-		return
+		return 0, err
 	}
 
 	files, err := filepath.Glob(filepath.Join(gamelistDir, "*_gamelist.txt"))
 	if err != nil {
 		tmp.Close()
-		return
+		return 0, err
 	}
 
-	total := 0
+	count := 0
 	for _, path := range files {
 		f, err := os.Open(path)
 		if err != nil {
@@ -188,71 +174,19 @@ func buildSearchList(gamelistDir string, overwrite bool, quiet bool) {
 				continue
 			}
 			_, _ = tmp.WriteString(line + "\n")
-			total++
+			count++
 		}
 		f.Close()
 	}
 
 	_ = tmp.Sync()
 	_ = tmp.Close()
-	if err := utils.MoveFile(tmp.Name(), searchPath); err == nil && !quiet {
-		if exists && overwrite {
-			fmt.Printf("Rebuilding Search.txt (%d entries, overwrite enabled)\n", total)
-		} else {
-			fmt.Printf("Fresh Search.txt created (%d entries)\n", total)
-		}
-	}
+	return count, utils.MoveFile(tmp.Name(), searchPath)
 }
 
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-func copyListsToTmp(gamelistDir, tmpDir string, systemPaths map[string][]string) int {
-	_ = os.RemoveAll(tmpDir)
-	_ = os.MkdirAll(tmpDir, 0755)
-
-	copied := 0
-	seen := make(map[string]bool)
-
-	// system gamelists
-	for systemId := range systemPaths {
-		name := gamelistFilename(systemId)
-		src := filepath.Join(gamelistDir, name)
-		if fileExists(src) && !seen[name] {
-			dest := filepath.Join(tmpDir, name)
-			if err := utils.CopyFile(src, dest); err == nil {
-				copied++
-				seen[name] = true
-			}
-		}
-	}
-
-	// AmigaVision extras
-	for _, name := range []string{"AmigaVisionGames_gamelist.txt", "AmigaVisionDemos_gamelist.txt"} {
-		src := filepath.Join(gamelistDir, name)
-		if fileExists(src) && !seen[name] {
-			dest := filepath.Join(tmpDir, name)
-			if err := utils.CopyFile(src, dest); err == nil {
-				copied++
-				seen[name] = true
-			}
-		}
-	}
-
-	// Search.txt always
-	name := "Search.txt"
-	src := filepath.Join(gamelistDir, name)
-	if fileExists(src) && !seen[name] {
-		dest := filepath.Join(tmpDir, name)
-		if err := utils.CopyFile(src, dest); err == nil {
-			copied++
-			seen[name] = true
-		}
-	}
-
-	return copied
 }
 
 func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map[string][]string,
@@ -278,6 +212,7 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 	for systemId, paths := range systemPaths {
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
 
+		// check if list already exists
 		_, err := os.Stat(gamelistPath)
 		exists := (err == nil)
 
@@ -287,10 +222,12 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 			}
 			reused++
 
+			// count games in reused list
 			data, _ := os.ReadFile(gamelistPath)
 			lines := parseLines(string(data))
 			totalGames += len(lines)
 
+			// skip normal rebuild
 			if !strings.EqualFold(systemId, "Amiga") {
 				continue
 			}
@@ -345,18 +282,24 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 			emptySystems = append(emptySystems, systemId)
 		}
 
+		// ---- AmigaVision special handling ----
 		if strings.EqualFold(systemId, "Amiga") {
-			for visionId, filename := range map[string]string{
-				"AmigaVisionGames": "AmigaVisionGames_gamelist.txt",
-				"AmigaVisionDemos": "AmigaVisionDemos_gamelist.txt",
+			gamesCount, demosCount := writeAmigaVisionLists(gamelistDir, paths)
+
+			for visionId, count := range map[string]int{
+				"AmigaVisionGames": gamesCount,
+				"AmigaVisionDemos": demosCount,
 			} {
-				visionPath := filepath.Join(gamelistDir, filename)
+				visionPath := filepath.Join(gamelistDir, visionId+"_gamelist.txt")
 				exists := fileExists(visionPath)
 
+				if !quiet {
+					fmt.Printf("Scanning %s: %s\n", visionId, gamelistDir)
+				}
+
 				if overwrite || !exists {
-					visionCount := writeAmigaVisionLists(gamelistDir, paths)
-					if visionCount > 0 {
-						totalGames += visionCount
+					if count > 0 {
+						totalGames += count
 						if exists && overwrite {
 							if !quiet {
 								fmt.Printf("Rebuilding %s (overwrite enabled)\n", visionId)
@@ -364,12 +307,14 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 							rebuilt++
 						} else {
 							if !quiet {
-								fmt.Printf("Fresh %s list created (%d entries)\n", visionId, visionCount)
+								fmt.Printf("Fresh %s list created (%d entries)\n", visionId, count)
 							}
 							fresh++
 						}
+					} else {
+						emptySystems = append(emptySystems, visionId)
 					}
-				} else if exists {
+				} else {
 					data, _ := os.ReadFile(visionPath)
 					lines := parseLines(string(data))
 					totalGames += len(lines)
@@ -377,19 +322,65 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 						fmt.Printf("Reusing %s: gamelist already exists\n", visionId)
 					}
 					reused++
-				} else {
-					emptySystems = append(emptySystems, visionId)
 				}
 			}
 		}
 	}
 
-	// build Search.txt (not counted)
-	buildSearchList(gamelistDir, overwrite, quiet)
+	// Build or reuse Search.txt
+	searchPath := filepath.Join(gamelistDir, "Search.txt")
+	if overwrite || fresh > 0 || rebuilt > 0 {
+		count, err := buildSearchList(gamelistDir)
+		if err != nil && !quiet {
+			fmt.Fprintln(os.Stderr, err)
+		} else if !quiet {
+			if overwrite {
+				fmt.Printf("Rebuilding Search.txt (%d entries, overwrite enabled)\n", count)
+			} else {
+				fmt.Printf("Fresh Search.txt created (%d entries)\n", count)
+			}
+		}
+	} else {
+		if fileExists(searchPath) && !quiet {
+			fmt.Println("Reusing Search.txt: already up to date")
+		}
+	}
 
-	// copy all relevant lists into tmp
+	// Copy only relevant lists into /tmp/.SAM_List
 	tmpDir := "/tmp/.SAM_List"
-	copied := copyListsToTmp(gamelistDir, tmpDir, systemPaths)
+	_ = os.RemoveAll(tmpDir)
+	_ = os.MkdirAll(tmpDir, 0755)
+
+	copied := 0
+	for systemId := range systemPaths {
+		name := gamelistFilename(systemId)
+		src := filepath.Join(gamelistDir, name)
+		if fileExists(src) {
+			dest := filepath.Join(tmpDir, name)
+			if err := utils.CopyFile(src, dest); err == nil {
+				copied++
+			}
+		}
+	}
+
+	// Copy AmigaVision lists if they exist
+	for _, name := range []string{"AmigaVisionGames_gamelist.txt", "AmigaVisionDemos_gamelist.txt"} {
+		src := filepath.Join(gamelistDir, name)
+		if fileExists(src) {
+			dest := filepath.Join(tmpDir, name)
+			if err := utils.CopyFile(src, dest); err == nil {
+				copied++
+			}
+		}
+	}
+
+	// Copy Search.txt if present
+	if fileExists(searchPath) {
+		dest := filepath.Join(tmpDir, "Search.txt")
+		if err := utils.CopyFile(searchPath, dest); err == nil {
+			copied++
+		}
+	}
 
 	if !quiet {
 		taken := int(time.Since(start).Seconds())
@@ -406,17 +397,20 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 				fmt.Printf("No games found for: %s\n", strings.Join(emptySystems, ", "))
 			}
 
-			fmt.Printf("%d lists copied to tmp for this session (system + AmigaVision + Search.txt)\n", copied)
+			if copied > 0 {
+				fmt.Printf("%d lists copied to tmp for this session (including Search.txt)\n", copied)
+			}
 		}
 	}
 
 	return totalGames
 }
 
-// Entry point
+// Entry point for this tool when called from SAM
 func RunList(args []string) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 
+	// Default gamelist dir now points to SAM_Gamelists
 	defaultOut := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
 	gamelistDir := fs.String("o", defaultOut, "gamelist files directory")
 
@@ -431,6 +425,7 @@ func RunList(args []string) error {
 		return err
 	}
 
+	// Load user config (for List.Exclude)
 	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
 
 	var systems []games.System
