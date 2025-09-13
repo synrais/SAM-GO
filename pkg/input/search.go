@@ -7,14 +7,20 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync/atomic"
 )
 
 var searching atomic.Bool
 
-// SearchAndPlay waits for keyboard input to build a search string and then
-// launches the closest matching game from the generated gamelists.
+// IsSearching reports whether search mode is active.
+func IsSearching() bool {
+	return searching.Load()
+}
+
+// SearchAndPlay enters search mode: type a query, press Enter to search,
+// Left/Right cycle through results, Backspace always edits buffer, Escape exits.
 func SearchAndPlay() {
 	fmt.Println("Search: type your game and press Enter")
 
@@ -23,23 +29,28 @@ func SearchAndPlay() {
 
 	ch := StreamKeyboards()
 	re := regexp.MustCompile(`<([^>]+)>`)
+
 	var sb strings.Builder
+	var candidates []string
+	idx := 0
 
 	for line := range ch {
 		l := strings.ToLower(line)
 		matches := re.FindAllStringSubmatch(l, -1)
+
 		for _, m := range matches {
 			switch m[1] {
 			case "enter":
 				query := sb.String()
 				if query != "" {
-					if path := findBestMatch(query); path != "" {
-						launchGame(path)
+					candidates = findMatches(query)
+					if len(candidates) > 0 {
+						idx = 0
+						launchGame(candidates[idx])
 					} else {
 						fmt.Println("No match found for", query)
 					}
 				}
-				return
 			case "escape":
 				return
 			case "backspace":
@@ -48,8 +59,20 @@ func SearchAndPlay() {
 					sb.Reset()
 					sb.WriteString(s[:len(s)-1])
 				}
+			case "left":
+				if len(candidates) > 0 && idx > 0 {
+					idx--
+					launchGame(candidates[idx])
+				}
+			case "right":
+				if len(candidates) > 0 && idx < len(candidates)-1 {
+					idx++
+					launchGame(candidates[idx])
+				}
 			}
 		}
+
+		// Regular character input always goes into the buffer
 		l = re.ReplaceAllString(l, "")
 		for _, r := range l {
 			if r == '\n' || r == '\r' {
@@ -60,14 +83,17 @@ func SearchAndPlay() {
 	}
 }
 
-func findBestMatch(query string) string {
-	files, _ := filepath.Glob("/tmp/.SAM_List/*_gamelist.txt")
+func findMatches(query string) []string {
+	files, _ := filepath.Glob("/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists/*_gamelist.txt")
 	if len(files) == 0 {
-		return ""
+		return nil
 	}
 	qn, qext := normalizeQuery(query)
-	bestPath := ""
-	bestDist := -1
+	type cand struct {
+		path string
+		dist int
+	}
+	var list []cand
 	for _, f := range files {
 		file, err := os.Open(f)
 		if err != nil {
@@ -83,19 +109,16 @@ func findBestMatch(query string) string {
 			if qext != "" && qext != ext {
 				continue
 			}
-			if name == qn {
-				file.Close()
-				return line
-			}
-			dist := levenshtein(qn, name)
-			if bestDist == -1 || dist < bestDist {
-				bestDist = dist
-				bestPath = line
-			}
+			list = append(list, cand{path: line, dist: levenshtein(qn, name)})
 		}
 		file.Close()
 	}
-	return bestPath
+	sort.Slice(list, func(i, j int) bool { return list[i].dist < list[j].dist })
+	out := make([]string, len(list))
+	for i, c := range list {
+		out[i] = c.path
+	}
+	return out
 }
 
 func launchGame(path string) {
