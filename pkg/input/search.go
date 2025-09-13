@@ -71,7 +71,7 @@ func SearchAndPlay() {
 				sb.Reset()
 				fmt.Println("[RESET] Search cleared after enter")
 
-			case "ESCAPE":
+			case "ESC":
 				fmt.Println("[ESC] Exiting search mode")
 				searching.Store(false)
 				fmt.Println("Attract mode resumed")
