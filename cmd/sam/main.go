@@ -52,7 +52,34 @@ func dumpConfig(cfg *config.UserConfig) {
     if len(cfg.StaticDetector.Systems) > 0 {
         fmt.Println("    Overrides:")
         for sys, ov := range cfg.StaticDetector.Systems {
-            fmt.Printf("      %s -> %+v\n", sys, ov)
+            var parts []string
+            if ov.BlackThreshold != nil {
+                parts = append(parts, fmt.Sprintf("BlackThreshold=%.0f", *ov.BlackThreshold))
+            }
+            if ov.StaticThreshold != nil {
+                parts = append(parts, fmt.Sprintf("StaticThreshold=%.0f", *ov.StaticThreshold))
+            }
+            if ov.SkipBlack != nil {
+                parts = append(parts, fmt.Sprintf("SkipBlack=%v", *ov.SkipBlack))
+            }
+            if ov.WriteBlackList != nil {
+                parts = append(parts, fmt.Sprintf("WriteBlackList=%v", *ov.WriteBlackList))
+            }
+            if ov.SkipStatic != nil {
+                parts = append(parts, fmt.Sprintf("SkipStatic=%v", *ov.SkipStatic))
+            }
+            if ov.WriteStaticList != nil {
+                parts = append(parts, fmt.Sprintf("WriteStaticList=%v", *ov.WriteStaticList))
+            }
+            if ov.Grace != nil {
+                parts = append(parts, fmt.Sprintf("Grace=%.0f", *ov.Grace))
+            }
+
+            if len(parts) > 0 {
+                fmt.Printf("      %s -> %s\n", sys, strings.Join(parts, " | "))
+            } else {
+                fmt.Printf("      %s -> (no overrides)\n", sys)
+            }
         }
     }
 
@@ -60,8 +87,22 @@ func dumpConfig(cfg *config.UserConfig) {
     if len(cfg.Disable) > 0 {
         fmt.Println("  Disable Rules:")
         for sys, rules := range cfg.Disable {
-            fmt.Printf("    %s -> Folders=%v | Files=%v | Extensions=%v\n",
-                sys, rules.Folders, rules.Files, rules.Extensions)
+            var parts []string
+            if len(rules.Folders) > 0 {
+                parts = append(parts, fmt.Sprintf("Folders=%v", rules.Folders))
+            }
+            if len(rules.Files) > 0 {
+                parts = append(parts, fmt.Sprintf("Files=%v", rules.Files))
+            }
+            if len(rules.Extensions) > 0 {
+                parts = append(parts, fmt.Sprintf("Extensions=%v", rules.Extensions))
+            }
+
+            if len(parts) > 0 {
+                fmt.Printf("    %s -> %s\n", sys, strings.Join(parts, " | "))
+            } else {
+                fmt.Printf("    %s -> (no rules)\n", sys)
+            }
         }
     }
 }
