@@ -192,11 +192,23 @@ func Run(_ []string) {
 	// channel to break waits when skipping
 	skipCh := make(chan struct{}, 1)
 
-	// Hook inputs → only adjust history + signal
+	// Hook inputs → adjust history and launch immediately
 	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
 		input.RelayInputs(cfg,
-			func() { _ = history.PlayBack(); select { case skipCh <- struct{}{}: default: } },
-			func() { _ = history.PlayNext(); select { case skipCh <- struct{}{}: default: } },
+			func() {
+				if p, err := history.PlayBack(); err == nil && p != "" {
+					_ = history.SetNowPlaying(p)
+					run.Run([]string{p})
+					select { case skipCh <- struct{}{}: default: }
+				}
+			},
+			func() {
+				if p, err := history.PlayNext(); err == nil && p != "" {
+					_ = history.SetNowPlaying(p)
+					run.Run([]string{p})
+					select { case skipCh <- struct{}{}: default: }
+				}
+			},
 		)
 	}
 
