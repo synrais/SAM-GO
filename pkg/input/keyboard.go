@@ -67,8 +67,8 @@ func decodeReport(report []byte) string {
 				out.WriteString("<SPACE>")
 			case "ENTER":
 				out.WriteString("<ENTER>")
-			case "ESCAPE":
-				out.WriteString("<ESCAPE>")
+			case "ESC":
+				out.WriteString("<ESC>")
 			case "BACKSPACE":
 				out.WriteString("<BACKSPACE>")
 			default:
