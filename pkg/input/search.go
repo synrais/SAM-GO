@@ -38,8 +38,9 @@ func SearchAndPlay() {
 	fmt.Println("Search: type your game and press Enter")
 
 	searching.Store(true)
+	defer searching.Store(false)
 
-	// 🔥 Build index immediately so it's ready before first Enter
+	// Build index immediately so it's ready before first Enter
 	ensureIndex()
 
 	ch := StreamKeyboards()
