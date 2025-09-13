@@ -14,6 +14,18 @@ import (
 
 var searching atomic.Bool
 
+// GameEntry is one normalized entry in the index.
+type GameEntry struct {
+	Name string // normalized name (alnum only, lowercased, no brackets)
+	Ext  string // extension (smd, nes, zip, …)
+	Path string // original path line from gamelist
+}
+
+var (
+	gameIndex  []GameEntry
+	indexBuilt atomic.Bool
+)
+
 // IsSearching reports whether search mode is active.
 func IsSearching() bool {
 	return searching.Load()
@@ -49,7 +61,7 @@ func SearchAndPlay() {
 				qn, qext := normalizeQuery(sb.String())
 				fmt.Printf("[NORMALIZED] Query=%q Ext=%q\n", qn, qext)
 				if qn != "" {
-					candidates = findMatches(qn)
+					candidates = findMatches(qn, qext)
 					fmt.Printf("[MATCHES] Found %d candidates for query %q\n", len(candidates), qn)
 					for i, c := range candidates {
 						fmt.Printf("  %d: %s\n", i, c)
@@ -100,20 +112,24 @@ func SearchAndPlay() {
 	}
 }
 
-func findMatches(query string) []string {
+// --- Index building ---
+
+func ensureIndex() {
+	if !indexBuilt.Load() {
+		buildIndex()
+		indexBuilt.Store(true)
+	}
+}
+
+func buildIndex() {
 	files, _ := filepath.Glob("/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists/*_gamelist.txt")
 	if len(files) == 0 {
 		fmt.Println("[DEBUG] No gamelist files found")
-		return nil
+		return
 	}
-	qn, qext := normalizeQuery(query)
-	type cand struct {
-		path string
-		dist int
-	}
-	var list []cand
+
 	for _, f := range files {
-		fmt.Printf("[DEBUG] Reading file: %s\n", f)
+		fmt.Printf("[DEBUG] Indexing file: %s\n", f)
 		file, err := os.Open(f)
 		if err != nil {
 			fmt.Printf("[ERROR] Failed to open %s: %v\n", f, err)
@@ -126,22 +142,47 @@ func findMatches(query string) []string {
 				continue
 			}
 			name, ext := normalizeEntry(line)
-			if qext != "" && qext != ext {
-				continue
-			}
-			dist := levenshtein(qn, name)
-			fmt.Printf("[DEBUG] Compare query=%q entry=%q → dist=%d\n", qn, name, dist)
-			list = append(list, cand{path: line, dist: dist})
+			gameIndex = append(gameIndex, GameEntry{
+				Name: name,
+				Ext:  ext,
+				Path: line,
+			})
 		}
 		file.Close()
 	}
+
+	fmt.Printf("[DEBUG] Indexed %d entries\n", len(gameIndex))
+}
+
+// --- Matching ---
+
+func findMatches(qn, qext string) []string {
+	ensureIndex()
+
+	type cand struct {
+		path string
+		dist int
+	}
+	var list []cand
+
+	for _, e := range gameIndex {
+		if qext != "" && qext != e.Ext {
+			continue
+		}
+		dist := levenshtein(qn, e.Name)
+		list = append(list, cand{path: e.Path, dist: dist})
+	}
+
 	sort.Slice(list, func(i, j int) bool { return list[i].dist < list[j].dist })
+
 	out := make([]string, len(list))
 	for i, c := range list {
 		out[i] = c.path
 	}
 	return out
 }
+
+// --- Helpers ---
 
 func launchGame(path string) {
 	exe, err := os.Executable()
