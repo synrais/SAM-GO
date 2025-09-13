@@ -162,6 +162,11 @@ func findMatches(qn, qext string) []string {
 
 	sort.Slice(list, func(i, j int) bool { return list[i].dist < list[j].dist })
 
+	// Restrict to top 200 candidates
+	if len(list) > 200 {
+		list = list[:200]
+	}
+
 	out := make([]string, len(list))
 	for i, c := range list {
 		out[i] = c.path
