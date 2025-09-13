@@ -151,6 +151,7 @@ func stripTimestamp(line string) string {
 	return line
 }
 
+// --- NEW: build Search.txt without system prefixes ---
 func buildSearchList(gamelistDir string) error {
 	searchPath := filepath.Join(gamelistDir, "Search.txt")
 	tmp, err := os.CreateTemp("", "search-*.txt")
@@ -165,19 +166,18 @@ func buildSearchList(gamelistDir string) error {
 	}
 
 	for _, path := range files {
-		systemId := strings.TrimSuffix(filepath.Base(path), "_gamelist.txt")
 		f, err := os.Open(path)
 		if err != nil {
 			continue
 		}
-
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
 			line := strings.TrimSpace(stripTimestamp(scanner.Text()))
 			if line == "" {
 				continue
 			}
-			_, _ = tmp.WriteString(systemId + ":" + line + "\n")
+			// Only the path, no system prefix
+			_, _ = tmp.WriteString(line + "\n")
 		}
 		f.Close()
 	}
@@ -262,7 +262,7 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 			systemFiles = filterUniqueWithMGL(systemFiles)
 		}
 
-			systemFiles = filterExtensions(systemFiles, systemId, cfg)
+		systemFiles = filterExtensions(systemFiles, systemId, cfg)
 
 		if len(systemFiles) > 0 {
 			sort.Strings(systemFiles)
@@ -340,7 +340,7 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 		if err != nil || info.IsDir() {
 			return nil
 		}
-		if strings.HasSuffix(info.Name(), "_gamelist.txt") {
+		if strings.HasSuffix(info.Name(), "_gamelist.txt") || info.Name() == "Search.txt" {
 			dest := filepath.Join(tmpDir, info.Name())
 			if err := utils.CopyFile(path, dest); err == nil {
 				copied++
