@@ -39,6 +39,9 @@ func SearchAndPlay() {
 
 	searching.Store(true)
 
+	// 🔥 Build index immediately so it's ready before first Enter
+	ensureIndex()
+
 	ch := StreamKeyboards()
 	re := regexp.MustCompile(`<([^>]+)>`)
 
@@ -57,8 +60,8 @@ func SearchAndPlay() {
 			case "ENTER":
 				qn, qext := normalizeQuery(sb.String())
 				if qn != "" {
+					fmt.Printf("[SEARCH] Searching... (%d titles for %q)\n", len(gameIndex), sb.String())
 					candidates = findMatches(qn, qext)
-					fmt.Printf("[SEARCH] Searching %d titles for %q...\n", len(gameIndex), sb.String())
 					if len(candidates) > 0 {
 						idx = 0
 						fmt.Printf("[ENTER] Launching: %s\n", candidates[idx])
