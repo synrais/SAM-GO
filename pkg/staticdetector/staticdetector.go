@@ -169,6 +169,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 		}
 		defer res.Close()
 
+		// detector state
 		staticScreenRun := 0.0
 		staticStartTime := 0.0
 		sampleFrames := 0
@@ -179,6 +180,45 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 		handledBlack := false
 		handledStatic := false
 		currCfg := baseCfg
+
+		// helper to reset state when a new game is detected
+		resetState := func(game string) {
+			lastGame = game
+			staticScreenRun = 0
+			staticStartTime = 0
+			sampleFrames = 0
+			firstFrame = true
+			lastFrameTime = time.Now()
+			handledBlack = false
+			handledStatic = false
+
+			// reload overrides if any
+			currCfg = baseCfg
+			sysName := strings.ToLower(run.LastPlayedSystem.Name)
+			if ov, ok := overrides[sysName]; ok {
+				if ov.BlackThreshold != nil {
+					currCfg.BlackThreshold = *ov.BlackThreshold
+				}
+				if ov.StaticThreshold != nil {
+					currCfg.StaticThreshold = *ov.StaticThreshold
+				}
+				if ov.SkipBlack != nil {
+					currCfg.SkipBlack = *ov.SkipBlack
+				}
+				if ov.WriteBlackList != nil {
+					currCfg.WriteBlackList = *ov.WriteBlackList
+				}
+				if ov.SkipStatic != nil {
+					currCfg.SkipStatic = *ov.SkipStatic
+				}
+				if ov.WriteStaticList != nil {
+					currCfg.WriteStaticList = *ov.WriteStaticList
+				}
+				if ov.Grace != nil {
+					currCfg.Grace = *ov.Grace
+				}
+			}
+		}
 
 		maxSamples := (2048 / defaultStep) * (2048 / defaultStep)
 		prevRGB := make([]uint32, maxSamples)
@@ -191,43 +231,9 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 			displayGame := fmt.Sprintf("[%s] %s", run.LastPlayedSystem.Name, run.LastPlayedName) // for logs
 			cleanGame := run.LastPlayedName // for writing to lists
 
+			// detect game change → reset counters
 			if displayGame != lastGame {
-				// reset all counters when a new game starts
-				lastGame = displayGame
-				staticScreenRun = 0
-				staticStartTime = 0
-				sampleFrames = 0
-				firstFrame = true
-				lastFrameTime = time.Now()
-				handledBlack = false
-				handledStatic = false
-
-				// reload overrides if any
-				currCfg = baseCfg
-				sysName := strings.ToLower(run.LastPlayedSystem.Name)
-				if ov, ok := overrides[sysName]; ok {
-					if ov.BlackThreshold != nil {
-						currCfg.BlackThreshold = *ov.BlackThreshold
-					}
-					if ov.StaticThreshold != nil {
-						currCfg.StaticThreshold = *ov.StaticThreshold
-					}
-					if ov.SkipBlack != nil {
-						currCfg.SkipBlack = *ov.SkipBlack
-					}
-					if ov.WriteBlackList != nil {
-						currCfg.WriteBlackList = *ov.WriteBlackList
-					}
-					if ov.SkipStatic != nil {
-						currCfg.SkipStatic = *ov.SkipStatic
-					}
-					if ov.WriteStaticList != nil {
-						currCfg.WriteStaticList = *ov.WriteStaticList
-					}
-					if ov.Grace != nil {
-						currCfg.Grace = *ov.Grace
-					}
-				}
+				resetState(displayGame)
 			}
 
 			res.Header = int(res.Map[2])<<8 | int(res.Map[3])
