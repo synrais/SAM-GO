@@ -27,9 +27,7 @@ func containsInsensitive(list []string, item string) bool {
 }
 
 // matchesSystem checks if a system name appears in a list, accounting for
-// AmigaVision aliases. A match occurs if the exact system is present or if the
-// list contains the generic "AmigaVision" entry for any AmigaVision variant
-// (e.g. AmigaVisionGames, AmigaVisionDemos).
+// AmigaVision aliases.
 func matchesSystem(list []string, system string) bool {
 	if containsInsensitive(list, system) {
 		return true
@@ -92,20 +90,12 @@ func readStaticMap(path string) map[string]string {
 	return m
 }
 
-// ProcessLists applies blacklist, staticlist, ratedlist, and include/exclude filtering.
+// ProcessLists applies blacklist, staticlist, and ratedlist filtering.
+// (Include/Exclude is now handled in list.go, so no file deletions here.)
 func ProcessLists(tmpDir, fullDir string, cfg *config.UserConfig) {
 	files, _ := filepath.Glob(filepath.Join(tmpDir, "*_gamelist.txt"))
 	for _, f := range files {
 		system := strings.TrimSuffix(filepath.Base(f), "_gamelist.txt")
-
-		if len(cfg.Attract.Include) > 0 && !matchesSystem(cfg.Attract.Include, system) {
-			_ = os.Remove(f)
-			continue
-		}
-		if matchesSystem(cfg.Attract.Exclude, system) {
-			_ = os.Remove(f)
-			continue
-		}
 
 		lines, err := readLines(f)
 		if err != nil {
@@ -113,7 +103,9 @@ func ProcessLists(tmpDir, fullDir string, cfg *config.UserConfig) {
 		}
 
 		// Rated list (whitelist)
-		if cfg.Attract.UseRatedlist && allowedFor(system, cfg.Attract.RatedlistInclude, cfg.Attract.RatedlistExclude) {
+		if cfg.Attract.UseRatedlist && allowedFor(system,
+			cfg.Attract.RatedlistInclude, cfg.Attract.RatedlistExclude) {
+
 			rated := readNameSet(filepath.Join(fullDir, system+"_ratedlist.txt"))
 			if rated != nil {
 				var kept []string
@@ -127,7 +119,9 @@ func ProcessLists(tmpDir, fullDir string, cfg *config.UserConfig) {
 		}
 
 		// Blacklist
-		if cfg.Attract.UseBlacklist && allowedFor(system, cfg.Attract.BlacklistInclude, cfg.Attract.BlacklistExclude) {
+		if cfg.Attract.UseBlacklist && allowedFor(system,
+			cfg.Attract.BlacklistInclude, cfg.Attract.BlacklistExclude) {
+
 			bl := readNameSet(filepath.Join(fullDir, system+"_blacklist.txt"))
 			if bl != nil {
 				var kept []string
@@ -141,7 +135,9 @@ func ProcessLists(tmpDir, fullDir string, cfg *config.UserConfig) {
 		}
 
 		// Static list timestamps
-		if cfg.Attract.UseStaticlist && allowedFor(system, cfg.Attract.StaticlistInclude, cfg.Attract.StaticlistExclude) {
+		if cfg.Attract.UseStaticlist && allowedFor(system,
+			cfg.Attract.StaticlistInclude, cfg.Attract.StaticlistExclude) {
+
 			sm := readStaticMap(filepath.Join(fullDir, system+"_staticlist.txt"))
 			if sm != nil {
 				for i, l := range lines {
