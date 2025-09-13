@@ -245,6 +245,14 @@ func Run(_ []string) {
 					skipAt = start.Add(skipDuration)
 				}
 				for time.Now().Before(deadline) {
+					if input.IsSearching() {
+						time.Sleep(100 * time.Millisecond)
+						deadline = deadline.Add(100 * time.Millisecond)
+						if !skipAt.IsZero() {
+							skipAt = skipAt.Add(100 * time.Millisecond)
+						}
+						continue
+					}
 					select {
 					case <-time.After(1 * time.Second):
 					case <-skipCh:
@@ -287,6 +295,11 @@ func Run(_ []string) {
 			} else {
 				deadline := time.Now().Add(wait)
 				for time.Now().Before(deadline) {
+					if input.IsSearching() {
+						time.Sleep(100 * time.Millisecond)
+						deadline = deadline.Add(100 * time.Millisecond)
+						continue
+					}
 					remaining := time.Until(deadline)
 					select {
 					case <-time.After(remaining):
