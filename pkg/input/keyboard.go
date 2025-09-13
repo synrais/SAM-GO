@@ -62,14 +62,18 @@ func decodeReport(report []byte) string {
 		if key, ok := scanCodes[code]; ok {
 			switch key {
 			case "SPACE":
-				out.WriteByte(' ')
+				out.WriteString("<SPACE>")
 			case "ENTER":
-				out.WriteByte('\n')
+				out.WriteString("<ENTER>")
+			case "ESCAPE":
+				out.WriteString("<ESCAPE>")
+			case "BACKSPACE":
+				out.WriteString("<BACKSPACE>")
 			default:
 				if len(key) == 1 {
 					out.WriteString(key)
 				} else {
-					out.WriteString("<" + key + ">")
+					out.WriteString("<" + strings.ToUpper(key) + ">")
 				}
 			}
 		}
