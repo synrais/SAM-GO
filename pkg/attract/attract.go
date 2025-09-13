@@ -169,6 +169,7 @@ func Run(_ []string) {
 	listDir := "/tmp/.SAM_List"
 	fullDir := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
 
+	// Build gamelists before processing
 	listArgs := []string{}
 	if attractCfg.FreshListsEachLoad {
 		listArgs = append(listArgs, "-overwrite")
@@ -178,9 +179,11 @@ func Run(_ []string) {
 	}
 	ProcessLists(listDir, fullDir, cfg)
 
+	// control channels
 	skipCh := make(chan struct{}, 1)
 	backCh := make(chan struct{}, 1)
 
+	// Start static detector
 	if attractCfg.UseStaticDetector {
 		go func() {
 			for ev := range staticdetector.Stream(cfg, skipCh) {
@@ -189,30 +192,24 @@ func Run(_ []string) {
 		}()
 	}
 
-	// inputs → back = signal backCh, next = signal skipCh
+	// Hook inputs → back = backCh, next = skipCh
 	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
 		input.RelayInputs(cfg,
 			func() { // Back
-				select {
-				case backCh <- struct{}{}:
-				default:
-				}
+				select { case backCh <- struct{}{}: default: }
 			},
 			func() { // Next
-				select {
-				case skipCh <- struct{}{}:
-				default:
-				}
+				select { case skipCh <- struct{}{}: default: }
 			},
 		)
 	}
 
+	// Collect gamelists
 	allFiles, err := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
 	if err != nil || len(allFiles) == 0 {
 		fmt.Println("No gamelists found in", listDir)
 		os.Exit(1)
 	}
-
 	files := filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
 	if len(files) == 0 {
 		fmt.Println("No gamelists match Include/Exclude in INI")
@@ -223,33 +220,30 @@ func Run(_ []string) {
 	fmt.Println("Attract mode running. Ctrl-C to exit.")
 
 	for {
+		// --- BACK pressed ---
 		select {
-		// ---- BACK ----
 		case <-backCh:
-			if prev, ok := history.Back(); ok {
+			if prev, err := history.PlayBack(); err == nil && prev != "" {
 				name := filepath.Base(prev)
 				name = strings.TrimSuffix(name, filepath.Ext(name))
 				fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, prev)
-				_ = history.SetNowPlaying(prev)
 				run.Run([]string{prev})
 			}
 			continue
-
-		// ---- NEXT (history first) ----
 		case <-skipCh:
-			if next, ok := history.Next(); ok {
+			// --- NEXT pressed: try history first ---
+			if next, err := history.PlayNext(); err == nil && next != "" {
 				name := filepath.Base(next)
 				name = strings.TrimSuffix(name, filepath.Ext(name))
 				fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, next)
-				_ = history.SetNowPlaying(next)
 				run.Run([]string{next})
 				continue
 			}
-			// else fall through to fresh pick
+			// fall through to random if no history
 		default:
 		}
 
-		// ---- pick a new random game ----
+		// --- RANDOM PICK ---
 		if len(files) == 0 {
 			rebuildLists(listDir)
 			ProcessLists(listDir, fullDir, cfg)
@@ -264,6 +258,7 @@ func Run(_ []string) {
 		listFile := files[r.Intn(len(files))]
 		lines, err := readLines(listFile)
 		if err != nil || len(lines) == 0 {
+			// remove exhausted list
 			for i, f := range files {
 				if f == listFile {
 					files = append(files[:i], files[i+1:]...)
@@ -280,19 +275,22 @@ func Run(_ []string) {
 		ts, gamePath := ParseLine(lines[index])
 		systemID := strings.TrimSuffix(filepath.Base(listFile), "_gamelist.txt")
 
+		// Apply disable rules
 		if disabled(systemID, gamePath, cfg) {
 			lines = append(lines[:index], lines[index+1:]...)
 			_ = writeLines(listFile, lines)
 			continue
 		}
 
+		// Display + launch
 		name := filepath.Base(gamePath)
 		name = strings.TrimSuffix(name, filepath.Ext(name))
 		fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, gamePath)
 
-		_ = history.WriteNowPlaying(gamePath)
+		_ = history.Play(gamePath) // records history + now playing
 		run.Run([]string{gamePath})
 
+		// Update list
 		lines = append(lines[:index], lines[index+1:]...)
 		_ = writeLines(listFile, lines)
 
@@ -312,11 +310,6 @@ func Run(_ []string) {
 				select {
 				case <-time.After(1 * time.Second):
 				case <-skipCh:
-					// re-queue skip so the outer loop can handle history.Next
-					select {
-					case skipCh <- struct{}{}:
-					default:
-					}
 					goto NextGame
 				case <-backCh:
 					goto PrevGame
@@ -339,11 +332,6 @@ func Run(_ []string) {
 			select {
 			case <-time.After(wait):
 			case <-skipCh:
-				// re-queue skip so the outer loop can handle history.Next
-				select {
-				case skipCh <- struct{}{}:
-				default:
-				}
 			case <-backCh:
 				goto PrevGame
 			}
@@ -351,11 +339,10 @@ func Run(_ []string) {
 	NextGame:
 		continue
 	PrevGame:
-		if prev, ok := history.Back(); ok {
+		if prev, err := history.PlayBack(); err == nil && prev != "" {
 			name := filepath.Base(prev)
 			name = strings.TrimSuffix(name, filepath.Ext(name))
 			fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, prev)
-			_ = history.SetNowPlaying(prev)
 			run.Run([]string{prev})
 		}
 	}
