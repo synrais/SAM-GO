@@ -218,7 +218,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 		}
 
 		// subscribe to run.go start notifications
-		run.RegisterOnGameStart(func(_ string, _ string, _ time.Time) {
+		run.RegisterOnGameStart(func(_ games.System, _ string, _ string, _ time.Time) {
 			resetState()
 		})
 
@@ -317,8 +317,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 						// Mark when THIS static run began
 						staticStartTime = frameTime.Sub(run.LastStartTime).Seconds()
 					}
-					delta := frameTime.Sub(lastFrameTime).Seconds()
-					if delta > 0 {
+					if delta := frameTime.Sub(lastFrameTime).Seconds(); delta > 0 {
 						staticScreenRun += delta
 					}
 				} else {
@@ -385,10 +384,8 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 			}
 			out <- event
 
-			elapsed := time.Since(t1)
-			frameDur := time.Second / targetFPS
-			if elapsed < frameDur {
-				time.Sleep(frameDur - elapsed)
+			if elapsed := time.Since(t1); elapsed < time.Second/targetFPS {
+				time.Sleep(time.Second/targetFPS - elapsed)
 			}
 		}
 	}()
