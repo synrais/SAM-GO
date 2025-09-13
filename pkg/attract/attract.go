@@ -163,184 +163,200 @@ func filterAllowed(allFiles []string, include, exclude []string) []string {
 
 // Run is the entry point for the attract tool.
 func Run(_ []string) {
-    cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
-    attractCfg := cfg.Attract
+	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
+	attractCfg := cfg.Attract
 
-    listDir := "/tmp/.SAM_List"
-    fullDir := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
+	listDir := "/tmp/.SAM_List"
+	fullDir := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
 
-    listArgs := []string{}
-    if attractCfg.FreshListsEachLoad {
-        listArgs = append(listArgs, "-overwrite")
-    }
-    if err := RunList(listArgs); err != nil {
-        fmt.Fprintln(os.Stderr, "List build failed:", err)
-    }
-    ProcessLists(listDir, fullDir, cfg)
+	listArgs := []string{}
+	if attractCfg.FreshListsEachLoad {
+		listArgs = append(listArgs, "-overwrite")
+	}
+	if err := RunList(listArgs); err != nil {
+		fmt.Fprintln(os.Stderr, "List build failed:", err)
+	}
+	ProcessLists(listDir, fullDir, cfg)
 
-    skipCh := make(chan struct{}, 1)
-    backCh := make(chan struct{}, 1)
+	skipCh := make(chan struct{}, 1)
+	backCh := make(chan struct{}, 1)
 
-    if attractCfg.UseStaticDetector {
-        go func() {
-            for ev := range staticdetector.Stream(cfg, skipCh) {
-                fmt.Println(ev)
-            }
-        }()
-    }
+	if attractCfg.UseStaticDetector {
+		go func() {
+			for ev := range staticdetector.Stream(cfg, skipCh) {
+				fmt.Println(ev)
+			}
+		}()
+	}
 
-    // inputs → back = signal backCh, next = signal skipCh
-    if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
-        input.RelayInputs(cfg,
-            func() { // Back
-                select { case backCh <- struct{}{}: default: }
-            },
-            func() { // Next
-                select { case skipCh <- struct{}{}: default: }
-            },
-        )
-    }
+	// inputs → back = signal backCh, next = signal skipCh
+	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
+		input.RelayInputs(cfg,
+			func() { // Back
+				select {
+				case backCh <- struct{}{}:
+				default:
+				}
+			},
+			func() { // Next
+				select {
+				case skipCh <- struct{}{}:
+				default:
+				}
+			},
+		)
+	}
 
-    allFiles, err := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
-    if err != nil || len(allFiles) == 0 {
-        fmt.Println("No gamelists found in", listDir)
-        os.Exit(1)
-    }
+	allFiles, err := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
+	if err != nil || len(allFiles) == 0 {
+		fmt.Println("No gamelists found in", listDir)
+		os.Exit(1)
+	}
 
-    files := filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
-    if len(files) == 0 {
-        fmt.Println("No gamelists match Include/Exclude in INI")
-        os.Exit(1)
-    }
+	files := filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
+	if len(files) == 0 {
+		fmt.Println("No gamelists match Include/Exclude in INI")
+		os.Exit(1)
+	}
 
-    r := rand.New(rand.NewSource(time.Now().UnixNano()))
-    fmt.Println("Attract mode running. Ctrl-C to exit.")
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	fmt.Println("Attract mode running. Ctrl-C to exit.")
 
-    for {
-        select {
-        // ---- BACK ----
-        case <-backCh:
-            if prev, ok := history.Back(); ok {
-                name := filepath.Base(prev)
-                name = strings.TrimSuffix(name, filepath.Ext(name))
-                fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, prev)
-                _ = history.SetNowPlaying(prev)
-                run.Run([]string{prev})
-            }
-            continue
+	for {
+		select {
+		// ---- BACK ----
+		case <-backCh:
+			if prev, ok := history.Back(); ok {
+				name := filepath.Base(prev)
+				name = strings.TrimSuffix(name, filepath.Ext(name))
+				fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, prev)
+				_ = history.SetNowPlaying(prev)
+				run.Run([]string{prev})
+			}
+			continue
 
-        // ---- NEXT (history first) ----
-        case <-skipCh:
-            if next, ok := history.Next(); ok {
-                name := filepath.Base(next)
-                name = strings.TrimSuffix(name, filepath.Ext(name))
-                fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, next)
-                _ = history.SetNowPlaying(next)
-                run.Run([]string{next})
-                continue
-            }
-            // else fall through to fresh pick
-        default:
-        }
+		// ---- NEXT (history first) ----
+		case <-skipCh:
+			if next, ok := history.Next(); ok {
+				name := filepath.Base(next)
+				name = strings.TrimSuffix(name, filepath.Ext(name))
+				fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, next)
+				_ = history.SetNowPlaying(next)
+				run.Run([]string{next})
+				continue
+			}
+			// else fall through to fresh pick
+		default:
+		}
 
-        // ---- pick a new random game ----
-        if len(files) == 0 {
-            rebuildLists(listDir)
-            ProcessLists(listDir, fullDir, cfg)
-            allFiles, _ = filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
-            files = filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
-            if len(files) == 0 {
-                fmt.Println("Failed to rebuild gamelists, exiting.")
-                return
-            }
-        }
+		// ---- pick a new random game ----
+		if len(files) == 0 {
+			rebuildLists(listDir)
+			ProcessLists(listDir, fullDir, cfg)
+			allFiles, _ = filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
+			files = filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
+			if len(files) == 0 {
+				fmt.Println("Failed to rebuild gamelists, exiting.")
+				return
+			}
+		}
 
-        listFile := files[r.Intn(len(files))]
-        lines, err := readLines(listFile)
-        if err != nil || len(lines) == 0 {
-            for i, f := range files {
-                if f == listFile {
-                    files = append(files[:i], files[i+1:]...)
-                    break
-                }
-            }
-            continue
-        }
+		listFile := files[r.Intn(len(files))]
+		lines, err := readLines(listFile)
+		if err != nil || len(lines) == 0 {
+			for i, f := range files {
+				if f == listFile {
+					files = append(files[:i], files[i+1:]...)
+					break
+				}
+			}
+			continue
+		}
 
-        index := 0
-        if attractCfg.Random {
-            index = r.Intn(len(lines))
-        }
-        ts, gamePath := ParseLine(lines[index])
-        systemID := strings.TrimSuffix(filepath.Base(listFile), "_gamelist.txt")
+		index := 0
+		if attractCfg.Random {
+			index = r.Intn(len(lines))
+		}
+		ts, gamePath := ParseLine(lines[index])
+		systemID := strings.TrimSuffix(filepath.Base(listFile), "_gamelist.txt")
 
-        if disabled(systemID, gamePath, cfg) {
-            lines = append(lines[:index], lines[index+1:]...)
-            _ = writeLines(listFile, lines)
-            continue
-        }
+		if disabled(systemID, gamePath, cfg) {
+			lines = append(lines[:index], lines[index+1:]...)
+			_ = writeLines(listFile, lines)
+			continue
+		}
 
-        name := filepath.Base(gamePath)
-        name = strings.TrimSuffix(name, filepath.Ext(name))
-        fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, gamePath)
+		name := filepath.Base(gamePath)
+		name = strings.TrimSuffix(name, filepath.Ext(name))
+		fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, gamePath)
 
-        _ = history.WriteNowPlaying(gamePath)
-        run.Run([]string{gamePath})
+		_ = history.WriteNowPlaying(gamePath)
+		run.Run([]string{gamePath})
 
-        lines = append(lines[:index], lines[index+1:]...)
-        _ = writeLines(listFile, lines)
+		lines = append(lines[:index], lines[index+1:]...)
+		_ = writeLines(listFile, lines)
 
-        wait := parsePlayTime(attractCfg.PlayTime, r)
+		wait := parsePlayTime(attractCfg.PlayTime, r)
 
-        if attractCfg.UseStaticlist {
-            start := time.Now()
-            norm := normalizeName(gamePath)
-            deadline := start.Add(wait)
-            var skipAt time.Time
-            if ts > 0 {
-                skipDuration := time.Duration(ts*float64(time.Second)) +
-                    time.Duration(attractCfg.SkipafterStatic)*time.Second
-                skipAt = start.Add(skipDuration)
-            }
-            for time.Now().Before(deadline) {
-                select {
-                case <-time.After(1 * time.Second):
-                case <-skipCh:
-                    goto NextGame
-                case <-backCh:
-                    goto PrevGame
-                }
-                if !skipAt.IsZero() && time.Now().After(skipAt) {
-                    break
-                }
-                newTs := ReadStaticTimestamp(fullDir, systemID, norm)
-                if newTs > 0 && newTs != ts {
-                    ts = newTs
-                    skipDuration := time.Duration(newTs*float64(time.Second)) +
-                        time.Duration(attractCfg.SkipafterStatic)*time.Second
-                    skipAt = start.Add(skipDuration)
-                    if time.Now().After(skipAt) {
-                        break
-                    }
-                }
-            }
-        } else {
-            select {
-            case <-time.After(wait):
-            case <-skipCh:
-            case <-backCh:
-                goto PrevGame
-            }
-        }
-    NextGame:
-        continue
-    PrevGame:
-        if prev, ok := history.Back(); ok {
-            name := filepath.Base(prev)
-            name = strings.TrimSuffix(name, filepath.Ext(name))
-            fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, prev)
-            _ = history.SetNowPlaying(prev)
-            run.Run([]string{prev})
-        }
-    }
+		if attractCfg.UseStaticlist {
+			start := time.Now()
+			norm := normalizeName(gamePath)
+			deadline := start.Add(wait)
+			var skipAt time.Time
+			if ts > 0 {
+				skipDuration := time.Duration(ts*float64(time.Second)) +
+					time.Duration(attractCfg.SkipafterStatic)*time.Second
+				skipAt = start.Add(skipDuration)
+			}
+			for time.Now().Before(deadline) {
+				select {
+				case <-time.After(1 * time.Second):
+				case <-skipCh:
+					// re-queue skip so the outer loop can handle history.Next
+					select {
+					case skipCh <- struct{}{}:
+					default:
+					}
+					goto NextGame
+				case <-backCh:
+					goto PrevGame
+				}
+				if !skipAt.IsZero() && time.Now().After(skipAt) {
+					break
+				}
+				newTs := ReadStaticTimestamp(fullDir, systemID, norm)
+				if newTs > 0 && newTs != ts {
+					ts = newTs
+					skipDuration := time.Duration(newTs*float64(time.Second)) +
+						time.Duration(attractCfg.SkipafterStatic)*time.Second
+					skipAt = start.Add(skipDuration)
+					if time.Now().After(skipAt) {
+						break
+					}
+				}
+			}
+		} else {
+			select {
+			case <-time.After(wait):
+			case <-skipCh:
+				// re-queue skip so the outer loop can handle history.Next
+				select {
+				case skipCh <- struct{}{}:
+				default:
+				}
+			case <-backCh:
+				goto PrevGame
+			}
+		}
+	NextGame:
+		continue
+	PrevGame:
+		if prev, ok := history.Back(); ok {
+			name := filepath.Base(prev)
+			name = strings.TrimSuffix(name, filepath.Ext(name))
+			fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, prev)
+			_ = history.SetNowPlaying(prev)
+			run.Run([]string{prev})
+		}
+	}
 }
