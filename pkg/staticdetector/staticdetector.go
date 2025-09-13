@@ -275,6 +275,8 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 
 			samples := idx
 			if samples <= 0 {
+   			// No valid samples → skip processing, but still rate-limit
+    		time.Sleep(time.Second / targetFPS)
 				continue
 			}
 			sampleFrames++
