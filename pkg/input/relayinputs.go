@@ -20,24 +20,33 @@ func RelayInputs(cfg *config.UserConfig, back func(), next func()) {
 		return
 	}
 
+	// ---------------- KEYBOARD ----------------
 	if cfg.InputDetector.Keyboard {
 		go func() {
 			re := regexp.MustCompile(`<([^>]+)>`)
 			for line := range StreamKeyboards() {
-				fmt.Println("[RAW KEYBOARD]", line) // debug raw event line
+				// Log exactly what StreamKeyboards gives us
+				fmt.Println("[KEY]", line)
 
-				// Only extract <tokens> like <enter>, <a>, <escape>, etc.
+				// Extract <tokens> like <enter>, <escape>, <f9>, etc.
 				for _, m := range re.FindAllStringSubmatch(line, -1) {
 					key := strings.ToLower(m[1])
-					fmt.Println("[TOKEN]", key) // debug clean token
 					performAction(cfg.InputDetector.KeyboardMap, key, back, next)
 				}
-				// 🔴 Removed raw character feeding from `line` here,
-				// so no more "hidraw1: ..." polluting search buffer.
+
+				// Also forward any plain characters (a, b, c…) into actions
+				clean := re.ReplaceAllString(line, "")
+				for _, r := range clean {
+					if r == '\n' || r == '\r' || r == ' ' {
+						continue
+					}
+					performAction(cfg.InputDetector.KeyboardMap, string(r), back, next)
+				}
 			}
 		}()
 	}
 
+	// ---------------- MOUSE ----------------
 	if cfg.InputDetector.Mouse {
 		go func() {
 			for ev := range StreamMouse() {
@@ -65,6 +74,7 @@ func RelayInputs(cfg *config.UserConfig, back func(), next func()) {
 		}()
 	}
 
+	// ---------------- JOYSTICK ----------------
 	if cfg.InputDetector.Joystick {
 		go func() {
 			for line := range StreamJoysticks() {
