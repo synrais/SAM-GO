@@ -201,142 +201,139 @@ func Run(_ []string) {
         )
     }
 
-    // ... rest of Run unchanged ...
-}
+    // Collect gamelists
+    allFiles, err := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
+    if err != nil || len(allFiles) == 0 {
+        fmt.Println("No gamelists found in", listDir)
+        os.Exit(1)
+    }
 
-	// Collect gamelists
-	allFiles, err := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
-	if err != nil || len(allFiles) == 0 {
-		fmt.Println("No gamelists found in", listDir)
-		os.Exit(1)
-	}
+    // Restrict to allowed systems up front
+    files := filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
+    if len(files) == 0 {
+        fmt.Println("No gamelists match Include/Exclude in INI")
+        os.Exit(1)
+    }
 
-	// Restrict to allowed systems up front
-	files := filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
-	if len(files) == 0 {
-		fmt.Println("No gamelists match Include/Exclude in INI")
-		os.Exit(1)
-	}
+    // Seed random
+    r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	// Seed random
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+    fmt.Println("Attract mode running. Ctrl-C to exit.")
 
-	fmt.Println("Attract mode running. Ctrl-C to exit.")
+    for {
+        // --- check if history already has a next game ---
+        if next, ok := history.Next(); ok {
+            name := filepath.Base(next)
+            name = strings.TrimSuffix(name, filepath.Ext(name))
+            fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, next)
+            _ = history.SetNowPlaying(next)
+            run.Run([]string{next})
+            wait := parsePlayTime(attractCfg.PlayTime, r)
 
-	for {
-		// --- check if history already has a next game ---
-		if next, ok := history.Next(); ok {
-			name := filepath.Base(next)
-			name = strings.TrimSuffix(name, filepath.Ext(name))
-			fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, next)
-			_ = history.SetNowPlaying(next)
-			run.Run([]string{next})
-			wait := parsePlayTime(attractCfg.PlayTime, r)
+            select {
+            case <-time.After(wait):
+            case <-skipCh:
+            }
+            continue
+        }
 
-			select {
-			case <-time.After(wait):
-			case <-skipCh:
-			}
-			continue
-		}
+        // Stop if no files left
+        if len(files) == 0 {
+            rebuildLists(listDir)
+            ProcessLists(listDir, fullDir, cfg)
+            allFiles, _ = filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
+            files = filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
+            if len(files) == 0 {
+                fmt.Println("Failed to rebuild gamelists, exiting.")
+                return
+            }
+        }
 
-		// Stop if no files left
-		if len(files) == 0 {
-			rebuildLists(listDir)
-			ProcessLists(listDir, fullDir, cfg)
-			allFiles, _ = filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
-			files = filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
-			if len(files) == 0 {
-				fmt.Println("Failed to rebuild gamelists, exiting.")
-				return
-			}
-		}
+        // Pick a random list
+        listFile := files[r.Intn(len(files))]
 
-		// Pick a random list
-		listFile := files[r.Intn(len(files))]
+        // Load lines
+        lines, err := readLines(listFile)
+        if err != nil || len(lines) == 0 {
+            // remove exhausted list
+            for i, f := range files {
+                if f == listFile {
+                    files = append(files[:i], files[i+1:]...)
+                    break
+                }
+            }
+            continue
+        }
 
-		// Load lines
-		lines, err := readLines(listFile)
-		if err != nil || len(lines) == 0 {
-			// remove exhausted list
-			for i, f := range files {
-				if f == listFile {
-					files = append(files[:i], files[i+1:]...)
-					break
-				}
-			}
-			continue
-		}
+        // Pick game
+        index := 0
+        if attractCfg.Random {
+            index = r.Intn(len(lines))
+        }
+        ts, gamePath := ParseLine(lines[index])
 
-		// Pick game
-		index := 0
-		if attractCfg.Random {
-			index = r.Intn(len(lines))
-		}
-		ts, gamePath := ParseLine(lines[index])
+        // System from filename
+        systemID := strings.TrimSuffix(filepath.Base(listFile), "_gamelist.txt")
 
-		// System from filename
-		systemID := strings.TrimSuffix(filepath.Base(listFile), "_gamelist.txt")
+        // Apply disable rules
+        if disabled(systemID, gamePath, cfg) {
+            lines = append(lines[:index], lines[index+1:]...)
+            _ = writeLines(listFile, lines)
+            continue
+        }
 
-		// Apply disable rules
-		if disabled(systemID, gamePath, cfg) {
-			lines = append(lines[:index], lines[index+1:]...)
-			_ = writeLines(listFile, lines)
-			continue
-		}
+        // Display
+        name := filepath.Base(gamePath)
+        name = strings.TrimSuffix(name, filepath.Ext(name))
+        fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, gamePath)
 
-		// Display
-		name := filepath.Base(gamePath)
-		name = strings.TrimSuffix(name, filepath.Ext(name))
-		fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, gamePath)
+        // Record current game and launch
+        _ = history.WriteNowPlaying(gamePath)
+        run.Run([]string{gamePath})
 
-		// Record current game and launch
-		_ = history.WriteNowPlaying(gamePath)
-		run.Run([]string{gamePath})
+        // Update list
+        lines = append(lines[:index], lines[index+1:]...)
+        _ = writeLines(listFile, lines)
 
-		// Update list
-		lines = append(lines[:index], lines[index+1:]...)
-		_ = writeLines(listFile, lines)
+        // Decide target wait
+        wait := parsePlayTime(attractCfg.PlayTime, r)
 
-		// Decide target wait
-		wait := parsePlayTime(attractCfg.PlayTime, r)
-
-		if attractCfg.UseStaticlist {
-			start := time.Now()
-			norm := normalizeName(gamePath)
-			deadline := start.Add(wait)
-			var skipAt time.Time
-			if ts > 0 {
-				skipDuration := time.Duration(ts*float64(time.Second)) +
-					time.Duration(attractCfg.SkipafterStatic)*time.Second
-				skipAt = start.Add(skipDuration)
-			}
-			for time.Now().Before(deadline) {
-				select {
-				case <-time.After(1 * time.Second):
-				case <-skipCh:
-					goto NextGame
-				}
-				if !skipAt.IsZero() && time.Now().After(skipAt) {
-					break
-				}
-				newTs := ReadStaticTimestamp(fullDir, systemID, norm)
-				if newTs > 0 && newTs != ts {
-					ts = newTs
-					skipDuration := time.Duration(newTs*float64(time.Second)) +
-						time.Duration(attractCfg.SkipafterStatic)*time.Second
-					skipAt = start.Add(skipDuration)
-					if time.Now().After(skipAt) {
-						break
-					}
-				}
-			}
-		} else {
-			select {
-			case <-time.After(wait):
-			case <-skipCh:
-			}
-		}
-	NextGame:
-	}
+        if attractCfg.UseStaticlist {
+            start := time.Now()
+            norm := normalizeName(gamePath)
+            deadline := start.Add(wait)
+            var skipAt time.Time
+            if ts > 0 {
+                skipDuration := time.Duration(ts*float64(time.Second)) +
+                    time.Duration(attractCfg.SkipafterStatic)*time.Second
+                skipAt = start.Add(skipDuration)
+            }
+            for time.Now().Before(deadline) {
+                select {
+                case <-time.After(1 * time.Second):
+                case <-skipCh:
+                    goto NextGame
+                }
+                if !skipAt.IsZero() && time.Now().After(skipAt) {
+                    break
+                }
+                newTs := ReadStaticTimestamp(fullDir, systemID, norm)
+                if newTs > 0 && newTs != ts {
+                    ts = newTs
+                    skipDuration := time.Duration(newTs*float64(time.Second)) +
+                        time.Duration(attractCfg.SkipafterStatic)*time.Second
+                    skipAt = start.Add(skipDuration)
+                    if time.Now().After(skipAt) {
+                        break
+                    }
+                }
+            }
+        } else {
+            select {
+            case <-time.After(wait):
+            case <-skipCh:
+            }
+        }
+    NextGame:
+    }
 }
