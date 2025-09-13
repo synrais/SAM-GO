@@ -49,12 +49,16 @@ func SearchAndPlay() {
 				query := sb.String()
 				if query != "" {
 					candidates = findMatches(query)
+					fmt.Printf("[MATCHES] Found %d candidates for query %q\n", len(candidates), query)
+					for i, c := range candidates {
+						fmt.Printf("  %d: %s\n", i, c)
+					}
 					if len(candidates) > 0 {
 						idx = 0
-						fmt.Printf("Launching: %s\n", candidates[idx])
+						fmt.Printf("[LAUNCH] Launching: %s\n", candidates[idx])
 						launchGame(candidates[idx])
 					} else {
-						fmt.Println("No match found for", query)
+						fmt.Println("[NO MATCH] No match found for", query)
 					}
 				}
 				return // exit search mode
@@ -98,6 +102,7 @@ func SearchAndPlay() {
 func findMatches(query string) []string {
 	files, _ := filepath.Glob("/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists/*_gamelist.txt")
 	if len(files) == 0 {
+		fmt.Println("[DEBUG] No gamelist files found")
 		return nil
 	}
 	qn, qext := normalizeQuery(query)
@@ -107,8 +112,10 @@ func findMatches(query string) []string {
 	}
 	var list []cand
 	for _, f := range files {
+		fmt.Printf("[DEBUG] Reading file: %s\n", f)
 		file, err := os.Open(f)
 		if err != nil {
+			fmt.Printf("[ERROR] Failed to open %s: %v\n", f, err)
 			continue
 		}
 		scanner := bufio.NewScanner(file)
@@ -121,7 +128,9 @@ func findMatches(query string) []string {
 			if qext != "" && qext != ext {
 				continue
 			}
-			list = append(list, cand{path: line, dist: levenshtein(qn, name)})
+			dist := levenshtein(qn, name)
+			fmt.Printf("[DEBUG] Compare query=%q entry=%q → dist=%d\n", qn, name, dist)
+			list = append(list, cand{path: line, dist: dist})
 		}
 		file.Close()
 	}
@@ -136,8 +145,10 @@ func findMatches(query string) []string {
 func launchGame(path string) {
 	exe, err := os.Executable()
 	if err != nil {
+		fmt.Println("[ERROR] Could not resolve executable for launch")
 		return
 	}
+	fmt.Printf("[EXEC] %s -run %q\n", exe, path)
 	cmd := exec.Command(exe, "-run", path)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
