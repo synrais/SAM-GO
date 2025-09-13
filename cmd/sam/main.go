@@ -20,17 +20,45 @@ const socketPath = "/tmp/sam.sock"
 
 func dumpConfig(cfg *config.UserConfig) {
     fmt.Printf("INI Debug ->\n")
-    fmt.Printf("  Attract: Include=%v | Exclude=%v | PlayTime=%s | Random=%v\n",
-        cfg.Attract.Include, cfg.Attract.Exclude, cfg.Attract.PlayTime, cfg.Attract.Random)
+
+    // Attract
+    fmt.Printf("  Attract:\n")
+    fmt.Printf("    PlayTime=%s | Random=%v | FreshListsEachLoad=%v\n",
+        cfg.Attract.PlayTime, cfg.Attract.Random, cfg.Attract.FreshListsEachLoad)
+    fmt.Printf("    Include=%v | Exclude=%v\n", cfg.Attract.Include, cfg.Attract.Exclude)
+    fmt.Printf("    UseBlacklist=%v | UseStaticlist=%v | UseRatedlist=%v | UseStaticDetector=%v\n",
+        cfg.Attract.UseBlacklist, cfg.Attract.UseStaticlist,
+        cfg.Attract.UseRatedlist, cfg.Attract.UseStaticDetector)
+
+    // List
     fmt.Printf("  List: Exclude=%v\n", cfg.List.Exclude)
 
-    if len(cfg.Systems.GamesFolder) > 0 || len(cfg.Systems.SetCore) > 0 {
-        fmt.Printf("  Systems: GamesFolder=%v | SetCore=%v\n",
-            cfg.Systems.GamesFolder, cfg.Systems.SetCore)
+    // Input detector
+    fmt.Printf("  InputDetector: Mouse=%v | Keyboard=%v | Joystick=%v\n",
+        cfg.InputDetector.Mouse, cfg.InputDetector.Keyboard, cfg.InputDetector.Joystick)
+    fmt.Printf("    KeyboardMap=%v\n", cfg.InputDetector.KeyboardMap)
+    fmt.Printf("    MouseMap=%v\n", cfg.InputDetector.MouseMap)
+    fmt.Printf("    JoystickMap=%v\n", cfg.InputDetector.JoystickMap)
+
+    // Static detector (global)
+    fmt.Printf("  StaticDetector:\n")
+    fmt.Printf("    BlackThreshold=%.0f | StaticThreshold=%.0f | Grace=%.0f\n",
+        cfg.StaticDetector.BlackThreshold, cfg.StaticDetector.StaticThreshold, cfg.StaticDetector.Grace)
+    fmt.Printf("    SkipBlack=%v | WriteBlackList=%v | SkipStatic=%v | WriteStaticList=%v\n",
+        cfg.StaticDetector.SkipBlack, cfg.StaticDetector.WriteBlackList,
+        cfg.StaticDetector.SkipStatic, cfg.StaticDetector.WriteStaticList)
+
+    // Static detector overrides
+    if len(cfg.StaticDetector.Systems) > 0 {
+        fmt.Println("    Overrides:")
+        for sys, ov := range cfg.StaticDetector.Systems {
+            fmt.Printf("      %s -> %+v\n", sys, ov)
+        }
     }
 
+    // Disable rules
     if len(cfg.Disable) > 0 {
-        fmt.Printf("  Disable Rules:\n")
+        fmt.Println("  Disable Rules:")
         for sys, rules := range cfg.Disable {
             fmt.Printf("    %s -> Folders=%v | Files=%v | Extensions=%v\n",
                 sys, rules.Folders, rules.Files, rules.Extensions)
