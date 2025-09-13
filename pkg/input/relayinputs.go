@@ -116,6 +116,10 @@ func performAction(m map[string]string, key string, back, next func()) {
 	if searching.Load() {
 		return
 	}
+	if key == "`" {
+		SearchAndPlay()
+		return
+	}
 	if m != nil {
 		if cmd, ok := m[key]; ok {
 			runCommand(cmd, back, next)
