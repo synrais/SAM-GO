@@ -22,10 +22,14 @@ func IsSearching() bool {
 // SearchAndPlay enters search mode: type a query, press Enter to search,
 // Left/Right cycle through results, Backspace always edits buffer, Escape exits.
 func SearchAndPlay() {
+	fmt.Println("Attract mode paused")
 	fmt.Println("Search: type your game and press Enter")
 
 	searching.Store(true)
-	defer searching.Store(false)
+	defer func() {
+		searching.Store(false)
+		fmt.Println("Attract mode resumed")
+	}()
 
 	ch := StreamKeyboards()
 	re := regexp.MustCompile(`<([^>]+)>`)
@@ -41,44 +45,52 @@ func SearchAndPlay() {
 		for _, m := range matches {
 			switch m[1] {
 			case "enter":
+				fmt.Printf("[ENTER pressed] Query: %q\n", sb.String())
 				query := sb.String()
 				if query != "" {
 					candidates = findMatches(query)
 					if len(candidates) > 0 {
 						idx = 0
+						fmt.Printf("Launching: %s\n", candidates[idx])
 						launchGame(candidates[idx])
 					} else {
 						fmt.Println("No match found for", query)
 					}
 				}
+				return // exit search mode
 			case "escape":
-				return
+				fmt.Println("[ESC pressed] Exiting search mode")
+				return // exit search mode
 			case "backspace":
 				s := sb.String()
 				if len(s) > 0 {
 					sb.Reset()
 					sb.WriteString(s[:len(s)-1])
 				}
+				fmt.Printf("[BACKSPACE] Buffer now: %q\n", sb.String())
 			case "left":
 				if len(candidates) > 0 && idx > 0 {
 					idx--
+					fmt.Printf("[LEFT] Switching to: %s\n", candidates[idx])
 					launchGame(candidates[idx])
 				}
 			case "right":
 				if len(candidates) > 0 && idx < len(candidates)-1 {
 					idx++
+					fmt.Printf("[RIGHT] Switching to: %s\n", candidates[idx])
 					launchGame(candidates[idx])
 				}
 			}
 		}
 
-		// Regular character input always goes into the buffer
+		// Regular text always updates the buffer
 		l = re.ReplaceAllString(l, "")
 		for _, r := range l {
 			if r == '\n' || r == '\r' {
 				continue
 			}
 			sb.WriteRune(r)
+			fmt.Printf("[CHAR] Buffer now: %q\n", sb.String())
 		}
 	}
 }
