@@ -1,6 +1,7 @@
 package attract
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"github.com/synrais/SAM-GO/pkg/config"
@@ -56,6 +57,33 @@ func filterUniqueWithMGL(files []string) []string {
 		result = append(result, v)
 	}
 	return result
+}
+
+func filterExtensions(files []string, systemId string, cfg *config.UserConfig) []string {
+	rules, ok := cfg.Disable[systemId]
+	if !ok || len(rules.Extensions) == 0 {
+		return files
+	}
+
+	extMap := make(map[string]struct{})
+	for _, e := range rules.Extensions {
+		e = strings.ToLower(e)
+		if !strings.HasPrefix(e, ".") {
+			e = "." + e
+		}
+		extMap[e] = struct{}{}
+	}
+
+	var filtered []string
+	for _, f := range files {
+		ext := strings.ToLower(filepath.Ext(f))
+		if _, skip := extMap[ext]; skip {
+			continue
+		}
+		filtered = append(filtered, f)
+	}
+
+	return filtered
 }
 
 // ---- AmigaVision helpers ----
@@ -114,7 +142,52 @@ func writeAmigaVisionLists(gamelistDir string, paths []string) int {
 	return written
 }
 
-func createGamelists(gamelistDir string, systemPaths map[string][]string,
+func stripTimestamp(line string) string {
+	if strings.HasPrefix(line, "<") {
+		if idx := strings.Index(line, ">"); idx > 1 {
+			return line[idx+1:]
+		}
+	}
+	return line
+}
+
+func buildSearchList(gamelistDir string) error {
+	searchPath := filepath.Join(gamelistDir, "Search.txt")
+	tmp, err := os.CreateTemp("", "search-*.txt")
+	if err != nil {
+		return err
+	}
+
+	files, err := filepath.Glob(filepath.Join(gamelistDir, "*_gamelist.txt"))
+	if err != nil {
+		tmp.Close()
+		return err
+	}
+
+	for _, path := range files {
+		systemId := strings.TrimSuffix(filepath.Base(path), "_gamelist.txt")
+		f, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := strings.TrimSpace(stripTimestamp(scanner.Text()))
+			if line == "" {
+				continue
+			}
+			_, _ = tmp.WriteString(systemId + ":" + line + "\n")
+		}
+		f.Close()
+	}
+
+	_ = tmp.Sync()
+	_ = tmp.Close()
+	return utils.MoveFile(tmp.Name(), searchPath)
+}
+
+func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map[string][]string,
 	progress bool, quiet bool, filter bool, overwrite bool) int {
 
 	start := time.Now()
@@ -188,6 +261,8 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 		if filter {
 			systemFiles = filterUniqueWithMGL(systemFiles)
 		}
+
+			systemFiles = filterExtensions(systemFiles, systemId, cfg)
 
 		if len(systemFiles) > 0 {
 			sort.Strings(systemFiles)
@@ -274,6 +349,10 @@ func createGamelists(gamelistDir string, systemPaths map[string][]string,
 		return nil
 	})
 
+	if err := buildSearchList(gamelistDir); err != nil && !quiet {
+		fmt.Fprintln(os.Stderr, err)
+	}
+
 	if !quiet {
 		taken := int(time.Since(start).Seconds())
 		if progress {
@@ -355,7 +434,7 @@ func RunList(args []string) error {
 		systemPathsMap[p.System.Id] = append(systemPathsMap[p.System.Id], p.Path)
 	}
 
-	total := createGamelists(*gamelistDir, systemPathsMap, *progress, *quiet, *noDupes, *overwrite)
+	total := createGamelists(cfg, *gamelistDir, systemPathsMap, *progress, *quiet, *noDupes, *overwrite)
 
 	if total == 0 {
 		return fmt.Errorf("no games indexed")
