@@ -51,7 +51,9 @@ func SearchAndPlay() {
 		matches := re.FindAllStringSubmatch(l, -1)
 
 		for _, m := range matches {
-			switch m[1] {
+			key := strings.ToLower(m[1]) // normalize key names
+
+			switch key {
 			case "enter":
 				qn, qext := normalizeQuery(sb.String())
 				if qn != "" {
@@ -67,7 +69,7 @@ func SearchAndPlay() {
 				}
 				// 🔑 Reset buffer after enter
 				sb.Reset()
-				fmt.Println("[RESET] Buffer cleared after enter")
+				fmt.Println("[RESET] Search cleared after enter")
 
 			case "escape":
 				fmt.Println("[ESC] Exiting search mode")
@@ -81,7 +83,7 @@ func SearchAndPlay() {
 					sb.Reset()
 					sb.WriteString(s[:len(s)-1])
 				}
-				fmt.Printf("[BACKSPACE] Buffer: %q\n", sb.String())
+				fmt.Printf("[BACKSPACE] Search: %q\n", sb.String())
 
 			case "left":
 				if len(candidates) > 0 && idx > 0 {
@@ -106,7 +108,7 @@ func SearchAndPlay() {
 				continue
 			}
 			sb.WriteRune(r)
-			fmt.Printf("[CHAR] Buffer: %q\n", sb.String())
+			fmt.Printf("[CHAR] Search: %q\n", sb.String())
 		}
 	}
 }
