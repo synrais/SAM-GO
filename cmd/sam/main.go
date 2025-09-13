@@ -95,7 +95,7 @@ func handleCommand(cfg *config.UserConfig, cmd string, args []string, skipCh cha
 			fmt.Println(line)
 		}
 	case "-static":
-		for ev := range staticdetector.Stream(cfg, skipCh) {
+		for ev := range staticdetector.Stream(cfg, skipCh, false) {
 			fmt.Println(ev)
 		}
 	default:
