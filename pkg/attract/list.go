@@ -169,6 +169,7 @@ func buildSearchList(gamelistDir string) error {
 		if err != nil {
 			continue
 		}
+
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
 			line := strings.TrimSpace(stripTimestamp(scanner.Text()))
@@ -183,11 +184,6 @@ func buildSearchList(gamelistDir string) error {
 	_ = tmp.Sync()
 	_ = tmp.Close()
 	return utils.MoveFile(tmp.Name(), searchPath)
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map[string][]string,
@@ -272,10 +268,8 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 			totalGames += len(systemFiles)
 			writeGamelist(gamelistDir, systemId, systemFiles)
 
-			if exists && overwrite {
+			if exists {
 				rebuilt++
-			} else if exists {
-				reused++
 			} else {
 				fresh++
 			}
@@ -285,80 +279,77 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 
 		// ---- AmigaVision special handling ----
 		if strings.EqualFold(systemId, "Amiga") {
-			for visionId, filename := range map[string]string{
-				"AmigaVisionGames": "AmigaVisionGames_gamelist.txt",
-				"AmigaVisionDemos": "AmigaVisionDemos_gamelist.txt",
-			} {
-				visionPath := filepath.Join(gamelistDir, filename)
-				exists := fileExists(visionPath)
-
-				if overwrite || !exists {
-					visionCount := writeAmigaVisionLists(gamelistDir, paths)
-					if visionCount > 0 {
-						totalGames += visionCount
-						if exists && overwrite {
-							if !quiet {
-								fmt.Printf("Rebuilding %s (overwrite enabled)\n", visionId)
-							}
-							rebuilt++
-						} else {
-							if !quiet {
-								fmt.Printf("Fresh %s list created (%d entries)\n", visionId, visionCount)
-							}
-							fresh++
-						}
-					}
-				} else if exists {
-					data, _ := os.ReadFile(visionPath)
-					lines := parseLines(string(data))
-					totalGames += len(lines)
+			count := writeAmigaVisionLists(gamelistDir, paths)
+			if count > 0 {
+				totalGames += count
+				if overwrite {
 					if !quiet {
-						fmt.Printf("Reusing %s: gamelist already exists\n", visionId)
+						fmt.Printf("Rebuilt AmigaVision lists (%d entries)\n", count)
 					}
-					reused++
+					rebuilt++
 				} else {
-					emptySystems = append(emptySystems, visionId)
+					if !quiet {
+						fmt.Printf("Fresh AmigaVision lists created (%d entries)\n", count)
+					}
+					fresh++
 				}
+			} else {
+				emptySystems = append(emptySystems, "AmigaVision")
 			}
 		}
 	}
 
-	// Copy only relevant lists into /tmp/.SAM_List
+	// Copy selected gamelists into /tmp/.SAM_List
 	tmpDir := "/tmp/.SAM_List"
 	_ = os.RemoveAll(tmpDir)
 	_ = os.MkdirAll(tmpDir, 0755)
 
 	copied := 0
-	for systemId := range systemPaths {
-		name := gamelistFilename(systemId)
-		src := filepath.Join(gamelistDir, name)
-		if fileExists(src) {
+	filepath.Walk(gamelistDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		name := info.Name()
+
+		// Always copy Search.txt
+		if name == "Search.txt" {
 			dest := filepath.Join(tmpDir, name)
-			if err := utils.CopyFile(src, dest); err == nil {
+			if err := utils.CopyFile(path, dest); err == nil {
+				copied++
+			}
+			return nil
+		}
+
+		// Only copy allowed _gamelist.txt files
+		if strings.HasSuffix(name, "_gamelist.txt") {
+			system := strings.TrimSuffix(name, "_gamelist.txt")
+
+			// respect Include/Exclude
+			if len(cfg.Attract.Include) > 0 {
+				match := false
+				for _, inc := range cfg.Attract.Include {
+					if strings.EqualFold(strings.TrimSpace(inc), system) {
+						match = true
+						break
+					}
+				}
+				if !match {
+					return nil
+				}
+			}
+			for _, ex := range cfg.Attract.Exclude {
+				if strings.EqualFold(strings.TrimSpace(ex), system) {
+					return nil
+				}
+			}
+
+			dest := filepath.Join(tmpDir, name)
+			if err := utils.CopyFile(path, dest); err == nil {
 				copied++
 			}
 		}
-	}
-
-	// Always include Search.txt if present
-	searchPath := filepath.Join(gamelistDir, "Search.txt")
-	if fileExists(searchPath) {
-		dest := filepath.Join(tmpDir, "Search.txt")
-		if err := utils.CopyFile(searchPath, dest); err == nil {
-			copied++
-		}
-	}
-
-	// Include AmigaVision if they exist
-	for _, name := range []string{"AmigaVisionGames_gamelist.txt", "AmigaVisionDemos_gamelist.txt"} {
-		src := filepath.Join(gamelistDir, name)
-		if fileExists(src) {
-			dest := filepath.Join(tmpDir, name)
-			if err := utils.CopyFile(src, dest); err == nil {
-				copied++
-			}
-		}
-	}
+		return nil
+	})
 
 	if err := buildSearchList(gamelistDir); err != nil && !quiet {
 		fmt.Fprintln(os.Stderr, err)
@@ -407,7 +398,7 @@ func RunList(args []string) error {
 		return err
 	}
 
-	// Load user config (for List.Exclude)
+	// Load user config (for List.Exclude and Disable rules)
 	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
 
 	var systems []games.System
