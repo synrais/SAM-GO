@@ -183,8 +183,8 @@ func Run(_ []string) {
 
 	if attractCfg.UseStaticDetector {
 		go func() {
-			for ev := range staticdetector.Stream(cfg) {
-				fmt.Println(ev) // print the detector output
+			for ev := range staticdetector.Stream(cfg, skipCh) {
+				fmt.Println(ev) // print detector output
 			}
 		}()
 	}
