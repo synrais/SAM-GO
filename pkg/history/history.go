@@ -3,7 +3,7 @@ package history
 import (
 	"bufio"
 	"errors"
-	"fmt"   
+	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/synrais/SAM-GO/pkg/config"
-	"github.com/synrais/SAM-GO/pkg/run"
 )
 
 const (
@@ -158,33 +157,45 @@ func Back() (string, bool) {
 	return "", false
 }
 
-// Play launches the provided path and records it in history and Now_Playing.
+// Play records the provided path in history and Now_Playing.
+// It no longer launches the game directly.
 func Play(path string) error {
 	if err := WriteNowPlaying(path); err != nil {
 		return err
 	}
-	fmt.Println("[HISTORY] Now playing:", path)
-	return run.Run([]string{path})
+	fmt.Println("[HISTORY] Queued:", path)
+	return nil
 }
 
-// PlayNext moves to the next entry in history and launches it.
-func PlayNext() error {
+// PlayNext moves to the next entry in history (or random) and returns it.
+// Caller is responsible for launching the game.
+func PlayNext() (string, error) {
 	if p, ok := Next(); ok {
-		return Play(p) // <-- always go through Play()
+		if err := Play(p); err != nil {
+			return "", err
+		}
+		return p, nil
 	}
 	p, err := randomGame()
 	if err != nil {
-		return err
+		return "", err
 	}
-	return Play(p) // <-- ensures history + debug + timer reset
+	if err := Play(p); err != nil {
+		return "", err
+	}
+	return p, nil
 }
 
-// PlayBack moves to the previous entry in history and launches it.
-func PlayBack() error {
+// PlayBack moves to the previous entry in history and returns it.
+// Caller is responsible for launching the game.
+func PlayBack() (string, error) {
 	if p, ok := Back(); ok {
-		return Play(p) // <-- ensures history + debug + timer reset
+		if err := Play(p); err != nil {
+			return "", err
+		}
+		return p, nil
 	}
-	return nil
+	return "", nil
 }
 
 func NowPlayingPath() string {
