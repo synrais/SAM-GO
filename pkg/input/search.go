@@ -68,9 +68,14 @@ func SearchAndPlay() {
 						fmt.Println("[NO MATCH] No match found")
 					}
 				}
+				// 🔑 Reset buffer after enter
+				sb.Reset()
+				fmt.Println("[RESET] Buffer cleared after enter")
+
 			case "escape":
 				fmt.Println("[ESC] Exiting search mode")
 				return
+
 			case "backspace":
 				s := sb.String()
 				if len(s) > 0 {
@@ -78,12 +83,14 @@ func SearchAndPlay() {
 					sb.WriteString(s[:len(s)-1])
 				}
 				fmt.Printf("[BACKSPACE] Buffer: %q\n", sb.String())
+
 			case "left":
 				if len(candidates) > 0 && idx > 0 {
 					idx--
 					fmt.Printf("[LEFT] Launching: %s\n", candidates[idx])
 					launchGame(candidates[idx])
 				}
+
 			case "right":
 				if len(candidates) > 0 && idx < len(candidates)-1 {
 					idx++
