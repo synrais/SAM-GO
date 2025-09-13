@@ -218,7 +218,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 		}
 
 		// subscribe to run.go start notifications
-		run.RegisterOnGameStart(func(_, _, _ string, _ time.Time) {
+		run.RegisterOnGameStart(func(_ games.System, _ string, _ string, _ time.Time) {
 			resetState()
 		})
 
