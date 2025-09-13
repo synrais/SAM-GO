@@ -1,343 +1,176 @@
 package run
 
 import (
-	"bufio"
+	"encoding/xml"
 	"fmt"
-	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/synrais/SAM-GO/pkg/config"
-	"github.com/synrais/SAM-GO/pkg/history"
-	"github.com/synrais/SAM-GO/pkg/input"
-	"github.com/synrais/SAM-GO/pkg/run"
-	"github.com/synrais/SAM-GO/pkg/staticdetector"
+	"github.com/synrais/SAM-GO/pkg/games"
+	"github.com/synrais/SAM-GO/pkg/mister"
 )
 
-// readLines reads all non-empty lines from a file.
-func readLines(path string) ([]string, error) {
-	file, err := os.Open(path)
+// Globals to expose last played info
+var (
+	LastPlayedSystem games.System
+	LastPlayedPath   string
+	LastPlayedName   string // basename without extension (or raw AmigaVision name)
+	LastStartTime    time.Time
+)
+
+// GetLastPlayed returns the last system, path, clean name, and start time.
+func GetLastPlayed() (system games.System, path, name string, start time.Time) {
+	return LastPlayedSystem, LastPlayedPath, LastPlayedName, LastStartTime
+}
+
+// internal helper to update globals
+func setLastPlayed(system games.System, path string) {
+	LastPlayedSystem = system
+	LastPlayedPath = path
+	LastStartTime = time.Now()
+
+	// derive clean display name
+	if !strings.Contains(path, "/") && !strings.Contains(path, "\\") {
+		// AmigaVision-style: already just a name
+		LastPlayedName = path
+	} else {
+		base := filepath.Base(path)
+		LastPlayedName = strings.TrimSuffix(base, filepath.Ext(base))
+	}
+}
+
+// parseMglForGamePath opens an .mgl file and returns the <file> path, if any.
+type mglFile struct {
+	Path string `xml:"path,attr"`
+}
+type mglDoc struct {
+	Files []mglFile `xml:"file"`
+}
+
+func parseMglForGamePath(mglPath string) (string, error) {
+	data, err := os.ReadFile(mglPath)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	defer file.Close()
-
-	var lines []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line != "" {
-			lines = append(lines, line)
-		}
+	var doc mglDoc
+	if err := xml.Unmarshal(data, &doc); err != nil {
+		return "", err
 	}
-	return lines, scanner.Err()
+	if len(doc.Files) == 0 {
+		return "", nil // valid MGL but no <file> entries
+	}
+	return doc.Files[0].Path, nil
 }
 
-// writeLines writes lines to a file (overwrites).
-func writeLines(path string, lines []string) error {
-	tmp, err := os.CreateTemp("", "list-*.txt")
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func bindMount(src, dst string) error {
+	_ = os.MkdirAll(dst, 0755)
+	cmd := exec.Command("/bin/mount", "--bind", src, dst)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return err
+		return fmt.Errorf("mount failed: %v (output: %s)", err, string(out))
 	}
-	defer tmp.Close()
-
-	for _, l := range lines {
-		_, _ = tmp.WriteString(l + "\n")
-	}
-	return os.Rename(tmp.Name(), path)
+	return nil
 }
 
-// parsePlayTime handles "40" or "40-130"
-func parsePlayTime(value string, r *rand.Rand) time.Duration {
-	if strings.Contains(value, "-") {
-		parts := strings.SplitN(value, "-", 2)
-		min, _ := strconv.Atoi(strings.TrimSpace(parts[0]))
-		max, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
-		if max > min {
-			return time.Duration(r.Intn(max-min+1)+min) * time.Second
-		}
-		return time.Duration(min) * time.Second
-	}
-	secs, _ := strconv.Atoi(value)
-	return time.Duration(secs) * time.Second
+func unmount(path string) {
+	cmd := exec.Command("/bin/umount", path)
+	_ = cmd.Run() // ignore errors, same as shell script
 }
 
-// matchesPattern checks if string matches a wildcard (*foo*, bar*, *baz)
-func matchesPattern(s, pattern string) bool {
-	p := strings.ToLower(pattern)
-	s = strings.ToLower(s)
+func findAmigaShared() string {
+	// look in configured system paths
+	amigaPaths := games.GetSystemPaths(&config.UserConfig{}, []games.System{games.Systems["Amiga"]})
+	for _, p := range amigaPaths {
+		candidate := filepath.Join(p.Path, "shared")
+		if pathExists(candidate) {
+			return candidate
+		}
+	}
 
-	if strings.HasPrefix(p, "*") && strings.HasSuffix(p, "*") {
-		return strings.Contains(s, strings.Trim(p, "*"))
+	// fallback: try usb0-3
+	for i := 0; i < 4; i++ {
+		usbCandidate := fmt.Sprintf("/media/usb%d/games/Amiga/shared", i)
+		if pathExists(usbCandidate) {
+			return usbCandidate
+		}
 	}
-	if strings.HasPrefix(p, "*") {
-		return strings.HasSuffix(s, strings.TrimPrefix(p, "*"))
+
+	// fallback: fat
+	if pathExists("/media/fat/games/Amiga/shared") {
+		return "/media/fat/games/Amiga/shared"
 	}
-	if strings.HasSuffix(p, "*") {
-		return strings.HasPrefix(s, strings.TrimSuffix(p, "*"))
-	}
-	return s == p
+	return ""
 }
 
-// disabled checks if a game should be blocked by rules
-func disabled(system string, gamePath string, cfg *config.UserConfig) bool {
-	rules, ok := cfg.Disable[system]
-	if !ok {
-		return false
+// Run launches a game or AmigaVision target.
+func Run(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("Usage: SAM -run <path-or-name>")
 	}
+	runPath := args[0]
 
-	base := filepath.Base(gamePath)
-	ext := filepath.Ext(gamePath)
-	dir := filepath.Base(filepath.Dir(gamePath))
-
-	for _, f := range rules.Folders {
-		if matchesPattern(dir, f) {
-			return true
-		}
-	}
-	for _, f := range rules.Files {
-		if matchesPattern(base, f) {
-			return true
-		}
-	}
-	for _, e := range rules.Extensions {
-		if strings.EqualFold(ext, e) {
-			return true
-		}
-	}
-	return false
-}
-
-// rebuildLists calls SAM -list to regenerate gamelists.
-func rebuildLists(listDir string) []string {
-	fmt.Println("All gamelists empty. Rebuilding with SAM -list...")
-
-	exe, _ := os.Executable()
-	cmd := exec.Command(exe, "-list")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	_ = cmd.Run()
-
-	refreshed, _ := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
-	if len(refreshed) > 0 {
-		fmt.Printf("Rebuilt %d gamelists, resuming Attract Mode.\n", len(refreshed))
-	}
-	return refreshed
-}
-
-// filterAllowed applies include/exclude restrictions case-insensitively.
-func filterAllowed(allFiles []string, include, exclude []string) []string {
-	var filtered []string
-	for _, f := range allFiles {
-		base := strings.TrimSuffix(filepath.Base(f), "_gamelist.txt")
-		if len(include) > 0 {
-			match := false
-			for _, sys := range include {
-				if strings.EqualFold(strings.TrimSpace(sys), base) {
-					match = true
-					break
-				}
-			}
-			if !match {
-				continue
-			}
-		}
-		skip := false
-		for _, sys := range exclude {
-			if strings.EqualFold(strings.TrimSpace(sys), base) {
-				skip = true
-				break
-			}
-		}
-		if skip {
-			continue
-		}
-		filtered = append(filtered, f)
-	}
-	return filtered
-}
-
-// Run is the entry point for the attract tool.
-func Run(_ []string) {
-	// Load config
-	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
-	attractCfg := cfg.Attract
-
-	listDir := "/tmp/.SAM_List"
-	fullDir := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
-
-	// Build gamelists before processing
-	listArgs := []string{}
-	if attractCfg.FreshListsEachLoad {
-		listArgs = append(listArgs, "-overwrite")
-	}
-	if err := RunList(listArgs); err != nil {
-		fmt.Fprintln(os.Stderr, "List build failed:", err)
-	}
-
-	ProcessLists(listDir, fullDir, cfg)
-
-	if attractCfg.UseStaticDetector {
-		go func() {
-			for ev := range staticdetector.Stream(cfg) {
-				fmt.Println(ev) // print the detector output
-			}
-		}()
-	}
-
-	// Channel to signal skips
-	skipCh := make(chan struct{}, 1)
-
-	// Hook input events
-	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
-		input.RelayInputs(cfg,
-			func() { _ = history.PlayBack(); skipCh <- struct{}{} },
-			func() { _ = history.PlayNext(); skipCh <- struct{}{} },
-		)
-	}
-
-	// Collect gamelists
-	allFiles, err := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
-	if err != nil || len(allFiles) == 0 {
-		fmt.Println("No gamelists found in", listDir)
-		os.Exit(1)
-	}
-
-	// Restrict to allowed systems up front
-	files := filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
-	if len(files) == 0 {
-		fmt.Println("No gamelists match Include/Exclude in INI")
-		os.Exit(1)
-	}
-
-	// Seed random
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	fmt.Println("Attract mode running. Ctrl-C to exit.")
-
-	for {
-		if next, ok := history.Next(); ok {
-			name := filepath.Base(next)
-			name = strings.TrimSuffix(name, filepath.Ext(name))
-			fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, next)
-			_ = history.SetNowPlaying(next)
-			run.Run([]string{next})
-
-			wait := parsePlayTime(attractCfg.PlayTime, r)
-			select {
-			case <-time.After(wait):
-				// normal timeout
-			case <-skipCh:
-				// manual skip
-			}
-			continue
+	// Case 1: AmigaVision name (no slash/backslash → special case)
+	if !strings.ContainsAny(runPath, "/\\") {
+		amigaShared := findAmigaShared()
+		if amigaShared == "" {
+			return fmt.Errorf("games/Amiga/shared folder not found")
 		}
 
-		// Stop if no files left
-		if len(files) == 0 {
-			rebuildLists(listDir)
-			ProcessLists(listDir, fullDir, cfg)
-			allFiles, _ = filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
-			files = filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
-			if len(files) == 0 {
-				fmt.Println("Failed to rebuild gamelists, exiting.")
-				return
-			}
+		tmpShared := "/tmp/.SAM_tmp/Amiga_shared"
+		_ = os.RemoveAll(tmpShared)
+		_ = os.MkdirAll(tmpShared, 0755)
+
+		// copy real shared into tmp
+		if out, err := exec.Command("/bin/cp", "-a", amigaShared+"/.", tmpShared).CombinedOutput(); err != nil {
+			fmt.Printf("[WARN] copy shared failed: %v (output: %s)\n", err, string(out))
 		}
 
-		// Pick a random list
-		listFile := files[r.Intn(len(files))]
-
-		// Load lines
-		lines, err := readLines(listFile)
-		if err != nil || len(lines) == 0 {
-			// remove exhausted list
-			for i, f := range files {
-				if f == listFile {
-					files = append(files[:i], files[i+1:]...)
-					break
-				}
-			}
-			continue
+		// write ags_boot file
+		bootFile := filepath.Join(tmpShared, "ags_boot")
+		content := runPath + "\n\n"
+		if err := os.WriteFile(bootFile, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write ags_boot: %v", err)
 		}
 
-		// Pick game
-		index := 0
-		if attractCfg.Random {
-			index = r.Intn(len(lines))
-		}
-		ts, gamePath := ParseLine(lines[index])
-
-		// System from filename
-		systemID := strings.TrimSuffix(filepath.Base(listFile), "_gamelist.txt")
-
-		// Apply disable rules
-		if disabled(systemID, gamePath, cfg) {
-			lines = append(lines[:index], lines[index+1:]...)
-			_ = writeLines(listFile, lines)
-			continue
+		// bind mount over real shared
+		unmount(amigaShared)
+		if err := bindMount(tmpShared, amigaShared); err != nil {
+			return err
 		}
 
-		// Display
-		name := filepath.Base(gamePath)
-		name = strings.TrimSuffix(name, filepath.Ext(name))
-		fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, gamePath)
+		// record last played (Amiga special case)
+		setLastPlayed(games.Systems["Amiga"], runPath)
 
-		// Record current game and launch
-		_ = history.WriteNowPlaying(gamePath)
-		run.Run([]string{gamePath})
+		// launch minimig core
+		return mister.LaunchCore(&config.UserConfig{}, games.Systems["Amiga"])
+	}
 
-		// Update list
-		lines = append(lines[:index], lines[index+1:]...)
-		_ = writeLines(listFile, lines)
-
-		// Decide target wait
-		wait := parsePlayTime(attractCfg.PlayTime, r)
-
-		if attractCfg.UseStaticlist {
-			start := time.Now()
-			norm := normalizeName(gamePath)
-			deadline := start.Add(wait)
-			var skipAt time.Time
-			if ts > 0 {
-				skipDuration := time.Duration(ts*float64(time.Second)) +
-					time.Duration(attractCfg.SkipafterStatic)*time.Second
-				skipAt = start.Add(skipDuration)
-			}
-			for time.Now().Before(deadline) {
-				select {
-				case <-time.After(1 * time.Second):
-					// tick
-				case <-skipCh:
-					// manual skip
-					goto NextGame
-				}
-				if !skipAt.IsZero() && time.Now().After(skipAt) {
-					break
-				}
-				newTs := ReadStaticTimestamp(fullDir, systemID, norm)
-				if newTs > 0 && newTs != ts {
-					ts = newTs
-					skipDuration := time.Duration(newTs*float64(time.Second)) +
-						time.Duration(attractCfg.SkipafterStatic)*time.Second
-					skipAt = start.Add(skipDuration)
-					if time.Now().After(skipAt) {
-						break
-					}
-				}
+	// Case 2: MGL file
+	if strings.EqualFold(filepath.Ext(runPath), ".mgl") {
+		realPath, err := parseMglForGamePath(runPath)
+		if err == nil && realPath != "" {
+			if system, err := games.BestSystemMatch(&config.UserConfig{}, realPath); err == nil {
+				setLastPlayed(system, realPath)
+			} else {
+				setLastPlayed(games.System{}, runPath)
 			}
 		} else {
-			select {
-			case <-time.After(wait):
-				// normal timeout
-			case <-skipCh:
-				// manual skip
-			}
+			setLastPlayed(games.System{}, runPath)
 		}
-	NextGame:
+		return mister.LaunchGenericFile(&config.UserConfig{}, runPath)
 	}
+
+	// Case 3: generic file path
+	system, _ := games.BestSystemMatch(&config.UserConfig{}, runPath)
+	setLastPlayed(system, runPath)
+	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
 }
