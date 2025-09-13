@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 	"unsafe"
@@ -15,15 +14,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// hotplugScanInterval defines how often to rescan for keyboards.
 const hotplugScanInterval = 2 * time.Second
 
-// scanCodes maps HID usage codes to printable strings.
 var scanCodes map[byte]string
 
 func init() {
 	scanCodes = make(map[byte]string)
-	// Parse the embedded keyboard scan codes file.
 	re := regexp.MustCompile(`0x([0-9A-Fa-f]+):\s*{\"([^\"]+)\"`)
 	matches := re.FindAllStringSubmatch(assets.KeyboardScanCodes, -1)
 	for _, m := range matches {
@@ -35,7 +31,6 @@ func init() {
 	}
 }
 
-// decodeReport converts an 8 byte keyboard report into text.
 func decodeReport(report []byte) string {
 	if len(report) != 8 {
 		return ""
@@ -81,7 +76,12 @@ func decodeReport(report []byte) string {
 	return out.String()
 }
 
-// KeyboardDevice represents a single hidraw keyboard device.
+// splitKeys breaks "RM" → ["R","M"], "<ENTER>R" → ["<ENTER>","R"]
+func splitKeys(s string) []string {
+	re := regexp.MustCompile(`<[^>]+>|.`)
+	return re.FindAllString(s, -1)
+}
+
 type KeyboardDevice struct {
 	Path string
 	Name string
@@ -175,15 +175,14 @@ func matchHidraws(kbs map[string]string) [][2]string {
 	return matches
 }
 
-// StreamKeyboards streams decoded keyboard input as text lines.
+// StreamKeyboards emits one key string per *new* press (no repeats while held).
 func StreamKeyboards() <-chan string {
 	out := make(chan string, 100)
 
 	go func() {
 		defer close(out)
 		devices := map[string]*KeyboardDevice{}
-		lastSeen := make(map[string]time.Time) // key → last accepted time
-		const debounce = 30 * time.Millisecond
+		prevKeys := make(map[int]map[string]bool) // FD → currently pressed keys
 
 		rescan := func() {
 			kbs := parseKeyboards()
@@ -195,6 +194,7 @@ func StreamKeyboards() <-chan string {
 				if _, ok := devices[devnode]; !ok {
 					if dev, err := openKeyboardDevice(devnode, name); err == nil {
 						devices[devnode] = dev
+						prevKeys[dev.FD] = map[string]bool{}
 					}
 				}
 			}
@@ -202,6 +202,7 @@ func StreamKeyboards() <-chan string {
 				if !found[path] {
 					dev.Close()
 					delete(devices, path)
+					delete(prevKeys, dev.FD)
 				}
 			}
 		}
@@ -238,7 +239,6 @@ func StreamKeyboards() <-chan string {
 
 			for _, pfd := range pollfds {
 				if pfd.Fd == int32(inFd) && pfd.Revents&unix.POLLIN != 0 {
-					// Handle hotplug rescan
 					buf := make([]byte, 4096)
 					n, _ := unix.Read(inFd, buf)
 					offset := 0
@@ -252,16 +252,22 @@ func StreamKeyboards() <-chan string {
 						offset += unix.SizeofInotifyEvent + int(raw.Len)
 					}
 				} else if pfd.Fd != int32(inFd) && pfd.Revents&unix.POLLIN != 0 {
-					// Read raw key report
 					buf := make([]byte, 8)
 					if _, err := unix.Read(int(pfd.Fd), buf); err == nil {
 						if s := decodeReport(buf); s != "" {
-							now := time.Now()
-							// Apply debounce per distinct key string
-							if last, ok := lastSeen[s]; !ok || now.Sub(last) > debounce {
-								lastSeen[s] = now
-								out <- s
+							keys := splitKeys(s)
+							current := make(map[string]bool)
+							for _, k := range keys {
+								current[k] = true
+								if !prevKeys[int(pfd.Fd)][k] {
+									// new key press
+									out <- k
+								}
 							}
+							prevKeys[int(pfd.Fd)] = current
+						} else {
+							// no keys held
+							prevKeys[int(pfd.Fd)] = map[string]bool{}
 						}
 					}
 				}
