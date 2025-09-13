@@ -169,6 +169,7 @@ func Run(_ []string) {
 
 	listDir := "/tmp/.SAM_List"
 	fullDir := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
+
 	// Build gamelists before processing
 	listArgs := []string{}
 	if attractCfg.FreshListsEachLoad {
@@ -188,8 +189,15 @@ func Run(_ []string) {
 		}()
 	}
 
+	// channel to break waits when skipping
+	skipCh := make(chan struct{}, 1)
+
+	// Hook inputs → history + skip signal
 	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
-		input.RelayInputs(cfg, func() { _ = history.PlayBack() }, func() { _ = history.PlayNext() })
+		input.RelayInputs(cfg,
+			func() { _ = history.PlayBack(); select { case skipCh <- struct{}{}: default: } },
+			func() { _ = history.PlayNext(); select { case skipCh <- struct{}{}: default: } },
+		)
 	}
 
 	// Collect gamelists
@@ -219,7 +227,11 @@ func Run(_ []string) {
 			_ = history.SetNowPlaying(next)
 			run.Run([]string{next})
 			wait := parsePlayTime(attractCfg.PlayTime, r)
-			time.Sleep(wait)
+
+			select {
+			case <-time.After(wait):
+			case <-skipCh:
+			}
 			continue
 		}
 
@@ -295,7 +307,11 @@ func Run(_ []string) {
 				skipAt = start.Add(skipDuration)
 			}
 			for time.Now().Before(deadline) {
-				time.Sleep(time.Second)
+				select {
+				case <-time.After(1 * time.Second):
+				case <-skipCh:
+					goto NextGame
+				}
 				if !skipAt.IsZero() && time.Now().After(skipAt) {
 					break
 				}
@@ -311,7 +327,11 @@ func Run(_ []string) {
 				}
 			}
 		} else {
-			time.Sleep(wait)
+			select {
+			case <-time.After(wait):
+			case <-skipCh:
+			}
 		}
+	NextGame:
 	}
 }
