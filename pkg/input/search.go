@@ -34,13 +34,13 @@ func IsSearching() bool {
 
 // SearchAndPlay enters search mode.
 func SearchAndPlay() {
-	fmt.Println("Attract mode paused")
+	fmt.Println("Attract mode paused, press ESC to resume")
 	fmt.Println("Search: type your game and press Enter")
 
 	searching.Store(true)
 	defer func() {
 		searching.Store(false)
-		fmt.Println("Attract mode resumed")
+		fmt.Println("Attract mode resumed (search closed)")
 	}()
 
 	ch := StreamKeyboards()
@@ -60,6 +60,7 @@ func SearchAndPlay() {
 				qn, qext := normalizeQuery(sb.String())
 				if qn != "" {
 					candidates = findMatches(qn, qext)
+					fmt.Printf("[SEARCH] Searching %d titles for %q...\n", len(gameIndex), sb.String())
 					if len(candidates) > 0 {
 						idx = 0
 						fmt.Printf("[ENTER] Launching: %s\n", candidates[idx])
