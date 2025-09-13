@@ -182,12 +182,8 @@ func StreamKeyboards() <-chan string {
 	go func() {
 		defer close(out)
 		devices := map[string]*KeyboardDevice{}
-
-		var (
-			lastKey   string
-			lastEvent time.Time
-		)
-		const debounceDelay = 80 * time.Millisecond
+		lastSeen := make(map[string]time.Time) // key → last accepted time
+		const debounce = 30 * time.Millisecond
 
 		rescan := func() {
 			kbs := parseKeyboards()
@@ -242,6 +238,7 @@ func StreamKeyboards() <-chan string {
 
 			for _, pfd := range pollfds {
 				if pfd.Fd == int32(inFd) && pfd.Revents&unix.POLLIN != 0 {
+					// Handle hotplug rescan
 					buf := make([]byte, 4096)
 					n, _ := unix.Read(inFd, buf)
 					offset := 0
@@ -255,16 +252,16 @@ func StreamKeyboards() <-chan string {
 						offset += unix.SizeofInotifyEvent + int(raw.Len)
 					}
 				} else if pfd.Fd != int32(inFd) && pfd.Revents&unix.POLLIN != 0 {
+					// Read raw key report
 					buf := make([]byte, 8)
 					if _, err := unix.Read(int(pfd.Fd), buf); err == nil {
 						if s := decodeReport(buf); s != "" {
 							now := time.Now()
-							if s == lastKey && now.Sub(lastEvent) < debounceDelay {
-								continue // suppress rapid duplicate
+							// Apply debounce per distinct key string
+							if last, ok := lastSeen[s]; !ok || now.Sub(last) > debounce {
+								lastSeen[s] = now
+								out <- s
 							}
-							lastKey = s
-							lastEvent = now
-							out <- s
 						}
 					}
 				}
