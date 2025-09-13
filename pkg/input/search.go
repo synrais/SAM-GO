@@ -45,11 +45,12 @@ func SearchAndPlay() {
 		for _, m := range matches {
 			switch m[1] {
 			case "enter":
-				fmt.Printf("[ENTER pressed] Query: %q\n", sb.String())
-				query := sb.String()
-				if query != "" {
-					candidates = findMatches(query)
-					fmt.Printf("[MATCHES] Found %d candidates for query %q\n", len(candidates), query)
+				fmt.Printf("[ENTER pressed] Raw query: %q\n", sb.String())
+				qn, qext := normalizeQuery(sb.String())
+				fmt.Printf("[NORMALIZED] Query=%q Ext=%q\n", qn, qext)
+				if qn != "" {
+					candidates = findMatches(qn)
+					fmt.Printf("[MATCHES] Found %d candidates for query %q\n", len(candidates), qn)
 					for i, c := range candidates {
 						fmt.Printf("  %d: %s\n", i, c)
 					}
@@ -58,7 +59,7 @@ func SearchAndPlay() {
 						fmt.Printf("[LAUNCH] Launching: %s\n", candidates[idx])
 						launchGame(candidates[idx])
 					} else {
-						fmt.Println("[NO MATCH] No match found for", query)
+						fmt.Println("[NO MATCH] No match found")
 					}
 				}
 				return // exit search mode
