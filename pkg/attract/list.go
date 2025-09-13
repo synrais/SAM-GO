@@ -260,11 +260,28 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 			currentStep++
 		}
 
+		// keep .mgl preference
 		if filter {
 			systemFiles = filterUniqueWithMGL(systemFiles)
 		}
 
+		// filter unwanted extensions
 		systemFiles = filterExtensions(systemFiles, systemId, cfg)
+
+		// dedupe by game name + extension (ignoring path)
+		seen := make(map[string]struct{})
+		deduped := systemFiles[:0]
+		for _, f := range systemFiles {
+			base := strings.TrimSuffix(strings.ToLower(filepath.Base(f)), filepath.Ext(f))
+			ext := strings.ToLower(filepath.Ext(f))
+			key := base + ext
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			deduped = append(deduped, f)
+		}
+		systemFiles = deduped
 
 		if len(systemFiles) > 0 {
 			sort.Strings(systemFiles)
