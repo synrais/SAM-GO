@@ -113,6 +113,9 @@ func parseAxisValue(s string) int {
 }
 
 func performAction(m map[string]string, key string, back, next func()) {
+	if searching.Load() {
+		return
+	}
 	if m != nil {
 		if cmd, ok := m[key]; ok {
 			runCommand(cmd, back, next)
@@ -146,6 +149,9 @@ func runCommand(cmd string, back, next func()) {
 		if next != nil {
 			next()
 		}
+		return
+	case "search":
+		SearchAndPlay()
 		return
 	case "history":
 		if len(parts) > 1 {
