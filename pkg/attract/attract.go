@@ -163,42 +163,46 @@ func filterAllowed(allFiles []string, include, exclude []string) []string {
 
 // Run is the entry point for the attract tool.
 func Run(_ []string) {
-	// Load config
-	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
-	attractCfg := cfg.Attract
+    // Load config
+    cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
+    attractCfg := cfg.Attract
 
-	listDir := "/tmp/.SAM_List"
-	fullDir := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
+    listDir := "/tmp/.SAM_List"
+    fullDir := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
 
-	// Build gamelists before processing
-	listArgs := []string{}
-	if attractCfg.FreshListsEachLoad {
-		listArgs = append(listArgs, "-overwrite")
-	}
-	if err := RunList(listArgs); err != nil {
-		fmt.Fprintln(os.Stderr, "List build failed:", err)
-	}
+    // Build gamelists before processing
+    listArgs := []string{}
+    if attractCfg.FreshListsEachLoad {
+        listArgs = append(listArgs, "-overwrite")
+    }
+    if err := RunList(listArgs); err != nil {
+        fmt.Fprintln(os.Stderr, "List build failed:", err)
+    }
 
-	ProcessLists(listDir, fullDir, cfg)
+    ProcessLists(listDir, fullDir, cfg)
 
-	if attractCfg.UseStaticDetector {
-		go func() {
-			for ev := range staticdetector.Stream(cfg, skipCh) {
-				fmt.Println(ev) // print detector output
-			}
-		}()
-	}
+    // channel to break waits when skipping
+    skipCh := make(chan struct{}, 1)
 
-	// channel to break waits when skipping
-	skipCh := make(chan struct{}, 1)
+    // Start static detector AFTER skipCh exists
+    if attractCfg.UseStaticDetector {
+        go func() {
+            for ev := range staticdetector.Stream(cfg, skipCh) {
+                fmt.Println(ev) // print detector output
+            }
+        }()
+    }
 
-	// Hook inputs → only advance history + signal
-	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
-		input.RelayInputs(cfg,
-			func() { _, _ = history.Back(); select { case skipCh <- struct{}{}: default: } },
-			func() { _, _ = history.Next(); select { case skipCh <- struct{}{}: default: } },
-		)
-	}
+    // Hook inputs → only advance history + signal
+    if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
+        input.RelayInputs(cfg,
+            func() { _, _ = history.Back(); select { case skipCh <- struct{}{}: default: } },
+            func() { _, _ = history.Next(); select { case skipCh <- struct{}{}: default: } },
+        )
+    }
+
+    // ... rest of Run unchanged ...
+}
 
 	// Collect gamelists
 	allFiles, err := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
