@@ -189,16 +189,21 @@ func Run(_ []string) {
         go func() {
             for ev := range staticdetector.Stream(cfg, skipCh) {
                 fmt.Println(ev) // print detector output
-                // when static detector decides to skip, it pushes into skipCh
             }
         }()
     }
 
-    // Hook inputs → Back = history.Back() + skip, Next = skip only
+    // Hook inputs → back = history.Back, next = history.Next
     if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
         input.RelayInputs(cfg,
-            func() { _, _ = history.Back(); select { case skipCh <- struct{}{}: default: } },
-            func() { select { case skipCh <- struct{}{}: default: } },
+            func() { // Back
+                _, _ = history.Back()
+                select { case skipCh <- struct{}{}: default: }
+            },
+            func() { // Next
+                _, _ = history.Next()
+                select { case skipCh <- struct{}{}: default: }
+            },
         )
     }
 
