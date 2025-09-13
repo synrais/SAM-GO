@@ -38,10 +38,6 @@ func SearchAndPlay() {
 	fmt.Println("Search: type your game and press Enter")
 
 	searching.Store(true)
-	defer func() {
-		searching.Store(false)
-		fmt.Println("Attract mode resumed (search closed)")
-	}()
 
 	ch := StreamKeyboards()
 	re := regexp.MustCompile(`<([^>]+)>`)
@@ -75,6 +71,8 @@ func SearchAndPlay() {
 
 			case "escape":
 				fmt.Println("[ESC] Exiting search mode")
+				searching.Store(false)
+				fmt.Println("Attract mode resumed")
 				return
 
 			case "backspace":
