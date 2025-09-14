@@ -25,8 +25,6 @@ const (
 
 	defaultStep = 8
 	targetFPS   = 30
-
-	listDir = "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
 )
 
 // Singleton globals
@@ -107,7 +105,14 @@ func (r *resolution) Close() {
 	}
 }
 
-// List helpers
+// ---- Filterlist dir helper ----
+func filterlistDir() string {
+	// Same nesting as select.go → inside SAM_Gamelists/SAM_Filterlists
+	base := config.DefaultOutDir() // should resolve to gamelistDir (CLI -o or default)
+	return filepath.Join(base, "SAM_Filterlists")
+}
+
+// ---- List helpers ----
 func isEntryInFile(path, game string) bool {
 	normName, _ := utils.NormalizeEntry(game)
 
@@ -128,8 +133,9 @@ func isEntryInFile(path, game string) bool {
 }
 
 func addToFile(system, game, suffix string) {
-	_ = os.MkdirAll(listDir, 0777)
-	path := filepath.Join(listDir, system+suffix)
+	dir := filterlistDir()
+	_ = os.MkdirAll(dir, 0777)
+	path := filepath.Join(dir, system+suffix)
 
 	// Normalize game entry
 	name, _ := utils.NormalizeEntry(game)
