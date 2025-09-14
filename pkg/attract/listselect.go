@@ -93,6 +93,7 @@ func readStaticMap(path string) map[string]string {
 
 // ProcessLists applies ratedlist, blacklist, and staticlist filtering.
 // Does NOT modify disk gamelists – only updates in-memory cache.
+// Also preloads Search.txt and Masterlist.txt into cache.
 func ProcessLists(fullDir string, cfg *config.UserConfig) {
 	files, _ := filepath.Glob(filepath.Join(fullDir, "*_gamelist.txt"))
 	for _, f := range files {
@@ -152,6 +153,17 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 
 		// Update only cache (runtime view)
 		cache.SetList(filepath.Base(f), lines)
+	}
+
+	// Always load Search.txt and Masterlist.txt into cache
+	for _, name := range []string{"Search.txt", "Masterlist.txt"} {
+		path := filepath.Join(fullDir, name)
+		if _, err := os.Stat(path); err == nil {
+			lines, err := readLines(path)
+			if err == nil {
+				cache.SetList(name, lines)
+			}
+		}
 	}
 }
 
