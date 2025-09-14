@@ -37,9 +37,7 @@ var (
 	paused       atomic.Bool
 )
 
-// Pause toggles the static detector's paused state. When paused, the
-// detector suspends sampling to avoid misinterpreting user interactions
-// (such as search) as static screens.
+// Pause toggles the static detector's paused state.
 func Pause(p bool) {
 	paused.Store(p)
 }
@@ -111,22 +109,23 @@ func (r *resolution) Close() {
 
 // List helpers
 func isEntryInFile(path, game string) bool {
-    normGame := utils.NormalizeGameForList(game)
+	normGame, _ := utils.NormalizeEntry(utils.StripTimestamp(game))
 
-    f, err := os.Open(path)
-    if err != nil {
-        return false
-    }
-    defer f.Close()
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
 
-    scanner := bufio.NewScanner(f)
-    for scanner.Scan() {
-        line := utils.StripTimestamp(scanner.Text())
-        if utils.NormalizeGameForList(line) == normGame {
-            return true
-        }
-    }
-    return false
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := utils.StripTimestamp(scanner.Text())
+		name, _ := utils.NormalizeEntry(line)
+		if name == normGame {
+			return true
+		}
+	}
+	return false
 }
 
 func addToFile(system, game, suffix string) {
@@ -134,16 +133,15 @@ func addToFile(system, game, suffix string) {
 	path := filepath.Join(listDir, system+suffix)
 
 	// Normalize game entry (strip ts + normalize name)
-	norm := utils.NormalizeGameForList(game)
+	name, _ := utils.NormalizeEntry(utils.StripTimestamp(game))
+	entry := name
 
 	// For staticlist, keep timestamp if provided
-	entry := norm
 	if strings.Contains(suffix, "staticlist") {
 		if strings.HasPrefix(game, "<") {
-			// preserve timestamp prefix
 			if idx := strings.Index(game, ">"); idx > 1 {
 				ts := game[:idx+1]
-				entry = ts + norm
+				entry = ts + name
 			}
 		}
 	}
@@ -284,7 +282,7 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 				// game identifiers
 				displayGame := fmt.Sprintf("[%s] %s", run.LastPlayedSystem.Name, run.LastPlayedName)
 				// normalized clean name for lists
-				cleanGame := utils.NormalizeGameForList(run.LastPlayedName)
+				cleanGame, _ := utils.NormalizeEntry(utils.StripTimestamp(run.LastPlayedName))
 
 				// detect game change → reset counters
 				if displayGame != lastGame {
