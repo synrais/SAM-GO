@@ -39,18 +39,18 @@ func readNowPlaying() (string, error) {
 // --- core API ---
 
 // WriteNowPlaying sets Now_Playing and appends to in-memory History.
+// No deduplication: every call appends a new entry.
 func WriteNowPlaying(path string) error {
 	// Always set Now_Playing on disk so other tools can read it
 	if err := os.WriteFile(nowPlayingFile, []byte(path), 0644); err != nil {
 		return err
 	}
 
-	// Update in-memory history
+	// Update in-memory history (append only)
 	hist := cache.GetList("History.txt")
-	if indexOf(hist, path) == -1 {
-		hist = append(hist, path)
-		cache.SetList("History.txt", hist)
-	}
+	hist = append(hist, path)
+	cache.SetList("History.txt", hist)
+
 	return nil
 }
 
@@ -94,22 +94,24 @@ func Back() (string, bool) {
 }
 
 // Play records the provided path in history and moves Now_Playing.
+// Used only for random picks (never for browsing).
 func Play(path string) error {
 	if err := WriteNowPlaying(path); err != nil {
 		return err
 	}
-	fmt.Println("[HISTORY] Queued:", path)
+	fmt.Println("[HISTORY] Logged:", path)
 	return nil
 }
 
-// PlayNext moves to the next entry in history, or random if none.
+// PlayNext moves to the next entry in history (no new entry added).
 func PlayNext() (string, error) {
 	if p, ok := Next(); ok {
-		if err := Play(p); err != nil {
+		if err := SetNowPlaying(p); err != nil {
 			return "", err
 		}
 		return p, nil
 	}
+	// No next? → fall back to random
 	p, err := randomGame()
 	if err != nil {
 		return "", err
@@ -120,10 +122,10 @@ func PlayNext() (string, error) {
 	return p, nil
 }
 
-// PlayBack moves to the previous entry in history.
+// PlayBack moves to the previous entry in history (no new entry added).
 func PlayBack() (string, error) {
 	if p, ok := Back(); ok {
-		if err := Play(p); err != nil {
+		if err := SetNowPlaying(p); err != nil {
 			return "", err
 		}
 		return p, nil
