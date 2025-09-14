@@ -28,23 +28,24 @@ func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly 
 		return
 	}
 
-	gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
+	// Build entire file in RAM
+	var sb strings.Builder
+	for _, file := range files {
+		sb.WriteString(file)
+		sb.WriteByte('\n')
+	}
+	data := []byte(sb.String())
 
 	// Ensure directory exists
+	gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
 	if err := os.MkdirAll(filepath.Dir(gamelistPath), 0755); err != nil {
 		panic(err)
 	}
 
-	f, err := os.Create(gamelistPath)
-	if err != nil {
+	// Write once to SD
+	if err := os.WriteFile(gamelistPath, data, 0644); err != nil {
 		panic(err)
 	}
-	defer f.Close()
-
-	for _, file := range files {
-		_, _ = f.WriteString(file + "\n")
-	}
-	f.Sync()
 }
 
 func filterUniqueWithMGL(files []string) []string {
@@ -178,23 +179,23 @@ func writeCustomList(dir, filename string, entries []string, ramOnly bool) {
 		return
 	}
 
+	// Build in RAM
+	var sb strings.Builder
+	for _, e := range entries {
+		sb.WriteString(e)
+		sb.WriteByte('\n')
+	}
+	data := []byte(sb.String())
+
 	path := filepath.Join(dir, filename)
 
-	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		panic(err)
 	}
 
-	f, err := os.Create(path)
-	if err != nil {
+	if err := os.WriteFile(path, data, 0644); err != nil {
 		panic(err)
 	}
-	defer f.Close()
-
-	for _, e := range entries {
-		_, _ = f.WriteString(e + "\n")
-	}
-	f.Sync()
 }
 
 func writeAmigaVisionLists(gamelistDir string, paths []string, ramOnly bool) (int, int) {
@@ -258,6 +259,8 @@ func createGamelists(cfg *config.UserConfig,
 
 	// Build system gamelists
 	for systemId, paths := range systemPaths {
+		sysStart := time.Now()
+
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
 		exists := fileExists(gamelistPath)
 
@@ -271,6 +274,11 @@ func createGamelists(cfg *config.UserConfig,
 			lines, _ := utils.ReadLines(gamelistPath)
 			totalGames += len(lines)
 			cache.SetList(gamelistFilename(systemId), lines)
+
+			if !quiet {
+				fmt.Printf("Finished %s in %.2fs (reused %d entries)\n",
+					systemId, time.Since(sysStart).Seconds(), len(lines))
+			}
 			continue
 		}
 
@@ -294,7 +302,7 @@ func createGamelists(cfg *config.UserConfig,
 		// Extension filtering
 		systemFiles = filterExtensions(systemFiles, systemId, cfg)
 
-		// Dedup within system (full filename+ext)
+		// Dedup within system
 		seenSys := make(map[string]struct{})
 		deduped := systemFiles[:0]
 		for _, f := range systemFiles {
@@ -312,13 +320,13 @@ func createGamelists(cfg *config.UserConfig,
 			continue
 		}
 
-		// Apply staticlist merge here
+		// Apply staticlist merge
 		systemFiles = mergeStaticlist(gamelistDir, systemId, systemFiles, cfg)
 
 		sort.Strings(systemFiles)
 		totalGames += len(systemFiles)
 
-		// Write gamelist (RAM-only or FAT depending on flag)
+		// Write gamelist
 		writeGamelist(gamelistDir, systemId, systemFiles, cfg.List.RamOnly)
 
 		if exists && overwrite && !cfg.List.RamOnly {
@@ -327,16 +335,20 @@ func createGamelists(cfg *config.UserConfig,
 			fresh++
 		}
 
-		// Update Masterlist + global Search
+		// Update Masterlist + Search
 		for _, f := range systemFiles {
 			masterlist[systemId] = append(masterlist[systemId], f)
 
-			// Add to Search.txt (per system deduped already)
 			clean := utils.StripTimestamp(f)
 			base := strings.TrimSpace(clean)
 			if base != "" {
 				globalSearch = append(globalSearch, base)
 			}
+		}
+
+		if !quiet {
+			fmt.Printf("Finished %s in %.2fs (%d entries)\n",
+				systemId, time.Since(sysStart).Seconds(), len(systemFiles))
 		}
 	}
 
@@ -346,17 +358,20 @@ func createGamelists(cfg *config.UserConfig,
 		cache.SetList("Search.txt", globalSearch)
 
 		if !cfg.List.RamOnly {
-			searchPath := filepath.Join(gamelistDir, "Search.txt")
+			var sb strings.Builder
+			for _, s := range globalSearch {
+				sb.WriteString(s)
+				sb.WriteByte('\n')
+			}
+			data := []byte(sb.String())
 
+			searchPath := filepath.Join(gamelistDir, "Search.txt")
 			if err := os.MkdirAll(filepath.Dir(searchPath), 0755); err != nil {
 				panic(err)
 			}
-
-			f, _ := os.Create(searchPath)
-			for _, s := range globalSearch {
-				_, _ = f.WriteString(s + "\n")
+			if err := os.WriteFile(searchPath, data, 0644); err != nil {
+				panic(err)
 			}
-			f.Close()
 		}
 
 		if !quiet {
@@ -367,36 +382,30 @@ func createGamelists(cfg *config.UserConfig,
 	// Build Masterlist.txt
 	if overwrite || fresh > 0 || rebuilt > 0 {
 		var cacheMaster []string
+		var sb strings.Builder
+
 		for system, entries := range masterlist {
 			sort.Strings(entries)
 			header := fmt.Sprintf("### %s (%d)", system, len(entries))
 			cacheMaster = append(cacheMaster, header)
+			sb.WriteString(header + "\n")
 			for _, e := range entries {
 				clean := utils.StripTimestamp(e)
 				cacheMaster = append(cacheMaster, clean)
+				sb.WriteString(clean + "\n")
 			}
+			sb.WriteByte('\n')
 		}
 		cache.SetList("Masterlist.txt", cacheMaster)
 
 		if !cfg.List.RamOnly {
 			masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
-
 			if err := os.MkdirAll(filepath.Dir(masterPath), 0755); err != nil {
 				panic(err)
 			}
-
-			f, _ := os.Create(masterPath)
-			for system, entries := range masterlist {
-				sort.Strings(entries)
-				header := fmt.Sprintf("### %s (%d)", system, len(entries))
-				_, _ = f.WriteString(header + "\n")
-				for _, e := range entries {
-					clean := utils.StripTimestamp(e)
-					_, _ = f.WriteString(clean + "\n")
-				}
-				_, _ = f.WriteString("\n")
+			if err := os.WriteFile(masterPath, []byte(sb.String()), 0644); err != nil {
+				panic(err)
 			}
-			f.Close()
 		}
 
 		if !quiet {
@@ -420,7 +429,6 @@ func createGamelists(cfg *config.UserConfig,
 func RunList(args []string) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 
-	// Default gamelist dir now points to SAM_Gamelists
 	defaultOut := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
 	gamelistDir := fs.String("o", defaultOut, "gamelist files directory")
 
@@ -434,10 +442,8 @@ func RunList(args []string) error {
 		return err
 	}
 
-	// Load user config (for List options)
 	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
 
-	// CLI flag overrides INI
 	if *ramOnly {
 		cfg.List.RamOnly = true
 		if !*quiet {
@@ -455,12 +461,10 @@ func RunList(args []string) error {
 	} else {
 		for _, filterId := range strings.Split(*filter, ",") {
 			filterId = strings.TrimSpace(filterId)
-
 			system, err := games.LookupSystem(filterId)
 			if err != nil {
 				continue
 			}
-
 			systems = append(systems, *system)
 		}
 	}
@@ -475,7 +479,6 @@ func RunList(args []string) error {
 
 	systemPaths := games.GetSystemPaths(cfg, systems)
 	systemPathsMap := make(map[string][]string)
-
 	for _, p := range systemPaths {
 		systemPathsMap[p.System.Id] = append(systemPathsMap[p.System.Id], p.Path)
 	}
