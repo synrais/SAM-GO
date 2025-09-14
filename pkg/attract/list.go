@@ -1,7 +1,6 @@
 package attract
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"os"
@@ -148,83 +147,6 @@ func stripTimestamp(line string) string {
 		}
 	}
 	return line
-}
-
-func buildSearchList(gamelistDir string) (int, error) {
-	searchPath := filepath.Join(gamelistDir, "Search.txt")
-	tmp, err := os.CreateTemp("", "search-*.txt")
-	if err != nil {
-		return 0, err
-	}
-
-	files, err := filepath.Glob(filepath.Join(gamelistDir, "*_gamelist.txt"))
-	if err != nil {
-		tmp.Close()
-		return 0, err
-	}
-
-	count := 0
-	seen := make(map[string]struct{})
-	for _, path := range files {
-		f, err := os.Open(path)
-		if err != nil {
-			continue
-		}
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			line := strings.TrimSpace(stripTimestamp(scanner.Text()))
-			if line == "" {
-				continue
-			}
-			if _, ok := seen[line]; ok {
-				continue
-			}
-			seen[line] = struct{}{}
-			_, _ = tmp.WriteString(line + "\n")
-			count++
-		}
-		f.Close()
-	}
-
-	_ = tmp.Sync()
-	_ = tmp.Close()
-	return count, utils.MoveFile(tmp.Name(), searchPath)
-}
-
-func buildMasterList(gamelistDir string) (int, error) {
-	masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
-	tmp, err := os.CreateTemp("", "master-*.txt")
-	if err != nil {
-		return 0, err
-	}
-	defer tmp.Close()
-
-	files, err := filepath.Glob(filepath.Join(gamelistDir, "*_gamelist.txt"))
-	if err != nil {
-		return 0, err
-	}
-	sort.Strings(files)
-
-	count := 0
-	for _, path := range files {
-		system := strings.TrimSuffix(filepath.Base(path), "_gamelist.txt")
-		_, _ = tmp.WriteString(fmt.Sprintf("### %s ###\n", system))
-
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		lines := parseLines(string(data))
-		sort.Strings(lines)
-		for _, line := range lines {
-			_, _ = tmp.WriteString(line + "\n")
-			count++
-		}
-		_, _ = tmp.WriteString("\n")
-	}
-
-	_ = tmp.Sync()
-	return count, utils.MoveFile(tmp.Name(), masterPath)
 }
 
 func fileExists(path string) bool {
