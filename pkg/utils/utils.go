@@ -390,13 +390,20 @@ var (
 // NormalizeEntry converts a filename or path into a normalized search key
 // (alphanumeric only, lowercase, brackets removed), and returns (name, ext).
 func NormalizeEntry(p string) (string, string) {
-	base := filepath.Base(p)
-	ext := strings.ToLower(filepath.Ext(base))
-	name := strings.TrimSuffix(base, ext)
-	name = bracketChars.ReplaceAllString(name, "")
-	name = strings.ToLower(name)
-	name = nonAlnum.ReplaceAllString(name, "")
-	return name, strings.TrimPrefix(ext, ".")
+    base := filepath.Base(p)
+    ext := strings.ToLower(filepath.Ext(base))
+    name := strings.TrimSuffix(base, ext)
+
+    // lowercase
+    name = strings.ToLower(name)
+
+    // strip punctuation but keep spaces
+    name = nonWord.ReplaceAllString(name, " ")
+
+    // collapse multiple spaces
+    name = strings.TrimSpace(multiSpace.ReplaceAllString(name, " "))
+
+    return name, strings.TrimPrefix(ext, ".")
 }
 
 // NormalizeGameForList takes any full path or raw line and returns a consistent
