@@ -42,7 +42,7 @@ func SearchAndPlay() {
 	defer searching.Store(false)
 
 	// Build index immediately so it's ready before first Enter
-	ensureIndex()
+	EnsureIndex()
 
 	ch := StreamKeyboards()
 	re := regexp.MustCompile(`<([^>]+)>`)
@@ -117,7 +117,7 @@ func SearchAndPlay() {
 			if r == '\n' || r == '\r' {
 				continue
 			}
-			// ✅ allow spaces into buffer
+			// allow spaces into buffer
 			sb.WriteRune(r)
 			fmt.Printf("[CHAR] Search: %q\n", sb.String())
 		}
@@ -126,13 +126,22 @@ func SearchAndPlay() {
 
 // --- Index building ---
 
-func ensureIndex() {
+// EnsureIndex lazily builds the index if it hasn’t been built yet.
+func EnsureIndex() {
 	if !indexBuilt.Load() {
 		buildIndex()
 		indexBuilt.Store(true)
 	}
 }
 
+// RebuildIndex forces a clean rebuild from cache:Search.txt.
+func RebuildIndex() {
+	gameIndex = nil
+	indexBuilt.Store(false)
+	EnsureIndex()
+}
+
+// buildIndex actually loads Search.txt into memory.
 func buildIndex() {
 	lines := cache.GetList("Search.txt")
 	if len(lines) == 0 {
@@ -159,7 +168,7 @@ func buildIndex() {
 // --- Matching ---
 
 func findMatches(qn, qext string) []string {
-	ensureIndex()
+	EnsureIndex()
 
 	var prefix, substring, fuzzy []string
 
