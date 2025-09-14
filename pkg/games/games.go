@@ -66,8 +66,11 @@ func MatchSystemFile(system System, path string) bool {
 	if strings.HasPrefix(filepath.Base(path), ".") {
 		return false
 	}
-	// check against precomputed allowed extensions
 	ext := strings.ToLower(filepath.Ext(path))
+	if ext == ".mgl" {
+		// always allow .mgl globally
+		return true
+	}
 	return system.AllowedExts[ext]
 }
 
@@ -216,6 +219,9 @@ func GetFiles(systemId string, path string) ([]string, error) {
 					*results = append(*results, abs)
 				}
 			}
+		} else if ext == ".mgl" {
+			// always accept .mgl globally
+			*results = append(*results, path)
 		} else if system.AllowedExts[ext] {
 			*results = append(*results, path)
 		}
