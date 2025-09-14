@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/utils"
@@ -407,6 +408,11 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 		if len(emptySystems) > 0 {
 			fmt.Printf("No games found for: %s\n", strings.Join(emptySystems, ", "))
 		}
+	}
+
+	// Preload all lists from /tmp/.SAM_List into RAM cache
+	if err := cache.ReloadAll("/tmp/.SAM_List"); err != nil {
+		fmt.Fprintf(os.Stderr, "[WARN] Cache preload failed: %v\n", err)
 	}
 
 	return totalGames
