@@ -107,8 +107,8 @@ func (r *resolution) Close() {
 
 // ---- Filterlist dir helper ----
 func filterlistDir() string {
-	// Same nesting as select.go → inside SAM_Gamelists/SAM_Filterlists
-	base := config.DefaultOutDir() // should resolve to gamelistDir (CLI -o or default)
+	// Place inside the gamelist directory, under SAM_Filterlists
+	base := config.DefaultOutDir() // resolves to gamelistDir (RunList default or -o)
 	return filepath.Join(base, "SAM_Filterlists")
 }
 
