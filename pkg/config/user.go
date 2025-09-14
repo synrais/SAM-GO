@@ -286,3 +286,25 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 
 	return defaultConfig, nil
 }
+
+// ---- Global directory helpers ----
+
+// BaseDir returns the directory where the SAM binary lives.
+func BaseDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		cwd, _ := os.Getwd()
+		return cwd
+	}
+	return filepath.Dir(exe)
+}
+
+// GamelistDir points to SAM_Gamelists inside the binary’s base dir.
+func GamelistDir() string {
+	return filepath.Join(BaseDir(), "SAM_Gamelists")
+}
+
+// FilterlistDir points to SAM_Filterlists inside SAM_Gamelists.
+func FilterlistDir() string {
+	return filepath.Join(GamelistDir(), "SAM_Filterlists")
+}
