@@ -353,7 +353,7 @@ func createGamelists(cfg *config.UserConfig,
 		}
 	}
 
-	// Build Search.txt and preload search index
+	// Build Search.txt (if needed) and load search index
 	if overwrite || fresh > 0 || rebuilt > 0 {
 		sort.Strings(globalSearch)
 		cache.SetList("Search.txt", globalSearch)
@@ -372,10 +372,23 @@ func createGamelists(cfg *config.UserConfig,
 				panic(err)
 			}
 		}
+		if !quiet {
+			fmt.Printf("Built Search list with %d entries\n", len(globalSearch))
+		}
+	}
 
-		// Build in-memory search index for search.go
+	// Build in-memory search index for search.go if Search.txt is loaded
+	lines := cache.GetList("Search.txt")
+	if len(lines) == 0 && !cfg.List.RamOnly {
+		searchPath := filepath.Join(gamelistDir, "Search.txt")
+		if l, err := utils.ReadLines(searchPath); err == nil {
+			lines = l
+			cache.SetList("Search.txt", lines)
+		}
+	}
+	if len(lines) > 0 {
 		var idx []input.GameEntry
-		for _, line := range globalSearch {
+		for _, line := range lines {
 			name, ext := utils.NormalizeEntry(line)
 			idx = append(idx, input.GameEntry{
 				Name: name,
@@ -385,9 +398,6 @@ func createGamelists(cfg *config.UserConfig,
 		}
 		input.GameIndex = idx
 		fmt.Printf("[DEBUG] Indexed %d entries for search\n", len(idx))
-
-		if !quiet {
-			fmt.Printf("Built Search list with %d entries\n", len(globalSearch))
 		}
 	}
 
