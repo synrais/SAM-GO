@@ -1,12 +1,11 @@
 package attract
 
 import (
-	"bufio"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
 )
 
@@ -48,44 +47,36 @@ func allowedFor(system string, include, exclude []string) bool {
 	return true
 }
 
-func readNameSet(path string) map[string]struct{} {
-	f, err := os.Open(path)
-	if err != nil {
+// --- Cached helpers ---
+
+func readNameSetCached(filename string) map[string]struct{} {
+	lines := cache.GetList(filename)
+	if lines == nil {
 		return nil
 	}
-	defer f.Close()
-	set := make(map[string]struct{})
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
+	set := make(map[string]struct{}, len(lines))
+	for _, l := range lines {
+		l = strings.ToLower(strings.TrimSpace(l))
+		if l != "" {
+			set[l] = struct{}{}
 		}
-		set[strings.ToLower(line)] = struct{}{}
 	}
 	return set
 }
 
-func readStaticMap(path string) map[string]string {
-	f, err := os.Open(path)
-	if err != nil {
+func readStaticMapCached(filename string) map[string]string {
+	lines := cache.GetList(filename)
+	if lines == nil {
 		return nil
 	}
-	defer f.Close()
-	m := make(map[string]string)
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
+	m := make(map[string]string, len(lines))
+	for _, line := range lines {
+		parts := strings.SplitN(strings.TrimSpace(line), " ", 2)
+		if len(parts) == 2 {
+			ts := strings.TrimSpace(parts[0])
+			name := strings.ToLower(strings.TrimSpace(parts[1]))
+			m[name] = ts
 		}
-		parts := strings.SplitN(line, " ", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		ts := strings.TrimSpace(parts[0])
-		name := strings.ToLower(strings.TrimSpace(parts[1]))
-		m[name] = ts
 	}
 	return m
 }
@@ -106,9 +97,9 @@ func ProcessLists(tmpDir, fullDir string, cfg *config.UserConfig) {
 		if cfg.Attract.UseRatedlist && allowedFor(system,
 			cfg.Attract.RatedlistInclude, cfg.Attract.RatedlistExclude) {
 
-			rated := readNameSet(filepath.Join(fullDir, system+"_ratedlist.txt"))
+			rated := readNameSetCached(system + "_ratedlist.txt")
 			if rated != nil {
-				var kept []string
+				kept := make([]string, 0, len(lines))
 				for _, l := range lines {
 					if _, ok := rated[normalizeName(l)]; ok {
 						kept = append(kept, l)
@@ -122,9 +113,9 @@ func ProcessLists(tmpDir, fullDir string, cfg *config.UserConfig) {
 		if cfg.Attract.UseBlacklist && allowedFor(system,
 			cfg.Attract.BlacklistInclude, cfg.Attract.BlacklistExclude) {
 
-			bl := readNameSet(filepath.Join(fullDir, system+"_blacklist.txt"))
+			bl := readNameSetCached(system + "_blacklist.txt")
 			if bl != nil {
-				var kept []string
+				kept := make([]string, 0, len(lines))
 				for _, l := range lines {
 					if _, ok := bl[normalizeName(l)]; !ok {
 						kept = append(kept, l)
@@ -138,11 +129,10 @@ func ProcessLists(tmpDir, fullDir string, cfg *config.UserConfig) {
 		if cfg.Attract.UseStaticlist && allowedFor(system,
 			cfg.Attract.StaticlistInclude, cfg.Attract.StaticlistExclude) {
 
-			sm := readStaticMap(filepath.Join(fullDir, system+"_staticlist.txt"))
+			sm := readStaticMapCached(system + "_staticlist.txt")
 			if sm != nil {
 				for i, l := range lines {
-					name := normalizeName(l)
-					if ts, ok := sm[name]; ok {
+					if ts, ok := sm[normalizeName(l)]; ok {
 						lines[i] = "<" + ts + ">" + l
 					}
 				}
@@ -168,26 +158,13 @@ func ParseLine(line string) (float64, string) {
 
 // ReadStaticTimestamp returns the timestamp for a game from the static list.
 func ReadStaticTimestamp(fullDir, system, game string) float64 {
-	path := filepath.Join(fullDir, system+"_staticlist.txt")
-	f, err := os.Open(path)
-	if err != nil {
+	sm := readStaticMapCached(system + "_staticlist.txt")
+	if sm == nil {
 		return 0
 	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, " ", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		if normalizeName(parts[1]) == game {
-			ts, _ := strconv.ParseFloat(parts[0], 64)
-			return ts
-		}
+	if ts, ok := sm[game]; ok {
+		val, _ := strconv.ParseFloat(ts, 64)
+		return val
 	}
 	return 0
 }
