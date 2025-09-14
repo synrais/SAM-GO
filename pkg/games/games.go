@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
@@ -66,11 +65,15 @@ func MatchSystemFile(system System, path string) bool {
 	if strings.HasPrefix(filepath.Base(path), ".") {
 		return false
 	}
+
 	ext := strings.ToLower(filepath.Ext(path))
+
+	// Always allow .mgl globally
 	if ext == ".mgl" {
-		// always allow .mgl globally
 		return true
 	}
+
+	// check against precomputed allowed extensions
 	return system.AllowedExts[ext]
 }
 
@@ -219,10 +222,7 @@ func GetFiles(systemId string, path string) ([]string, error) {
 					*results = append(*results, abs)
 				}
 			}
-		} else if ext == ".mgl" {
-			// always accept .mgl globally
-			*results = append(*results, path)
-		} else if system.AllowedExts[ext] {
+		} else if system.AllowedExts[ext] || ext == ".mgl" {
 			*results = append(*results, path)
 		}
 		return nil
@@ -350,8 +350,8 @@ func ParseRbf(path string) RbfInfo {
 	} else {
 		info.ShortName = strings.TrimSuffix(info.Filename, filepath.Ext(info.Filename))
 	}
-	if strings.HasPrefix(path, config.SdFolder) {
-		relDir := strings.TrimPrefix(filepath.Dir(path), config.SdFolder+"/")
+	if strings.HasPrefix(path, SdFolder) {
+		relDir := strings.TrimPrefix(filepath.Dir(path), SdFolder+"/")
 		info.MglName = filepath.Join(relDir, info.ShortName)
 	} else {
 		info.MglName = path
@@ -378,19 +378,19 @@ func shallowScanRbf() ([]RbfInfo, error) {
 		}
 		return ParseRbf(path), nil
 	}
-	files, err := os.ReadDir(config.SdFolder)
+	files, err := os.ReadDir(SdFolder)
 	if err != nil {
 		return results, err
 	}
 	for _, file := range files {
 		if file.IsDir() && strings.HasPrefix(file.Name(), "_") {
-			subFiles, err := os.ReadDir(filepath.Join(config.SdFolder, file.Name()))
+			subFiles, err := os.ReadDir(filepath.Join(SdFolder, file.Name()))
 			if err != nil {
 				continue
 			}
 			for _, subFile := range subFiles {
 				if isRbf(subFile) {
-					path := filepath.Join(config.SdFolder, file.Name(), subFile.Name())
+					path := filepath.Join(SdFolder, file.Name(), subFile.Name())
 					info, err := infoSymlink(path)
 					if err != nil {
 						continue
@@ -399,7 +399,7 @@ func shallowScanRbf() ([]RbfInfo, error) {
 				}
 			}
 		} else if isRbf(file) {
-			path := filepath.Join(config.SdFolder, file.Name())
+			path := filepath.Join(SdFolder, file.Name())
 			info, err := infoSymlink(path)
 			if err != nil {
 				continue
