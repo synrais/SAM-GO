@@ -16,19 +16,19 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
+// new: filterlists live inside gamelistDir/SAM_Filterlists
+const filterDirName = "SAM_Filterlists"
+
 func gamelistFilename(systemId string) string {
 	return systemId + "_gamelist.txt"
 }
 
 func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly bool) {
-	// Always cache in memory
 	cache.SetList(gamelistFilename(systemId), files)
-
 	if ramOnly {
 		return
 	}
 
-	// Build entire file in RAM
 	var sb strings.Builder
 	for _, file := range files {
 		sb.WriteString(file)
@@ -36,13 +36,10 @@ func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly 
 	}
 	data := []byte(sb.String())
 
-	// Ensure directory exists
 	gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
 	if err := os.MkdirAll(filepath.Dir(gamelistPath), 0755); err != nil {
 		panic(err)
 	}
-
-	// Write once to SD
 	if err := os.WriteFile(gamelistPath, data, 0644); err != nil {
 		panic(err)
 	}
@@ -98,63 +95,87 @@ func filterExtensions(files []string, systemId string, cfg *config.UserConfig) [
 	return filtered
 }
 
-// ---- Staticlist merge ----
-func mergeStaticlist(gamelistDir, systemId string, files []string, cfg *config.UserConfig) []string {
-	if !cfg.List.UseStaticlist {
-		return files
+// ---- Filterlist merge (ratedlist, blacklist, staticlist) ----
+func applyFilterlists(gamelistDir, systemId string, files []string, cfg *config.UserConfig) []string {
+	filterBase := filepath.Join(gamelistDir, filterDirName)
+
+	// Ratedlist (whitelist)
+	if cfg.Attract.UseRatedlist {
+		ratedPath := filepath.Join(filterBase, systemId+"_ratedlist.txt")
+		if f, err := os.Open(ratedPath); err == nil {
+			defer f.Close()
+			rated := make(map[string]struct{})
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				name, _ := utils.NormalizeEntry(scanner.Text())
+				if name != "" {
+					rated[name] = struct{}{}
+				}
+			}
+			var kept []string
+			for _, file := range files {
+				name, _ := utils.NormalizeEntry(filepath.Base(file))
+				if _, ok := rated[name]; ok {
+					kept = append(kept, file)
+				}
+			}
+			files = kept
+		}
 	}
 
-	// respect include/exclude
-	if len(cfg.List.StaticlistInclude) > 0 {
-		found := false
-		for _, s := range cfg.List.StaticlistInclude {
-			if strings.EqualFold(s, systemId) {
-				found = true
-				break
+	// Blacklist
+	if cfg.Attract.UseBlacklist {
+		blPath := filepath.Join(filterBase, systemId+"_blacklist.txt")
+		if f, err := os.Open(blPath); err == nil {
+			defer f.Close()
+			blacklist := make(map[string]struct{})
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				name, _ := utils.NormalizeEntry(scanner.Text())
+				if name != "" {
+					blacklist[name] = struct{}{}
+				}
+			}
+			var kept []string
+			for _, file := range files {
+				name, _ := utils.NormalizeEntry(filepath.Base(file))
+				if _, bad := blacklist[name]; !bad {
+					kept = append(kept, file)
+				}
+			}
+			files = kept
+		}
+	}
+
+	// Staticlist (timestamps)
+	if cfg.List.UseStaticlist {
+		staticPath := filepath.Join(filterBase, systemId+"_staticlist.txt")
+		if f, err := os.Open(staticPath); err == nil {
+			defer f.Close()
+			staticMap := make(map[string]string)
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if line == "" {
+					continue
+				}
+				parts := strings.SplitN(line, " ", 2)
+				if len(parts) != 2 {
+					continue
+				}
+				ts := strings.Trim(parts[0], "<>")
+				name, _ := utils.NormalizeEntry(parts[1])
+				staticMap[name] = ts
+			}
+			for i, f := range files {
+				name, _ := utils.NormalizeEntry(filepath.Base(f))
+				if ts, ok := staticMap[name]; ok {
+					files[i] = "<" + ts + ">" + f
+				}
 			}
 		}
-		if !found {
-			return files
-		}
-	}
-	for _, s := range cfg.List.StaticlistExclude {
-		if strings.EqualFold(s, systemId) {
-			return files
-		}
 	}
 
-	// load staticlist
-	path := filepath.Join(gamelistDir, systemId+"_staticlist.txt")
-	f, err := os.Open(path)
-	if err != nil {
-		return files
-	}
-	defer f.Close()
-
-	staticMap := make(map[string]string)
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, " ", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		ts := strings.Trim(parts[0], "<>")
-		name, _ := utils.NormalizeEntry(parts[1])
-		staticMap[name] = ts
-	}
-
-	// apply timestamps
-	for i, f := range files {
-		base := filepath.Base(f)
-		name, _ := utils.NormalizeEntry(base)
-		if ts, ok := staticMap[name]; ok {
-			files[i] = "<" + ts + ">" + f
-		}
-	}
 	return files
 }
 
@@ -172,14 +193,11 @@ func parseLines(data string) []string {
 }
 
 func writeCustomList(dir, filename string, entries []string, ramOnly bool) {
-	// Always cache
 	cache.SetList(filename, entries)
-
 	if ramOnly {
 		return
 	}
 
-	// Build in RAM
 	var sb strings.Builder
 	for _, e := range entries {
 		sb.WriteString(e)
@@ -188,11 +206,9 @@ func writeCustomList(dir, filename string, entries []string, ramOnly bool) {
 	data := []byte(sb.String())
 
 	path := filepath.Join(dir, filename)
-
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		panic(err)
 	}
-
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		panic(err)
 	}
@@ -248,19 +264,15 @@ func createGamelists(cfg *config.UserConfig,
 		}
 	}
 
-	// Results
 	totalGames := 0
 	fresh, rebuilt, reused := 0, 0, 0
 	var emptySystems []string
 
-	// Accumulators
 	var globalSearch []string
 	masterlist := make(map[string][]string)
 
-	// Build system gamelists
 	for systemId, paths := range systemPaths {
 		sysStart := time.Now()
-
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
 		exists := fileExists(gamelistPath)
 
@@ -269,12 +281,9 @@ func createGamelists(cfg *config.UserConfig,
 				fmt.Printf("Reusing %s: gamelist already exists\n", systemId)
 			}
 			reused++
-
-			// Count entries + push into cache
 			lines, _ := utils.ReadLines(gamelistPath)
 			totalGames += len(lines)
 			cache.SetList(gamelistFilename(systemId), lines)
-
 			if !quiet {
 				fmt.Printf("Finished %s in %.2fs (reused %d entries)\n",
 					systemId, time.Since(sysStart).Seconds(), len(lines))
@@ -296,13 +305,9 @@ func createGamelists(cfg *config.UserConfig,
 			systemFiles = append(systemFiles, files...)
 		}
 
-		// .mgl preference (always applied)
 		systemFiles = filterUniqueWithMGL(systemFiles)
-
-		// Extension filtering
 		systemFiles = filterExtensions(systemFiles, systemId, cfg)
 
-		// Dedup within system
 		seenSys := make(map[string]struct{})
 		deduped := systemFiles[:0]
 		for _, f := range systemFiles {
@@ -320,13 +325,12 @@ func createGamelists(cfg *config.UserConfig,
 			continue
 		}
 
-		// Apply staticlist merge
-		systemFiles = mergeStaticlist(gamelistDir, systemId, systemFiles, cfg)
+		// Apply filterlists
+		systemFiles = applyFilterlists(gamelistDir, systemId, systemFiles, cfg)
 
 		sort.Strings(systemFiles)
 		totalGames += len(systemFiles)
 
-		// Write gamelist
 		writeGamelist(gamelistDir, systemId, systemFiles, cfg.List.RamOnly)
 
 		if exists && overwrite && !cfg.List.RamOnly {
@@ -335,10 +339,8 @@ func createGamelists(cfg *config.UserConfig,
 			fresh++
 		}
 
-		// Update Masterlist + Search
 		for _, f := range systemFiles {
 			masterlist[systemId] = append(masterlist[systemId], f)
-
 			clean := utils.StripTimestamp(f)
 			base := strings.TrimSpace(clean)
 			if base != "" {
@@ -352,11 +354,9 @@ func createGamelists(cfg *config.UserConfig,
 		}
 	}
 
-	// Build Search.txt
 	if overwrite || fresh > 0 || rebuilt > 0 {
 		sort.Strings(globalSearch)
 		cache.SetList("Search.txt", globalSearch)
-
 		if !cfg.List.RamOnly {
 			var sb strings.Builder
 			for _, s := range globalSearch {
@@ -364,7 +364,6 @@ func createGamelists(cfg *config.UserConfig,
 				sb.WriteByte('\n')
 			}
 			data := []byte(sb.String())
-
 			searchPath := filepath.Join(gamelistDir, "Search.txt")
 			if err := os.MkdirAll(filepath.Dir(searchPath), 0755); err != nil {
 				panic(err)
@@ -373,17 +372,14 @@ func createGamelists(cfg *config.UserConfig,
 				panic(err)
 			}
 		}
-
 		if !quiet {
 			fmt.Printf("Built Search list with %d entries\n", len(globalSearch))
 		}
 	}
 
-	// Build Masterlist.txt
 	if overwrite || fresh > 0 || rebuilt > 0 {
 		var cacheMaster []string
 		var sb strings.Builder
-
 		for system, entries := range masterlist {
 			sort.Strings(entries)
 			header := fmt.Sprintf("### %s (%d)", system, len(entries))
@@ -397,7 +393,6 @@ func createGamelists(cfg *config.UserConfig,
 			sb.WriteByte('\n')
 		}
 		cache.SetList("Masterlist.txt", cacheMaster)
-
 		if !cfg.List.RamOnly {
 			masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
 			if err := os.MkdirAll(filepath.Dir(masterPath), 0755); err != nil {
@@ -407,7 +402,6 @@ func createGamelists(cfg *config.UserConfig,
 				panic(err)
 			}
 		}
-
 		if !quiet {
 			fmt.Printf("Built Masterlist with %d systems\n", len(masterlist))
 		}
@@ -429,7 +423,15 @@ func createGamelists(cfg *config.UserConfig,
 func RunList(args []string) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 
-	defaultOut := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
+	// Figure out base path relative to the SAM binary
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to detect SAM install path: %w", err)
+	}
+	baseDir := filepath.Dir(exePath)
+
+	// Default gamelist directory inside SAM’s folder
+	defaultOut := filepath.Join(baseDir, "SAM_Gamelists")
 	gamelistDir := fs.String("o", defaultOut, "gamelist files directory")
 
 	filter := fs.String("s", "all", "list of systems to index (comma separated)")
@@ -490,3 +492,4 @@ func RunList(args []string) error {
 	}
 	return nil
 }
+
