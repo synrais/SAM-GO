@@ -170,6 +170,14 @@ func GetFiles(systemId string, path string) ([]string, error) {
 		return nil, err
 	}
 
+	// Build allowed extensions map for this system
+	allowedExts := make(map[string]struct{})
+	for _, slot := range system.Slots {
+		for _, ext := range slot.Exts {
+			allowedExts[strings.ToLower(ext)] = struct{}{}
+		}
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -235,7 +243,15 @@ func GetFiles(systemId string, path string) ([]string, error) {
 			return err
 		}
 
-		if strings.HasSuffix(strings.ToLower(path), ".zip") {
+		// Quick filter: only check extensions we care about
+		ext := strings.ToLower(filepath.Ext(path))
+		if file.Type().IsRegular() && ext != ".zip" {
+			if _, ok := allowedExts[ext]; !ok {
+				return nil // skip immediately
+			}
+		}
+
+		if ext == ".zip" {
 			// zip files
 			zipFiles, err := utils.ListZip(path)
 			if err != nil {
@@ -250,7 +266,7 @@ func GetFiles(systemId string, path string) ([]string, error) {
 				}
 			}
 		} else {
-			// regular files
+			// regular files (already filtered by allowedExts)
 			if MatchSystemFile(*system, path) {
 				*results = append(*results, path)
 			}
