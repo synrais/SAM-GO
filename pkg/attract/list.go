@@ -268,6 +268,7 @@ func createGamelists(cfg *config.UserConfig,
 	var globalSearch []string
 	masterlist := make(map[string][]string)
 
+	// Iterate through systems and build the gamelists
 	for systemId, paths := range systemPaths {
 		sysStart := time.Now()
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
@@ -305,6 +306,7 @@ func createGamelists(cfg *config.UserConfig,
 		systemFiles = filterUniqueWithMGL(systemFiles)
 		systemFiles = filterExtensions(systemFiles, systemId, cfg)
 
+		// Deduplicate files
 		seenSys := make(map[string]struct{})
 		deduped := systemFiles[:0]
 		for _, f := range systemFiles {
@@ -325,6 +327,7 @@ func createGamelists(cfg *config.UserConfig,
 		// Apply filterlists
 		systemFiles = applyFilterlists(gamelistDir, systemId, systemFiles, cfg)
 
+		// Sort and write the gamelist
 		sort.Strings(systemFiles)
 		totalGames += len(systemFiles)
 
@@ -336,6 +339,7 @@ func createGamelists(cfg *config.UserConfig,
 			fresh++
 		}
 
+		// Add to the global search list
 		for _, f := range systemFiles {
 			masterlist[systemId] = append(masterlist[systemId], f)
 			clean := utils.StripTimestamp(f)
@@ -351,9 +355,11 @@ func createGamelists(cfg *config.UserConfig,
 		}
 	}
 
+	// Write the final Search.txt file
 	if overwrite || fresh > 0 || rebuilt > 0 {
 		sort.Strings(globalSearch)
 		cache.SetList("Search.txt", globalSearch)
+
 		if !cfg.List.RamOnly {
 			var sb strings.Builder
 			for _, s := range globalSearch {
@@ -369,11 +375,16 @@ func createGamelists(cfg *config.UserConfig,
 				panic(err)
 			}
 		}
+
 		if !quiet {
 			fmt.Printf("Built Search list with %d entries\n", len(globalSearch))
 		}
+
+		// Ensure the index is built right after generating the Search.txt file
+		ensureIndex()
 	}
 
+	// Build the master list as well
 	if overwrite || fresh > 0 || rebuilt > 0 {
 		var cacheMaster []string
 		var sb strings.Builder
@@ -394,11 +405,12 @@ func createGamelists(cfg *config.UserConfig,
 			masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
 			if err := os.MkdirAll(filepath.Dir(masterPath), 0755); err != nil {
 				panic(err)
-			}
+					}
 			if err := os.WriteFile(masterPath, []byte(sb.String()), 0644); err != nil {
 				panic(err)
 			}
 		}
+
 		if !quiet {
 			fmt.Printf("Built Masterlist with %d systems\n", len(masterlist))
 		}
