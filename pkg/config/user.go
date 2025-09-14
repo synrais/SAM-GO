@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/synrais/SAM-GO/pkg/games" // ⬅️ added import
 	"gopkg.in/ini.v1"
 )
 
@@ -283,18 +282,6 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 			}
 			defaultConfig.StaticDetector.Systems[sys] = sc
 		}
-	}
-
-	// --- Build fast extension lookup maps for all systems ---
-	for id, sys := range games.Systems {
-		allowed := make(map[string]struct{})
-		for _, slot := range sys.Slots {
-			for _, ext := range slot.Exts {
-				allowed[strings.ToLower(ext)] = struct{}{}
-			}
-		}
-		sys.AllowedExts = allowed
-		games.Systems[id] = sys
 	}
 
 	return defaultConfig, nil
