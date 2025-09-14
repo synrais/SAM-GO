@@ -137,7 +137,7 @@ func Run(args []string) {
 	if err := RunList(listArgs); err != nil {
 		fmt.Fprintln(os.Stderr, "List build failed:", err)
 	}
-	ProcessLists("", "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists", cfg)
+	ProcessLists("/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists", cfg)
 
 	// control channels
 	skipCh := make(chan struct{}, 1)
