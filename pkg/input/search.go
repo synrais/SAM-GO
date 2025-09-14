@@ -23,7 +23,7 @@ var (
 
 // GameEntry is one normalized entry in the index.
 type GameEntry struct {
-	Name string // normalized name (alnum only, lowercase, punctuation stripped, collapsed spaces)
+	Name string // normalized name
 	Ext  string // extension (smd, nes, zip, …)
 	Path string // original line from Search.txt
 }
@@ -113,6 +113,7 @@ func SearchAndPlay() {
 			if r == '\n' || r == '\r' {
 				continue
 			}
+			// ✅ allow spaces into buffer
 			sb.WriteRune(r)
 			fmt.Printf("[CHAR] Search: %q\n", sb.String())
 		}
