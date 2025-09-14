@@ -12,13 +12,6 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// normalizeName converts a file path or name to lowercase base name without extension.
-func normalizeName(p string) string {
-	base := filepath.Base(p)
-	ext := filepath.Ext(base)
-	return strings.ToLower(strings.TrimSuffix(base, ext))
-}
-
 func containsInsensitive(list []string, item string) bool {
 	for _, v := range list {
 		if strings.EqualFold(strings.TrimSpace(v), item) {
@@ -113,7 +106,7 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 			if rated != nil {
 				var kept []string
 				for _, l := range lines {
-					if _, ok := rated[normalizeName(l)]; ok {
+					if _, ok := rated[utils.NormalizeName(l)]; ok {
 						kept = append(kept, l)
 					}
 				}
@@ -129,7 +122,7 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 			if bl != nil {
 				var kept []string
 				for _, l := range lines {
-					if _, ok := bl[normalizeName(l)]; !ok {
+					if _, ok := bl[utils.NormalizeName(l)]; !ok {
 						kept = append(kept, l)
 					}
 				}
@@ -144,7 +137,7 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 			sm := readStaticMap(filepath.Join(fullDir, system+"_staticlist.txt"))
 			if sm != nil {
 				for i, l := range lines {
-					name := normalizeName(l)
+					name := utils.NormalizeName(l)
 					if ts, ok := sm[name]; ok {
 						lines[i] = "<" + ts + ">" + l
 					}
@@ -199,7 +192,7 @@ func ReadStaticTimestamp(fullDir, system, game string) float64 {
 		if len(parts) != 2 {
 			continue
 		}
-		if normalizeName(parts[1]) == game {
+		if utils.NormalizeName(parts[1]) == game {
 			ts, _ := strconv.ParseFloat(parts[0], 64)
 			return ts
 		}
