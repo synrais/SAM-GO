@@ -1,4 +1,3 @@
-so this is good now??
 package games
 
 import (
