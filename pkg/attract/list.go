@@ -132,7 +132,7 @@ func mergeStaticlist(gamelistDir, systemId string, files []string, cfg *config.U
 		if len(parts) != 2 {
 			continue
 		}
-		ts := strings.TrimSpace(parts[0])
+		ts := strings.Trim(parts[0], "<>")
 		name, _ := utils.NormalizeEntry(parts[1])
 		staticMap[name] = ts
 	}
@@ -211,7 +211,11 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 
 	start := time.Now()
 	if !quiet && !progress {
-		fmt.Println("Finding system folders...")
+		if cfg.List.RamOnly {
+			fmt.Println("Building lists in RAM-only mode (no SD writes)...")
+		} else {
+			fmt.Println("Finding system folders...")
+		}
 	}
 
 	// Results
@@ -228,7 +232,7 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
 		exists := fileExists(gamelistPath)
 
-		if !overwrite && exists {
+		if !overwrite && exists && !cfg.List.RamOnly {
 			if !quiet {
 				fmt.Printf("Reusing %s: gamelist already exists\n", systemId)
 			}
@@ -241,7 +245,7 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 			continue
 		}
 
-		if exists && overwrite && !quiet {
+		if exists && overwrite && !quiet && !cfg.List.RamOnly {
 			fmt.Printf("Rebuilding %s (overwrite enabled)\n", systemId)
 		}
 
@@ -285,13 +289,15 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 		sort.Strings(systemFiles)
 		totalGames += len(systemFiles)
 
-		// Write system gamelist (permanent)
-		writeGamelist(gamelistDir, systemId, systemFiles)
+		// Only write gamelist if not in RAM-only mode
+		if !cfg.List.RamOnly {
+			writeGamelist(gamelistDir, systemId, systemFiles)
+		}
 
 		// Push gamelist into cache
 		cache.SetList(gamelistFilename(systemId), systemFiles)
 
-		if exists && overwrite {
+		if exists && overwrite && !cfg.List.RamOnly {
 			rebuilt++
 		} else {
 			fresh++
@@ -310,55 +316,67 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 		}
 	}
 
-	// Build Search.txt (permanent + cache)
+	// Build Search.txt
 	if overwrite || fresh > 0 || rebuilt > 0 {
 		sort.Strings(globalSearch)
-		searchPath := filepath.Join(gamelistDir, "Search.txt")
-		tmp, _ := os.CreateTemp("", "search-*.txt")
-		for _, s := range globalSearch {
-			_, _ = tmp.WriteString(s + "\n")
+		if !cfg.List.RamOnly {
+			searchPath := filepath.Join(gamelistDir, "Search.txt")
+			tmp, _ := os.CreateTemp("", "search-*.txt")
+			for _, s := range globalSearch {
+				_, _ = tmp.WriteString(s + "\n")
+			}
+			tmp.Close()
+			_ = utils.MoveFile(tmp.Name(), searchPath)
 		}
-		tmp.Close()
-		_ = utils.MoveFile(tmp.Name(), searchPath)
-
 		cache.SetList("Search.txt", globalSearch)
 
 		if !quiet {
-			fmt.Printf("Built Search.txt with %d entries\n", len(globalSearch))
+			fmt.Printf("Built Search list with %d entries\n", len(globalSearch))
 		}
 	}
 
-	// Build Masterlist.txt (permanent + cache)
+	// Build Masterlist.txt
 	if overwrite || fresh > 0 || rebuilt > 0 {
-		masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
-		tmp, _ := os.CreateTemp("", "master-*.txt")
 		var cacheMaster []string
-		for system, entries := range masterlist {
-			sort.Strings(entries)
-			header := fmt.Sprintf("### %s (%d)", system, len(entries))
-			_, _ = tmp.WriteString(header + "\n")
-			cacheMaster = append(cacheMaster, header)
-			for _, e := range entries {
-				clean := utils.StripTimestamp(e)
-				_, _ = tmp.WriteString(clean + "\n")
-				cacheMaster = append(cacheMaster, clean)
+		if !cfg.List.RamOnly {
+			masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
+			tmp, _ := os.CreateTemp("", "master-*.txt")
+			for system, entries := range masterlist {
+				sort.Strings(entries)
+				header := fmt.Sprintf("### %s (%d)", system, len(entries))
+				_, _ = tmp.WriteString(header + "\n")
+				cacheMaster = append(cacheMaster, header)
+				for _, e := range entries {
+					clean := utils.StripTimestamp(e)
+					_, _ = tmp.WriteString(clean + "\n")
+					cacheMaster = append(cacheMaster, clean)
+				}
+				_, _ = tmp.WriteString("\n")
 			}
-			_, _ = tmp.WriteString("\n") // formatting only
+			tmp.Close()
+			_ = utils.MoveFile(tmp.Name(), masterPath)
+		} else {
+			for system, entries := range masterlist {
+				sort.Strings(entries)
+				header := fmt.Sprintf("### %s (%d)", system, len(entries))
+				cacheMaster = append(cacheMaster, header)
+				for _, e := range entries {
+					clean := utils.StripTimestamp(e)
+					cacheMaster = append(cacheMaster, clean)
+				}
+			}
 		}
-		tmp.Close()
-		_ = utils.MoveFile(tmp.Name(), masterPath)
-
 		cache.SetList("Masterlist.txt", cacheMaster)
 
 		if !quiet {
-			fmt.Printf("Built Masterlist.txt with %d systems\n", len(masterlist))
+			fmt.Printf("Built Masterlist with %d systems\n", len(masterlist))
 		}
 	}
 
 	if !quiet {
-		taken := int(time.Since(start).Seconds())
-		fmt.Printf("Indexing complete (%d games in %ds)\n", totalGames, taken)
-		fmt.Printf("Summary: %d fresh, %d rebuilt, %d reused\n", fresh, rebuilt, reused)
+		taken := time.Since(start).Seconds()
+		fmt.Printf("Indexing complete: %d games in %.1fs (%d fresh, %d rebuilt, %d reused)\n",
+			totalGames, taken, fresh, rebuilt, reused)
 		if len(emptySystems) > 0 {
 			fmt.Printf("No games found for: %s\n", strings.Join(emptySystems, ", "))
 		}
@@ -385,7 +403,7 @@ func RunList(args []string) error {
 		return err
 	}
 
-	// Load user config (for List.Exclude and staticlist opts)
+	// Load user config (for List options)
 	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
 
 	var systems []games.System
