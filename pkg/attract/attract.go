@@ -210,7 +210,10 @@ func Run(args []string) {
 
 			if attractCfg.UseStaticlist {
 				start := time.Now()
-				norm := utils.NormalizeName(gamePath)
+
+				// normalize path consistently
+				base, _ := utils.NormalizeEntry(gamePath)
+
 				deadline := start.Add(wait)
 				var skipAt time.Time
 				if ts > 0 {
@@ -250,7 +253,7 @@ func Run(args []string) {
 					if !skipAt.IsZero() && time.Now().After(skipAt) {
 						break
 					}
-					newTs := ReadStaticTimestamp("/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists", systemID, norm)
+					newTs := ReadStaticTimestamp("/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists", systemID, base)
 					if newTs > 0 && newTs != ts {
 						ts = newTs
 						skipDuration := time.Duration(newTs*float64(time.Second)) +
@@ -373,7 +376,7 @@ func Run(args []string) {
 		if attractCfg.Random {
 			index = r.Intn(len(lines))
 		}
-		ts, gamePath := ParseLine(lines[index])
+		ts, gamePath := utils.ParseLine(lines[index])
 		systemID := strings.TrimSuffix(filepath.Base(listKey), "_gamelist.txt")
 
 		if disabled(systemID, gamePath, cfg) {
