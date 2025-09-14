@@ -469,7 +469,7 @@ func SystemsWithRbf() map[string]RbfInfo {
 // --- Precompute extension maps ---
 func init() {
 	systemExts = make(map[string]map[string]struct{})
-	for k, sys := range Systems {
+	for _, sys := range Systems {
 		extMap := make(map[string]struct{})
 		for _, slot := range sys.Slots {
 			for _, ext := range slot.Exts {
