@@ -140,15 +140,6 @@ func writeAmigaVisionLists(gamelistDir string, paths []string) (int, int) {
 	return len(gamesList), len(demosList)
 }
 
-func stripTimestamp(line string) string {
-	if strings.HasPrefix(line, "<") {
-		if idx := strings.Index(line, ">"); idx > 1 {
-			return line[idx+1:]
-		}
-	}
-	return line
-}
-
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
@@ -247,7 +238,7 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 			masterlist[systemId] = append(masterlist[systemId], f)
 
 			// Add to Search.txt (per system deduped already)
-			line := stripTimestamp(f)
+			line := utils.StripTimestamp(f)
 			base := strings.TrimSpace(line)
 			if base != "" {
 				globalSearch = append(globalSearch, base)
