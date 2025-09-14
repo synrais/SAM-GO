@@ -13,8 +13,8 @@ import (
 	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
+	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/utils"
-	"github.com/synrais/SAM-GO/pkg/input" // ✅ new import for RebuildIndex
 )
 
 func gamelistFilename(systemId string) string {
@@ -372,11 +372,23 @@ func createGamelists(cfg *config.UserConfig,
 				panic(err)
 			}
 		}
+
+		// Build in-memory search index for search.go
+		var idx []input.GameEntry
+		for _, line := range globalSearch {
+			name, ext := utils.NormalizeEntry(line)
+			idx = append(idx, input.GameEntry{
+				Name: name,
+				Ext:  ext,
+				Path: line,
+			})
+		}
+		input.GameIndex = idx
+		fmt.Printf("[DEBUG] Indexed %d entries for search\n", len(idx))
+
 		if !quiet {
 			fmt.Printf("Built Search list with %d entries\n", len(globalSearch))
 		}
-		// 🔄 Immediately refresh search index in memory
-		input.RebuildIndex()
 	}
 
 	// Build Masterlist
