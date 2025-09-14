@@ -139,15 +139,8 @@ func Run(args []string) {
 		fmt.Fprintln(os.Stderr, "List build failed:", err)
 	}
 
-	// Dynamically locate SAM_Gamelists inside the SAM folder
-	exePath, err := os.Executable()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to detect SAM install path:", err)
-		os.Exit(1)
-	}
-	baseDir := filepath.Dir(exePath)
-	gamelistDir := filepath.Join(baseDir, "SAM_Gamelists")
-
+	// Use global helper for SAM_Gamelists path
+	gamelistDir := config.GamelistDir()
 	ProcessLists(gamelistDir, cfg)
 
 	// control channels
