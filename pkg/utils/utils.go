@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -343,3 +344,38 @@ func ReadLines(path string) ([]string, error) {
 	return out, scanner.Err()
 }
 
+// --- Cross-package shared helpers ---
+
+// NormalizeName converts a file path or name to lowercase base name without extension.
+func NormalizeName(p string) string {
+	base := filepath.Base(p)
+	ext := filepath.Ext(base)
+	return strings.ToLower(strings.TrimSuffix(base, ext))
+}
+
+// StripTimestamp removes a leading <timestamp> prefix from a line, if present.
+func StripTimestamp(line string) string {
+	if strings.HasPrefix(line, "<") {
+		if idx := strings.Index(line, ">"); idx > 1 {
+			return line[idx+1:]
+		}
+	}
+	return line
+}
+
+var (
+	nonAlnum     = regexp.MustCompile(`[^a-z0-9]+`)
+	bracketChars = regexp.MustCompile(`(\([^)]*\)|\[[^]]*\])`)
+)
+
+// NormalizeEntry converts a filename or path into a normalized search key
+// (alphanumeric only, lowercase, brackets removed), and returns (name, ext).
+func NormalizeEntry(p string) (string, string) {
+	base := filepath.Base(p)
+	ext := strings.ToLower(filepath.Ext(base))
+	name := strings.TrimSuffix(base, ext)
+	name = bracketChars.ReplaceAllString(name, "")
+	name = strings.ToLower(name)
+	name = nonAlnum.ReplaceAllString(name, "")
+	return name, strings.TrimPrefix(ext, ".")
+}
