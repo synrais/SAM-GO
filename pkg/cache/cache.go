@@ -1,12 +1,13 @@
 package cache
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 var (
@@ -33,7 +34,7 @@ func ReloadAll(dir string) error {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
-		lines, err := readLines(path)
+		lines, err := utils.ReadLines(path)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[WARN] failed to read %s: %v\n", path, err)
 			continue
@@ -91,23 +92,4 @@ func ResetAll() {
 	for k, v := range masters {
 		lists[k] = append([]string(nil), v...)
 	}
-}
-
-// readLines helper
-func readLines(path string) ([]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	var out []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line != "" {
-			out = append(out, line)
-		}
-	}
-	return out, scanner.Err()
 }
