@@ -109,7 +109,7 @@ func (r *resolution) Close() {
 
 // List helpers
 func isEntryInFile(path, game string) bool {
-	normGame, _ := utils.NormalizeEntry(utils.StripTimestamp(game))
+	normName, _ := utils.NormalizeEntry(game)
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -119,9 +119,8 @@ func isEntryInFile(path, game string) bool {
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := utils.StripTimestamp(scanner.Text())
-		name, _ := utils.NormalizeEntry(line)
-		if name == normGame {
+		name, _ := utils.NormalizeEntry(scanner.Text())
+		if name == normName {
 			return true
 		}
 	}
@@ -132,8 +131,8 @@ func addToFile(system, game, suffix string) {
 	_ = os.MkdirAll(listDir, 0777)
 	path := filepath.Join(listDir, system+suffix)
 
-	// Normalize game entry (strip ts + normalize name)
-	name, _ := utils.NormalizeEntry(utils.StripTimestamp(game))
+	// Normalize game entry
+	name, _ := utils.NormalizeEntry(game)
 	entry := name
 
 	// For staticlist, keep timestamp if provided
@@ -282,7 +281,7 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 				// game identifiers
 				displayGame := fmt.Sprintf("[%s] %s", run.LastPlayedSystem.Name, run.LastPlayedName)
 				// normalized clean name for lists
-				cleanGame, _ := utils.NormalizeEntry(utils.StripTimestamp(run.LastPlayedName))
+				cleanGame, _ := utils.NormalizeEntry(run.LastPlayedName)
 
 				// detect game change → reset counters
 				if displayGame != lastGame {
@@ -440,7 +439,7 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 					DominantName: domName,
 					AverageHex:   avgHex,
 					AverageName:  avgName,
-					Game:         displayGame,
+					Game:         displayGame, // pretty display string
 				}
 				streamCh <- event
 
