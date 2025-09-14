@@ -23,7 +23,7 @@ var (
 
 // GameEntry is one normalized entry in the index.
 type GameEntry struct {
-	Name string // normalized name (alnum only, lowercased, no brackets)
+	Name string // normalized name (alnum only, lowercase, punctuation stripped, collapsed spaces)
 	Ext  string // extension (smd, nes, zip, …)
 	Path string // original line from Search.txt
 }
@@ -136,7 +136,7 @@ func buildIndex() {
 	}
 
 	for _, line := range lines {
-		line = strings.TrimSpace(utils.StripTimestamp(line))
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
@@ -144,7 +144,7 @@ func buildIndex() {
 		gameIndex = append(gameIndex, GameEntry{
 			Name: name,
 			Ext:  ext,
-			Path: line,
+			Path: line, // preserve original
 		})
 	}
 
