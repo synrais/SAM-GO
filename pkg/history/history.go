@@ -145,6 +145,7 @@ func randomGame() (string, error) {
 		return "", err
 	}
 
+retry:
 	// Collect all system gamelists from cache
 	allKeys := cache.ListKeys()
 	var systems []string
@@ -217,5 +218,9 @@ func randomGame() (string, error) {
 
 		return gamePath, nil
 	}
-	return "", errors.New("no playable games")
+
+	// If we got here, all systems are exhausted → reset & retry once
+	fmt.Println("[HISTORY] All systems exhausted, refreshing cache...")
+	cache.ResetAll()
+	goto retry
 }
