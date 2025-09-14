@@ -59,6 +59,10 @@ func SearchAndPlay() {
 			key := strings.ToUpper(m[1]) // force uppercase for all special keys
 
 			switch key {
+			case "SPACE":
+				sb.WriteRune(' ')
+				fmt.Printf("[SPACE] Search: %q\n", sb.String())
+
 			case "ENTER":
 				qn, qext := utils.NormalizeEntry(sb.String())
 				if qn != "" {
