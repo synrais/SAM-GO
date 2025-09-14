@@ -230,6 +230,7 @@ func Run(args []string) {
 					case <-time.After(1 * time.Second):
 					case <-skipCh:
 						if next, err := history.PlayNext(); err == nil && next != "" {
+							_ = history.SetNowPlaying(next) // browsing only
 							gamePath = next
 							systemID = ""
 							ts = 0
@@ -238,6 +239,7 @@ func Run(args []string) {
 						return
 					case <-backCh:
 						if prev, err := history.PlayBack(); err == nil && prev != "" {
+							_ = history.SetNowPlaying(prev) // browsing only
 							gamePath = prev
 							systemID = ""
 							ts = 0
@@ -259,6 +261,7 @@ func Run(args []string) {
 					}
 				}
 				if next, err := history.PlayNext(); err == nil && next != "" {
+					_ = history.SetNowPlaying(next) // browsing only
 					gamePath = next
 					systemID = ""
 					ts = 0
@@ -276,6 +279,7 @@ func Run(args []string) {
 					select {
 					case <-time.After(remaining):
 						if next, err := history.PlayNext(); err == nil && next != "" {
+							_ = history.SetNowPlaying(next) // browsing only
 							gamePath = next
 							systemID = ""
 							ts = 0
@@ -284,6 +288,7 @@ func Run(args []string) {
 						return
 					case <-skipCh:
 						if next, err := history.PlayNext(); err == nil && next != "" {
+							_ = history.SetNowPlaying(next) // browsing only
 							gamePath = next
 							systemID = ""
 							ts = 0
@@ -292,6 +297,7 @@ func Run(args []string) {
 						return
 					case <-backCh:
 						if prev, err := history.PlayBack(); err == nil && prev != "" {
+							_ = history.SetNowPlaying(prev) // browsing only
 							gamePath = prev
 							systemID = ""
 							ts = 0
@@ -300,6 +306,7 @@ func Run(args []string) {
 					}
 				}
 				if next, err := history.PlayNext(); err == nil && next != "" {
+					_ = history.SetNowPlaying(next) // browsing only
 					gamePath = next
 					systemID = ""
 					ts = 0
@@ -314,11 +321,13 @@ func Run(args []string) {
 		select {
 		case <-backCh:
 			if prev, err := history.PlayBack(); err == nil && prev != "" {
+				_ = history.SetNowPlaying(prev) // browsing only
 				playGame(prev, "", 0)
 				continue
 			}
 		case <-skipCh:
 			if next, err := history.PlayNext(); err == nil && next != "" {
+				_ = history.SetNowPlaying(next) // browsing only
 				playGame(next, "", 0)
 				continue
 			}
@@ -372,6 +381,7 @@ func Run(args []string) {
 			continue
 		}
 
+		// random picks → logged into history
 		_ = history.Play(gamePath)
 		playGame(gamePath, systemID, ts)
 
