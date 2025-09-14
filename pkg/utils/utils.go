@@ -410,5 +410,3 @@ func NormalizeEntry(p string) (string, string) {
 	// Return the cleaned name and the extension without the dot
 	return name, strings.TrimPrefix(ext, ".")
 }
-
-}
