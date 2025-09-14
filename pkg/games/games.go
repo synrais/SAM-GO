@@ -297,15 +297,33 @@ func GetAllFiles(systemPaths map[string][]string, statusFn func(systemId string,
 
 func FilterUniqueFilenames(files []string) []string {
 	var filtered []string
-	filenames := make(map[string]struct{})
-	for i := range files {
-		fn := filepath.Base(files[i])
-		if _, ok := filenames[fn]; ok {
+	filenames := make(map[string]string) // base → chosen extension
+
+	for _, f := range files {
+		base := strings.TrimSuffix(filepath.Base(f), filepath.Ext(f))
+		ext := strings.ToLower(filepath.Ext(f))
+
+		// If base not seen, take it.
+		if chosen, ok := filenames[base]; !ok {
+			filenames[base] = ext
+			filtered = append(filtered, f)
 			continue
 		}
-		filenames[fn] = struct{}{}
-		filtered = append(filtered, files[i])
+
+		// If we already saw something with this base:
+		if ext == ".mgl" {
+			// Replace existing entry with .mgl
+			for i, existing := range filtered {
+				if strings.TrimSuffix(filepath.Base(existing), filepath.Ext(existing)) == base {
+					filtered[i] = f
+					break
+				}
+			}
+			filenames[base] = ".mgl"
+		}
+		// If current isn’t .mgl, keep existing (do nothing).
 	}
+
 	return filtered
 }
 
