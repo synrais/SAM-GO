@@ -48,6 +48,32 @@ func GetList(name string) []string {
 	return append([]string(nil), lists[name]...) // defensive copy
 }
 
+// SetList replaces or creates a list in cache.
+func SetList(name string, lines []string) {
+	mu.Lock()
+	defer mu.Unlock()
+	copied := append([]string(nil), lines...) // defensive copy
+	lists[name] = copied
+}
+
+// ListKeys returns all cached filenames.
+func ListKeys() []string {
+	mu.RLock()
+	defer mu.RUnlock()
+	keys := make([]string, 0, len(lists))
+	for k := range lists {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// DeleteKey removes a list entirely from cache.
+func DeleteKey(name string) {
+	mu.Lock()
+	defer mu.Unlock()
+	delete(lists, name)
+}
+
 // readLines helper
 func readLines(path string) ([]string, error) {
 	f, err := os.Open(path)
