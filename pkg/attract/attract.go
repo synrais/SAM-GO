@@ -138,7 +138,17 @@ func Run(args []string) {
 	if err := RunList(listArgs); err != nil {
 		fmt.Fprintln(os.Stderr, "List build failed:", err)
 	}
-	ProcessLists("/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists", cfg)
+
+	// Dynamically locate SAM_Gamelists inside the SAM folder
+	exePath, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to detect SAM install path:", err)
+		os.Exit(1)
+	}
+	baseDir := filepath.Dir(exePath)
+	gamelistDir := filepath.Join(baseDir, "SAM_Gamelists")
+
+	ProcessLists(gamelistDir, cfg)
 
 	// control channels
 	skipCh := make(chan struct{}, 1)
@@ -285,7 +295,6 @@ func Run(args []string) {
 		}
 
 		if len(files) == 0 {
-			// Instead of exiting, reset from shadow
 			fmt.Println("All systems exhausted — refreshing from cache masters")
 			cache.ResetAll()
 
@@ -307,7 +316,6 @@ func Run(args []string) {
 		listKey := files[r.Intn(len(files))]
 		lines := cache.GetList(listKey)
 		if len(lines) == 0 {
-			// drop empty system from rotation
 			var newFiles []string
 			for _, f := range files {
 				if f != listKey {
@@ -331,11 +339,9 @@ func Run(args []string) {
 			continue
 		}
 
-		// random picks → logged into history
 		_ = history.Play(gamePath)
 		playGame(gamePath, systemID, ts)
 
-		// remove from RAM copy
 		lines = append(lines[:index], lines[index+1:]...)
 		cache.SetList(listKey, lines)
 	}
