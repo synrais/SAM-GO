@@ -43,6 +43,7 @@ func allowedFor(system string, include, exclude []string) bool {
 	return true
 }
 
+// readNameSet loads a text file into a normalized set (using utils.NormalizeEntry).
 func readNameSet(path string) map[string]struct{} {
 	f, err := os.Open(path)
 	if err != nil {
@@ -56,12 +57,13 @@ func readNameSet(path string) map[string]struct{} {
 		if line == "" {
 			continue
 		}
-		// normalize consistently
-		set[utils.NormalizeName(line)] = struct{}{}
+		name, _ := utils.NormalizeEntry(line)
+		set[name] = struct{}{}
 	}
 	return set
 }
 
+// readStaticMap loads staticlist.txt into a map of normalizedName → timestamp.
 func readStaticMap(path string) map[string]string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -80,7 +82,7 @@ func readStaticMap(path string) map[string]string {
 			continue
 		}
 		ts := strings.TrimSpace(parts[0])
-		name := utils.NormalizeName(parts[1])
+		name, _ := utils.NormalizeEntry(parts[1])
 		m[name] = ts
 	}
 	return m
@@ -107,7 +109,8 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 			if rated != nil {
 				var kept []string
 				for _, l := range lines {
-					if _, ok := rated[utils.NormalizeName(l)]; ok {
+					name, _ := utils.NormalizeEntry(l)
+					if _, ok := rated[name]; ok {
 						kept = append(kept, l)
 					}
 				}
@@ -123,7 +126,8 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 			if bl != nil {
 				var kept []string
 				for _, l := range lines {
-					if _, ok := bl[utils.NormalizeName(l)]; !ok {
+					name, _ := utils.NormalizeEntry(l)
+					if _, ok := bl[name]; !ok {
 						kept = append(kept, l)
 					}
 				}
@@ -138,7 +142,7 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 			sm := readStaticMap(filepath.Join(fullDir, system+"_staticlist.txt"))
 			if sm != nil {
 				for i, l := range lines {
-					name := utils.NormalizeName(l)
+					name, _ := utils.NormalizeEntry(l)
 					if ts, ok := sm[name]; ok {
 						lines[i] = "<" + ts + ">" + l
 					}
@@ -193,7 +197,8 @@ func ReadStaticTimestamp(fullDir, system, game string) float64 {
 		if len(parts) != 2 {
 			continue
 		}
-		if utils.NormalizeName(parts[1]) == game {
+		name, _ := utils.NormalizeEntry(parts[1])
+		if name == game {
 			ts, _ := strconv.ParseFloat(parts[0], 64)
 			return ts
 		}
