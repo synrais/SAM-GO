@@ -401,6 +401,9 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 		}
 	}
 
+	// 🔥 Preload all tmp lists into memory cache
+	cache.ReloadAll(tmpDir)
+
 	if !quiet {
 		taken := int(time.Since(start).Seconds())
 		fmt.Printf("Indexing complete (%d games in %ds)\n", totalGames, taken)
@@ -409,11 +412,6 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 		if len(emptySystems) > 0 {
 			fmt.Printf("No games found for: %s\n", strings.Join(emptySystems, ", "))
 		}
-	}
-
-	// Preload all lists from /tmp/.SAM_List into RAM cache
-	if err := cache.ReloadAll("/tmp/.SAM_List"); err != nil {
-		fmt.Fprintf(os.Stderr, "[WARN] Cache preload failed: %v\n", err)
 	}
 
 	return totalGames
