@@ -9,17 +9,14 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 var searching atomic.Bool
 
 // --- Search state ---
-var (
-	gameIndex  []GameEntry
-	indexBuilt atomic.Bool
-)
+// GameIndex holds all indexed game entries for search.
+var GameIndex []GameEntry
 
 // GameEntry is one normalized entry in the index.
 type GameEntry struct {
@@ -40,9 +37,6 @@ func SearchAndPlay() {
 
 	searching.Store(true)
 	defer searching.Store(false)
-
-	// Build index immediately so it's ready before first Enter
-	EnsureIndex()
 
 	ch := StreamKeyboards()
 	re := regexp.MustCompile(`<([^>]+)>`)
@@ -66,7 +60,7 @@ func SearchAndPlay() {
 			case "ENTER":
 				qn, qext := utils.NormalizeEntry(sb.String())
 				if qn != "" {
-					fmt.Printf("[SEARCH] Searching... (%d titles for %q)\n", len(gameIndex), sb.String())
+					fmt.Printf("[SEARCH] Searching... (%d titles for %q)\n", len(GameIndex), sb.String())
 					candidates = findMatches(qn, qext)
 					if len(candidates) > 0 {
 						idx = 0
@@ -124,55 +118,13 @@ func SearchAndPlay() {
 	}
 }
 
-// --- Index building ---
-
-// EnsureIndex lazily builds the index if it hasn’t been built yet.
-func EnsureIndex() {
-	if !indexBuilt.Load() {
-		buildIndex()
-		indexBuilt.Store(true)
-	}
-}
-
-// RebuildIndex forces a clean rebuild from cache:Search.txt.
-func RebuildIndex() {
-	gameIndex = nil
-	indexBuilt.Store(false)
-	EnsureIndex()
-}
-
-// buildIndex actually loads Search.txt into memory.
-func buildIndex() {
-	lines := cache.GetList("Search.txt")
-	if len(lines) == 0 {
-		fmt.Println("[ERROR] No Search.txt in cache – did you run list builder?")
-		return
-	}
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		name, ext := utils.NormalizeEntry(line)
-		gameIndex = append(gameIndex, GameEntry{
-			Name: name,
-			Ext:  ext,
-			Path: line, // preserve original
-		})
-	}
-
-	fmt.Printf("[DEBUG] Indexed %d entries from cache:Search.txt\n", len(gameIndex))
-}
-
 // --- Matching ---
 
 func findMatches(qn, qext string) []string {
-	EnsureIndex()
 
 	var prefix, substring, fuzzy []string
 
-	for _, e := range gameIndex {
+	for _, e := range GameIndex {
 		if qext != "" && qext != e.Ext {
 			continue
 		}
