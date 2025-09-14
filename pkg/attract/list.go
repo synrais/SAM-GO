@@ -346,9 +346,9 @@ func createGamelists(cfg *config.UserConfig,
 		}
 
 		if !quiet {
-			// NEW: dump the extension map used for this system
+			// NEW: dump extension map for this system
 			if sys, err := games.GetSystem(systemId); err == nil {
-				if extMap, ok := games.SystemExts()[sys.Id]; ok {
+				if extMap, ok := games.SystemExts[sys.Id]; ok {
 					var exts []string
 					for e := range extMap {
 						exts = append(exts, e)
