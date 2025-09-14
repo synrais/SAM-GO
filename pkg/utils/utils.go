@@ -382,26 +382,29 @@ func ParseLine(line string) (float64, string) {
 	return 0, line
 }
 
+// --- Normalization helpers ---
+
 var (
-	nonAlnum     = regexp.MustCompile(`[^a-z0-9]+`)
-	bracketChars = regexp.MustCompile(`(\([^)]*\)|\[[^]]*\])`)
+	nonWord    = regexp.MustCompile(`[^a-z0-9]+`) // anything not alphanumeric → replace with space
+	multiSpace = regexp.MustCompile(`\s+`)        // collapse multiple spaces
 )
 
 // NormalizeEntry converts a filename or path into a normalized search key
-// (alphanumeric only, lowercase, brackets removed), and returns (name, ext).
+// (lowercase, strips punctuation, preserves word spacing, collapses multiple spaces).
+// Returns (normalized name, extension).
 func NormalizeEntry(p string) (string, string) {
-    base := filepath.Base(p)
-    ext := strings.ToLower(filepath.Ext(base))
-    name := strings.TrimSuffix(base, ext)
+	base := filepath.Base(StripTimestamp(p))
+	ext := strings.ToLower(filepath.Ext(base))
+	name := strings.TrimSuffix(base, ext)
 
-    // lowercase
-    name = strings.ToLower(name)
+	// lowercase
+	name = strings.ToLower(name)
 
-    // strip punctuation but keep spaces
-    name = nonWord.ReplaceAllString(name, " ")
+	// replace non-alphanumeric with spaces
+	name = nonWord.ReplaceAllString(name, " ")
 
-    // collapse multiple spaces
-    name = strings.TrimSpace(multiSpace.ReplaceAllString(name, " "))
+	// collapse multiple spaces
+	name = strings.TrimSpace(multiSpace.ReplaceAllString(name, " "))
 
-    return name, strings.TrimPrefix(ext, ".")
+	return name, strings.TrimPrefix(ext, ".")
 }
