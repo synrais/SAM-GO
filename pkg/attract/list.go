@@ -346,7 +346,7 @@ func createGamelists(cfg *config.UserConfig,
 		}
 
 		if !quiet {
-			// NEW: dump extension map for this system
+			// FIXED: dump extension map for this system
 			if sys, err := games.GetSystem(systemId); err == nil {
 				if extMap, ok := games.systemExts[sys.Id]; ok {
 					var exts []string
@@ -427,7 +427,6 @@ func createGamelists(cfg *config.UserConfig,
 
 	return totalGames
 }
-
 
 // Entry point for this tool when called from SAM
 func RunList(args []string) error {
