@@ -1,6 +1,7 @@
 package attract
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
@@ -85,6 +86,66 @@ func filterExtensions(files []string, systemId string, cfg *config.UserConfig) [
 	}
 
 	return filtered
+}
+
+// ---- Staticlist merge ----
+func mergeStaticlist(gamelistDir, systemId string, files []string, cfg *config.UserConfig) []string {
+	if !cfg.List.UseStaticlist {
+		return files
+	}
+
+	// respect include/exclude
+	if len(cfg.List.StaticlistInclude) > 0 {
+		found := false
+		for _, s := range cfg.List.StaticlistInclude {
+			if strings.EqualFold(s, systemId) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return files
+		}
+	}
+	for _, s := range cfg.List.StaticlistExclude {
+		if strings.EqualFold(s, systemId) {
+			return files
+		}
+	}
+
+	// load staticlist
+	path := filepath.Join(gamelistDir, systemId+"_staticlist.txt")
+	f, err := os.Open(path)
+	if err != nil {
+		return files
+	}
+	defer f.Close()
+
+	staticMap := make(map[string]string)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		ts := strings.TrimSpace(parts[0])
+		name, _ := utils.NormalizeEntry(parts[1])
+		staticMap[name] = ts
+	}
+
+	// apply timestamps
+	for i, f := range files {
+		base := filepath.Base(f)
+		name, _ := utils.NormalizeEntry(base)
+		if ts, ok := staticMap[name]; ok {
+			files[i] = "<" + ts + ">" + f
+		}
+	}
+	return files
 }
 
 // ---- AmigaVision helpers ----
@@ -218,6 +279,9 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 			continue
 		}
 
+		// Apply staticlist merge here
+		systemFiles = mergeStaticlist(gamelistDir, systemId, systemFiles, cfg)
+
 		sort.Strings(systemFiles)
 		totalGames += len(systemFiles)
 
@@ -320,7 +384,7 @@ func RunList(args []string) error {
 		return err
 	}
 
-	// Load user config (for List.Exclude)
+	// Load user config (for List.Exclude and staticlist opts)
 	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
 
 	var systems []games.System
