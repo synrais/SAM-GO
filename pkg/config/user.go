@@ -61,10 +61,11 @@ type AttractConfig struct {
 }
 
 type ListConfig struct {
-	Exclude            []string `ini:"exclude,omitempty" delim:","`
-	UseStaticlist      bool     `ini:"usestaticlist,omitempty"`
-	StaticlistInclude  []string `ini:"staticlist_include,omitempty" delim:","`
-	StaticlistExclude  []string `ini:"staticlist_exclude,omitempty" delim:","`
+	Exclude           []string `ini:"exclude,omitempty" delim:","`
+	UseStaticlist     bool     `ini:"usestaticlist,omitempty"`
+	StaticlistInclude []string `ini:"staticlist_include,omitempty" delim:","`
+	StaticlistExclude []string `ini:"staticlist_exclude,omitempty" delim:","`
+	RamOnly           bool     `ini:"ramonly,omitempty"` // NEW: run in RAM-only mode
 }
 
 type DisableRules struct {
@@ -165,7 +166,6 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 	if defaultConfig.StaticDetector.StaticThreshold == 0 {
 		defaultConfig.StaticDetector.StaticThreshold = 30
 	}
-	// default skip/write options
 	if !defaultConfig.StaticDetector.SkipBlack {
 		defaultConfig.StaticDetector.SkipBlack = true
 	}
@@ -184,12 +184,16 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 
 	// ---- Default Attract settings ----
 	if defaultConfig.Attract.PlayTime == "" {
-		defaultConfig.Attract.PlayTime = "40" // default 40 seconds
+		defaultConfig.Attract.PlayTime = "40"
 	}
-	// NOTE: Random is a bool (false by default). We force true here.
 	defaultConfig.Attract.Random = true
 	if defaultConfig.Attract.SkipafterStatic == 0 {
 		defaultConfig.Attract.SkipafterStatic = 10
+	}
+
+	// ---- Default List settings ----
+	if !defaultConfig.List.RamOnly {
+		defaultConfig.List.RamOnly = false // explicit default
 	}
 
 	// Return early if INI file doesn’t exist
@@ -212,7 +216,6 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 				dest.NewKey(strings.ToLower(key.Name()), key.Value())
 			}
 		}
-
 		for _, key := range section.Keys() {
 			lowerKey := strings.ToLower(key.Name())
 			if lowerKey != key.Name() {
@@ -221,7 +224,7 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 		}
 	}
 
-	// Map INI → struct (overrides defaults if provided)
+	// Map INI → struct
 	if err := cfg.MapTo(defaultConfig); err != nil {
 		return defaultConfig, err
 	}
