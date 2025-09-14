@@ -7,8 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/cache"
+	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 // normalizeName converts a file path or name to lowercase base name without extension.
@@ -99,7 +100,7 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 	for _, f := range files {
 		system := strings.TrimSuffix(filepath.Base(f), "_gamelist.txt")
 
-		lines, err := readLines(f)
+		lines, err := utils.ReadLines(f)
 		if err != nil {
 			continue
 		}
@@ -159,7 +160,7 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 	for _, name := range []string{"Search.txt", "Masterlist.txt"} {
 		path := filepath.Join(fullDir, name)
 		if _, err := os.Stat(path); err == nil {
-			lines, err := readLines(path)
+			lines, err := utils.ReadLines(path)
 			if err == nil {
 				cache.SetList(name, lines)
 			}
