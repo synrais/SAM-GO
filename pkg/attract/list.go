@@ -346,9 +346,9 @@ func createGamelists(cfg *config.UserConfig,
 		}
 
 		if !quiet {
-			// FIXED: dump extension map for this system
+			// NEW: dump extension map for this system
 			if sys, err := games.GetSystem(systemId); err == nil {
-				if extMap, ok := games.GetSystemExts()[sys.Id]; ok {
+				if extMap, ok := games.SystemExts[sys.Id]; ok {
 					var exts []string
 					for e := range extMap {
 						exts = append(exts, e)
@@ -426,4 +426,78 @@ func createGamelists(cfg *config.UserConfig,
 	}
 
 	return totalGames
+}
+
+// Entry point for this tool when called from SAM
+func RunList(args []string) error {
+	fs := flag.NewFlagSet("list", flag.ContinueOnError)
+
+	// Figure out base path relative to the SAM binary
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to detect SAM install path: %w", err)
+	}
+	baseDir := filepath.Dir(exePath)
+
+	// Default gamelist directory inside SAM’s folder
+	defaultOut := filepath.Join(baseDir, "SAM_Gamelists")
+	gamelistDir := fs.String("o", defaultOut, "gamelist files directory")
+
+	filter := fs.String("s", "all", "list of systems to index (comma separated)")
+	quiet := fs.Bool("q", false, "suppress all status output")
+	detect := fs.Bool("d", false, "list active system folders")
+	overwrite := fs.Bool("overwrite", false, "overwrite existing gamelists if present")
+	ramOnly := fs.Bool("ramonly", false, "build lists in RAM only (do not write to SD)")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
+
+	if *ramOnly {
+		cfg.List.RamOnly = true
+		if !*quiet {
+			fmt.Println("[LIST] RamOnly mode enabled via CLI")
+		}
+	}
+
+	var systems []games.System
+	if *filter == "all" {
+		if len(cfg.List.Exclude) > 0 {
+			systems = games.AllSystemsExcept(cfg.List.Exclude)
+		} else {
+			systems = games.AllSystems()
+		}
+	} else {
+		for _, filterId := range strings.Split(*filter, ",") {
+			filterId = strings.TrimSpace(filterId)
+			system, err := games.LookupSystem(filterId)
+			if err != nil {
+				continue
+			}
+			systems = append(systems, *system)
+		}
+	}
+
+	if *detect {
+		results := games.GetActiveSystemPaths(cfg, systems)
+		for _, r := range results {
+			fmt.Printf("%s:%s\n", strings.ToLower(r.System.Id), r.Path)
+		}
+		return nil
+	}
+
+	systemPaths := games.GetSystemPaths(cfg, systems)
+	systemPathsMap := make(map[string][]string)
+	for _, p := range systemPaths {
+		systemPathsMap[p.System.Id] = append(systemPathsMap[p.System.Id], p.Path)
+	}
+
+	total := createGamelists(cfg, *gamelistDir, systemPathsMap, *quiet, *overwrite)
+
+	if total == 0 {
+		return fmt.Errorf("no games indexed")
+	}
+	return nil
 }
