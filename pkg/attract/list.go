@@ -452,7 +452,7 @@ func RunList(args []string) error {
 		systemPathsMap[p.System.Id] = append(systemPathsMap[p.System.Id], p.Path)
 	}
 
-	total := createGamelists(cfg, *gamelistDir, systemPathsMap, *quiet, *overwrite, *overwrite)
+	total := createGamelists(cfg, *gamelistDir, systemPathsMap, *quiet, *overwrite)
 
 	if total == 0 {
 		return fmt.Errorf("no games indexed")
