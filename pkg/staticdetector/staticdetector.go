@@ -105,19 +105,6 @@ func (r *resolution) Close() {
 	}
 }
 
-// ---- Filterlist dir helper ----
-func filterlistDir() string {
-	// Place inside the gamelist directory, under SAM_Filterlists
-	exePath, err := os.Executable()
-	if err != nil {
-		cwd, _ := os.Getwd()
-		return filepath.Join(cwd, "SAM_Gamelists", "SAM_Filterlists")
-	}
-	baseDir := filepath.Dir(exePath)
-	gamelistDir := filepath.Join(baseDir, "SAM_Gamelists")
-	return filepath.Join(gamelistDir, "SAM_Filterlists")
-}
-
 // ---- List helpers ----
 func isEntryInFile(path, game string) bool {
 	normName, _ := utils.NormalizeEntry(game)
@@ -139,7 +126,7 @@ func isEntryInFile(path, game string) bool {
 }
 
 func addToFile(system, game, suffix string) {
-	dir := filterlistDir()
+	dir := config.FilterlistDir()
 	_ = os.MkdirAll(dir, 0777)
 	path := filepath.Join(dir, system+suffix)
 
