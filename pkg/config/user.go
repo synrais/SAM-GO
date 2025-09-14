@@ -191,10 +191,6 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 		defaultConfig.Attract.SkipafterStatic = 10
 	}
 
-	// ---- Default List settings ----
-	if !defaultConfig.List.RamOnly {
-	}
-
 	// Return early if INI file doesn’t exist
 	if _, err := os.Stat(iniPath); os.IsNotExist(err) {
 		return defaultConfig, nil
