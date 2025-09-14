@@ -183,8 +183,7 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 			reused++
 
 			// Count entries + push into cache
-			data, _ := os.ReadFile(gamelistPath)
-			lines := parseLines(string(data))
+			lines, _ := utils.ReadLines(gamelistPath)
 			totalGames += len(lines)
 			cache.SetList(gamelistFilename(systemId), lines)
 			continue
