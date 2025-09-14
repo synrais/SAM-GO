@@ -302,8 +302,8 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 			masterlist[systemId] = append(masterlist[systemId], f)
 
 			// Add to Search.txt (per system deduped already)
-			line := utils.StripTimestamp(f)
-			base := strings.TrimSpace(line)
+			clean := utils.StripTimestamp(f)
+			base := strings.TrimSpace(clean)
 			if base != "" {
 				globalSearch = append(globalSearch, base)
 			}
@@ -339,10 +339,11 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 			_, _ = tmp.WriteString(header + "\n")
 			cacheMaster = append(cacheMaster, header)
 			for _, e := range entries {
-				_, _ = tmp.WriteString(e + "\n")
-				cacheMaster = append(cacheMaster, e)
+				clean := utils.StripTimestamp(e)
+				_, _ = tmp.WriteString(clean + "\n")
+				cacheMaster = append(cacheMaster, clean)
 			}
-			_, _ = tmp.WriteString("\n") // keep formatting in file only
+			_, _ = tmp.WriteString("\n") // formatting only
 		}
 		tmp.Close()
 		_ = utils.MoveFile(tmp.Name(), masterPath)
