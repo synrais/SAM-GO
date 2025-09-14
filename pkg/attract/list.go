@@ -14,7 +14,7 @@ import (
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/utils"
-	"github.com/synrais/SAM-GO/pkg/input" // <-- new import
+	"github.com/synrais/SAM-GO/pkg/input" // ✅ new import for RebuildIndex
 )
 
 func gamelistFilename(systemId string) string {
@@ -269,6 +269,7 @@ func createGamelists(cfg *config.UserConfig,
 	var globalSearch []string
 	masterlist := make(map[string][]string)
 
+	// iterate per-system…
 	for systemId, paths := range systemPaths {
 		sysStart := time.Now()
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
@@ -352,6 +353,7 @@ func createGamelists(cfg *config.UserConfig,
 		}
 	}
 
+	// Build Search.txt and preload search index
 	if overwrite || fresh > 0 || rebuilt > 0 {
 		sort.Strings(globalSearch)
 		cache.SetList("Search.txt", globalSearch)
@@ -373,10 +375,11 @@ func createGamelists(cfg *config.UserConfig,
 		if !quiet {
 			fmt.Printf("Built Search list with %d entries\n", len(globalSearch))
 		}
-		// 🔄 Immediately refresh search index
+		// 🔄 Immediately refresh search index in memory
 		input.RebuildIndex()
 	}
 
+	// Build Masterlist
 	if overwrite || fresh > 0 || rebuilt > 0 {
 		var cacheMaster []string
 		var sb strings.Builder
@@ -423,14 +426,12 @@ func createGamelists(cfg *config.UserConfig,
 func RunList(args []string) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 
-	// Figure out base path relative to the SAM binary
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to detect SAM install path: %w", err)
 	}
 	baseDir := filepath.Dir(exePath)
 
-	// Default gamelist directory inside SAM’s folder
 	defaultOut := filepath.Join(baseDir, "SAM_Gamelists")
 	gamelistDir := fs.String("o", defaultOut, "gamelist files directory")
 
