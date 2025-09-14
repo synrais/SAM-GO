@@ -379,3 +379,10 @@ func NormalizeEntry(p string) (string, string) {
 	name = nonAlnum.ReplaceAllString(name, "")
 	return name, strings.TrimPrefix(ext, ".")
 }
+
+// NormalizeGameForList takes any full path or raw line and returns a consistent
+// normalized string for blacklist/staticlist entries (no path, no extension).
+func NormalizeGameForList(p string) string {
+	name, _ := NormalizeEntry(StripTimestamp(p))
+	return name
+}
