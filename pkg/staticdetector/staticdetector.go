@@ -132,16 +132,35 @@ func isEntryInFile(path, game string) bool {
 func addToFile(system, game, suffix string) {
 	_ = os.MkdirAll(listDir, 0777)
 	path := filepath.Join(listDir, system+suffix)
-	if isEntryInFile(path, game) {
+
+	// Normalize game entry (strip ts + normalize name)
+	norm := utils.NormalizeGameForList(game)
+
+	// For staticlist, keep timestamp if provided
+	entry := norm
+	if strings.Contains(suffix, "staticlist") {
+		if strings.HasPrefix(game, "<") {
+			// preserve timestamp prefix
+			if idx := strings.Index(game, ">"); idx > 1 {
+				ts := game[:idx+1]
+				entry = ts + norm
+			}
+		}
+	}
+
+	// Already present?
+	if isEntryInFile(path, entry) {
 		return
 	}
+
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		return
 	}
 	defer f.Close()
-	fmt.Fprintf(f, "%s\n", game)
-	fmt.Printf("\n[LIST] Added \"%s\" to %s%s\n", game, system, suffix)
+
+	fmt.Fprintf(f, "%s\n", entry)
+	fmt.Printf("\n[LIST] Added \"%s\" to %s%s\n", entry, system, suffix)
 }
 
 // StaticEvent describes a snapshot of the static detector state.
