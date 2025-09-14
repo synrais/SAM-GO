@@ -8,11 +8,12 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// --- Global always-allowed extensions ---
-var globalAllowedExts = []string{".mgl"}
+// --- Global extension registry ---
+var systemExts map[string]map[string]struct{}
 
 // GetSystem looks up an exact system definition by ID.
 func GetSystem(id string) (*System, error) {
@@ -27,19 +28,16 @@ func GetGroup(groupId string) (System, error) {
 	if _, ok := CoreGroups[groupId]; !ok {
 		return merged, fmt.Errorf("no system group found for %s", groupId)
 	}
-
 	if len(CoreGroups[groupId]) < 1 {
 		return merged, fmt.Errorf("no systems in %s", groupId)
 	} else if len(CoreGroups[groupId]) == 1 {
 		return CoreGroups[groupId][0], nil
 	}
-
 	merged = CoreGroups[groupId][0]
 	merged.Slots = make([]Slot, 0)
 	for _, s := range CoreGroups[groupId] {
 		merged.Slots = append(merged.Slots, s.Slots...)
 	}
-
 	return merged, nil
 }
 
@@ -48,7 +46,6 @@ func LookupSystem(id string) (*System, error) {
 	if system, err := GetGroup(id); err == nil {
 		return &system, nil
 	}
-
 	for k, v := range Systems {
 		if strings.EqualFold(k, id) {
 			return &v, nil
@@ -63,13 +60,26 @@ func LookupSystem(id string) (*System, error) {
 }
 
 // MatchSystemFile returns true if a given file's extension is valid for a system.
+// Priority: .mgl > everything else
 func MatchSystemFile(system System, path string) bool {
 	// ignore dot files
 	if strings.HasPrefix(filepath.Base(path), ".") {
 		return false
 	}
+
 	ext := strings.ToLower(filepath.Ext(path))
-	return system.AllowedExts[ext]
+
+	// .mgl always allowed
+	if ext == ".mgl" {
+		return true
+	}
+
+	// check precomputed map
+	if exts, ok := systemExts[system.Id]; ok {
+		_, ok := exts[ext]
+		return ok
+	}
+	return false
 }
 
 func AllSystems() []System {
@@ -84,11 +94,9 @@ func AllSystems() []System {
 func AllSystemsExcept(excluded []string) []System {
 	var systems []System
 	excludeMap := make(map[string]bool)
-
 	for _, e := range excluded {
 		excludeMap[strings.TrimSpace(e)] = true
 	}
-
 	keys := utils.AlphaMapKeys(Systems)
 	for _, k := range keys {
 		sys := Systems[k]
@@ -139,6 +147,7 @@ func (r *resultsStack) get() (*[]string, error) {
 }
 
 // GetFiles searches for all valid games in a given path and return a list of files.
+// Priority rule: if a .mgl exists for a game, ignore its sibling non-mgl files.
 func GetFiles(systemId string, path string) ([]string, error) {
 	var allResults []string
 	var stack resultsStack
@@ -162,6 +171,42 @@ func GetFiles(systemId string, path string) ([]string, error) {
 				return filepath.SkipDir
 			}
 			visited[path] = struct{}{}
+		}
+
+		// handle symlinked directories
+		if file.Type()&os.ModeSymlink != 0 {
+			err = os.Chdir(filepath.Dir(path))
+			if err != nil {
+				return err
+			}
+			realPath, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				return err
+			}
+			file, err := os.Stat(realPath)
+			if err != nil {
+				return err
+			}
+			if file.IsDir() {
+				err = os.Chdir(path)
+				if err != nil {
+					return err
+				}
+				stack.new()
+				defer stack.pop()
+				err = filepath.WalkDir(realPath, scanner)
+				if err != nil {
+					return err
+				}
+				results, err := stack.get()
+				if err != nil {
+					return err
+				}
+				for i := range *results {
+					allResults = append(allResults, strings.Replace((*results)[i], realPath, path, 1))
+				}
+				return nil
+			}
 		}
 
 		results, err := stack.get()
@@ -234,7 +279,39 @@ func GetFiles(systemId string, path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return allResults, nil
+
+	// enforce .mgl priority: drop non-mgl siblings if a .mgl exists
+	finalResults := filterMglPriority(allResults)
+
+	return finalResults, nil
+}
+
+func filterMglPriority(files []string) []string {
+	mglMap := make(map[string]string)
+	for _, f := range files {
+		if strings.HasSuffix(strings.ToLower(f), ".mgl") {
+			base := strings.TrimSuffix(filepath.Base(f), filepath.Ext(f))
+			mglMap[base] = f
+		}
+	}
+
+	if len(mglMap) == 0 {
+		return files
+	}
+
+	var results []string
+	for _, f := range files {
+		ext := strings.ToLower(filepath.Ext(f))
+		if ext == ".mgl" {
+			results = append(results, f)
+			continue
+		}
+		base := strings.TrimSuffix(filepath.Base(f), ext)
+		if _, ok := mglMap[base]; !ok {
+			results = append(results, f)
+		}
+	}
+	return results
 }
 
 func GetAllFiles(systemPaths map[string][]string, statusFn func(systemId string, path string)) ([][2]string, error) {
@@ -254,28 +331,16 @@ func GetAllFiles(systemPaths map[string][]string, statusFn func(systemId string,
 	return allFiles, nil
 }
 
-// Prioritize .mgl over other dupes
 func FilterUniqueFilenames(files []string) []string {
 	var filtered []string
-	seen := make(map[string]string) // base name → chosen file
-
-	for _, f := range files {
-		base := filepath.Base(f)
-		ext := strings.ToLower(filepath.Ext(base))
-
-		if prev, ok := seen[base]; ok {
-			if ext == ".mgl" {
-				seen[base] = f // overwrite with .mgl
-			} else if strings.ToLower(filepath.Ext(prev)) != ".mgl" {
-				// both non-mgl, keep first
-			}
-		} else {
-			seen[base] = f
+	filenames := make(map[string]struct{})
+	for i := range files {
+		fn := filepath.Base(files[i])
+		if _, ok := filenames[fn]; ok {
+			continue
 		}
-	}
-
-	for _, f := range seen {
-		filtered = append(filtered, f)
+		filenames[fn] = struct{}{}
+		filtered = append(filtered, files[i])
 	}
 	return filtered
 }
@@ -304,14 +369,115 @@ func FileExists(path string) bool {
 	return false
 }
 
-// --- Precompute AllowedExts at startup ---
-func init() {
-	for k, sys := range Systems {
-		sys.BuildAllowedExts()
-		// inject global extensions like .mgl
-		for _, ext := range globalAllowedExts {
-			sys.AllowedExts[ext] = true
+type RbfInfo struct {
+	Path      string
+	Filename  string
+	ShortName string
+	MglName   string
+}
+
+func ParseRbf(path string) RbfInfo {
+	info := RbfInfo{
+		Path:     path,
+		Filename: filepath.Base(path),
+	}
+	if strings.Contains(info.Filename, "_") {
+		info.ShortName = info.Filename[0:strings.LastIndex(info.Filename, "_")]
+	} else {
+		info.ShortName = strings.TrimSuffix(info.Filename, filepath.Ext(info.Filename))
+	}
+	if strings.HasPrefix(path, config.SdFolder) {
+		relDir := strings.TrimPrefix(filepath.Dir(path), config.SdFolder+"/")
+		info.MglName = filepath.Join(relDir, info.ShortName)
+	} else {
+		info.MglName = path
+	}
+	return info
+}
+
+func shallowScanRbf() ([]RbfInfo, error) {
+	results := make([]RbfInfo, 0)
+	isRbf := func(file os.DirEntry) bool {
+		return filepath.Ext(strings.ToLower(file.Name())) == ".rbf"
+	}
+	infoSymlink := func(path string) (RbfInfo, error) {
+		info, err := os.Lstat(path)
+		if err != nil {
+			return RbfInfo{}, err
 		}
-		Systems[k] = sys
+		if info.Mode()&os.ModeSymlink != 0 {
+			newPath, err := os.Readlink(path)
+			if err != nil {
+				return RbfInfo{}, err
+			}
+			return ParseRbf(newPath), nil
+		}
+		return ParseRbf(path), nil
+	}
+	files, err := os.ReadDir(config.SdFolder)
+	if err != nil {
+		return results, err
+	}
+	for _, file := range files {
+		if file.IsDir() && strings.HasPrefix(file.Name(), "_") {
+			subFiles, err := os.ReadDir(filepath.Join(config.SdFolder, file.Name()))
+			if err != nil {
+				continue
+			}
+			for _, subFile := range subFiles {
+				if isRbf(subFile) {
+					path := filepath.Join(config.SdFolder, file.Name(), subFile.Name())
+					info, err := infoSymlink(path)
+					if err != nil {
+						continue
+					}
+					results = append(results, info)
+				}
+			}
+		} else if isRbf(file) {
+			path := filepath.Join(config.SdFolder, file.Name())
+			info, err := infoSymlink(path)
+			if err != nil {
+				continue
+			}
+			results = append(results, info)
+		}
+	}
+	return results, nil
+}
+
+func SystemsWithRbf() map[string]RbfInfo {
+	results := make(map[string]RbfInfo)
+	rbfFiles, err := shallowScanRbf()
+	if err != nil {
+		return results
+	}
+	for _, rbfFile := range rbfFiles {
+		for _, system := range Systems {
+			shortName := system.Rbf
+			if strings.Contains(shortName, "/") {
+				shortName = shortName[strings.LastIndex(shortName, "/")+1:]
+			}
+			if strings.EqualFold(rbfFile.ShortName, shortName) {
+				results[system.Id] = rbfFile
+			}
+		}
+	}
+	return results
+}
+
+// --- Precompute extension maps ---
+func init() {
+	systemExts = make(map[string]map[string]struct{})
+	for k, sys := range Systems {
+		extMap := make(map[string]struct{})
+		for _, slot := range sys.Slots {
+			for _, ext := range slot.Exts {
+				extMap[strings.ToLower(ext)] = struct{}{}
+			}
+		}
+		// also add .mgl globally
+		extMap[".mgl"] = struct{}{}
+		systemExts[sys.Id] = extMap
 	}
 }
