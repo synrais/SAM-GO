@@ -14,6 +14,7 @@ import (
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/utils"
+	"github.com/synrais/SAM-GO/pkg/input" // <-- new import
 )
 
 func gamelistFilename(systemId string) string {
@@ -372,6 +373,8 @@ func createGamelists(cfg *config.UserConfig,
 		if !quiet {
 			fmt.Printf("Built Search list with %d entries\n", len(globalSearch))
 		}
+		// 🔄 Immediately refresh search index
+		input.RebuildIndex()
 	}
 
 	if overwrite || fresh > 0 || rebuilt > 0 {
