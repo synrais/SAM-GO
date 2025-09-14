@@ -11,6 +11,9 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
+// --- Global always-allowed extensions ---
+var globalAllowedExts = []string{".mgl"}
+
 // GetSystem looks up an exact system definition by ID.
 func GetSystem(id string) (*System, error) {
 	if system, ok := Systems[id]; ok {
@@ -65,15 +68,7 @@ func MatchSystemFile(system System, path string) bool {
 	if strings.HasPrefix(filepath.Base(path), ".") {
 		return false
 	}
-
 	ext := strings.ToLower(filepath.Ext(path))
-
-	// Always allow .mgl globally
-	if ext == ".mgl" {
-		return true
-	}
-
-	// check against precomputed allowed extensions
 	return system.AllowedExts[ext]
 }
 
@@ -169,42 +164,6 @@ func GetFiles(systemId string, path string) ([]string, error) {
 			visited[path] = struct{}{}
 		}
 
-		// handle symlinked directories
-		if file.Type()&os.ModeSymlink != 0 {
-			err = os.Chdir(filepath.Dir(path))
-			if err != nil {
-				return err
-			}
-			realPath, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return err
-			}
-			file, err := os.Stat(realPath)
-			if err != nil {
-				return err
-			}
-			if file.IsDir() {
-				err = os.Chdir(path)
-				if err != nil {
-					return err
-				}
-				stack.new()
-				defer stack.pop()
-				err = filepath.WalkDir(realPath, scanner)
-				if err != nil {
-					return err
-				}
-				results, err := stack.get()
-				if err != nil {
-					return err
-				}
-				for i := range *results {
-					allResults = append(allResults, strings.Replace((*results)[i], realPath, path, 1))
-				}
-				return nil
-			}
-		}
-
 		results, err := stack.get()
 		if err != nil {
 			return err
@@ -222,7 +181,7 @@ func GetFiles(systemId string, path string) ([]string, error) {
 					*results = append(*results, abs)
 				}
 			}
-		} else if system.AllowedExts[ext] || ext == ".mgl" {
+		} else if MatchSystemFile(*system, path) {
 			*results = append(*results, path)
 		}
 		return nil
@@ -295,35 +254,29 @@ func GetAllFiles(systemPaths map[string][]string, statusFn func(systemId string,
 	return allFiles, nil
 }
 
+// Prioritize .mgl over other dupes
 func FilterUniqueFilenames(files []string) []string {
 	var filtered []string
-	filenames := make(map[string]string) // base → chosen extension
+	seen := make(map[string]string) // base name → chosen file
 
 	for _, f := range files {
-		base := strings.TrimSuffix(filepath.Base(f), filepath.Ext(f))
-		ext := strings.ToLower(filepath.Ext(f))
+		base := filepath.Base(f)
+		ext := strings.ToLower(filepath.Ext(base))
 
-		// If base not seen, take it.
-		if chosen, ok := filenames[base]; !ok {
-			filenames[base] = ext
-			filtered = append(filtered, f)
-			continue
-		}
-
-		// If we already saw something with this base:
-		if ext == ".mgl" {
-			// Replace existing entry with .mgl
-			for i, existing := range filtered {
-				if strings.TrimSuffix(filepath.Base(existing), filepath.Ext(existing)) == base {
-					filtered[i] = f
-					break
-				}
+		if prev, ok := seen[base]; ok {
+			if ext == ".mgl" {
+				seen[base] = f // overwrite with .mgl
+			} else if strings.ToLower(filepath.Ext(prev)) != ".mgl" {
+				// both non-mgl, keep first
 			}
-			filenames[base] = ".mgl"
+		} else {
+			seen[base] = f
 		}
-		// If current isn’t .mgl, keep existing (do nothing).
 	}
 
+	for _, f := range seen {
+		filtered = append(filtered, f)
+	}
 	return filtered
 }
 
@@ -351,107 +304,14 @@ func FileExists(path string) bool {
 	return false
 }
 
-type RbfInfo struct {
-	Path      string
-	Filename  string
-	ShortName string
-	MglName   string
-}
-
-func ParseRbf(path string) RbfInfo {
-	info := RbfInfo{
-		Path:     path,
-		Filename: filepath.Base(path),
-	}
-	if strings.Contains(info.Filename, "_") {
-		info.ShortName = info.Filename[0:strings.LastIndex(info.Filename, "_")]
-	} else {
-		info.ShortName = strings.TrimSuffix(info.Filename, filepath.Ext(info.Filename))
-	}
-	if strings.HasPrefix(path, SdFolder) {
-		relDir := strings.TrimPrefix(filepath.Dir(path), SdFolder+"/")
-		info.MglName = filepath.Join(relDir, info.ShortName)
-	} else {
-		info.MglName = path
-	}
-	return info
-}
-
-func shallowScanRbf() ([]RbfInfo, error) {
-	results := make([]RbfInfo, 0)
-	isRbf := func(file os.DirEntry) bool {
-		return filepath.Ext(strings.ToLower(file.Name())) == ".rbf"
-	}
-	infoSymlink := func(path string) (RbfInfo, error) {
-		info, err := os.Lstat(path)
-		if err != nil {
-			return RbfInfo{}, err
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			newPath, err := os.Readlink(path)
-			if err != nil {
-				return RbfInfo{}, err
-			}
-			return ParseRbf(newPath), nil
-		}
-		return ParseRbf(path), nil
-	}
-	files, err := os.ReadDir(SdFolder)
-	if err != nil {
-		return results, err
-	}
-	for _, file := range files {
-		if file.IsDir() && strings.HasPrefix(file.Name(), "_") {
-			subFiles, err := os.ReadDir(filepath.Join(SdFolder, file.Name()))
-			if err != nil {
-				continue
-			}
-			for _, subFile := range subFiles {
-				if isRbf(subFile) {
-					path := filepath.Join(SdFolder, file.Name(), subFile.Name())
-					info, err := infoSymlink(path)
-					if err != nil {
-						continue
-					}
-					results = append(results, info)
-				}
-			}
-		} else if isRbf(file) {
-			path := filepath.Join(SdFolder, file.Name())
-			info, err := infoSymlink(path)
-			if err != nil {
-				continue
-			}
-			results = append(results, info)
-		}
-	}
-	return results, nil
-}
-
-func SystemsWithRbf() map[string]RbfInfo {
-	results := make(map[string]RbfInfo)
-	rbfFiles, err := shallowScanRbf()
-	if err != nil {
-		return results
-	}
-	for _, rbfFile := range rbfFiles {
-		for _, system := range Systems {
-			shortName := system.Rbf
-			if strings.Contains(shortName, "/") {
-				shortName = shortName[strings.LastIndex(shortName, "/")+1:]
-			}
-			if strings.EqualFold(rbfFile.ShortName, shortName) {
-				results[system.Id] = rbfFile
-			}
-		}
-	}
-	return results
-}
-
 // --- Precompute AllowedExts at startup ---
 func init() {
 	for k, sys := range Systems {
 		sys.BuildAllowedExts()
+		// inject global extensions like .mgl
+		for _, ext := range globalAllowedExts {
+			sys.AllowedExts[ext] = true
+		}
 		Systems[k] = sys
 	}
 }
