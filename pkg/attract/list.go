@@ -268,13 +268,11 @@ func createGamelists(cfg *config.UserConfig,
 	var globalSearch []string
 	masterlist := make(map[string][]string)
 
-	// Processing all systems
 	for systemId, paths := range systemPaths {
 		sysStart := time.Now()
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
 		exists := fileExists(gamelistPath)
 
-		// Skip rebuilding if not necessary
 		if !overwrite && exists && !cfg.List.RamOnly {
 			if !quiet {
 				fmt.Printf("Reusing %s: gamelist already exists\n", systemId)
@@ -294,7 +292,6 @@ func createGamelists(cfg *config.UserConfig,
 			fmt.Printf("Rebuilding %s (overwrite enabled)\n", systemId)
 		}
 
-		// Collect system files
 		var systemFiles []string
 		for _, path := range paths {
 			files, err := games.GetFiles(systemId, path)
@@ -305,11 +302,9 @@ func createGamelists(cfg *config.UserConfig,
 			systemFiles = append(systemFiles, files...)
 		}
 
-		// Filter unique files
 		systemFiles = filterUniqueWithMGL(systemFiles)
 		systemFiles = filterExtensions(systemFiles, systemId, cfg)
 
-		// Deduplicate files
 		seenSys := make(map[string]struct{})
 		deduped := systemFiles[:0]
 		for _, f := range systemFiles {
@@ -333,17 +328,14 @@ func createGamelists(cfg *config.UserConfig,
 		sort.Strings(systemFiles)
 		totalGames += len(systemFiles)
 
-		// Write the gamelist
 		writeGamelist(gamelistDir, systemId, systemFiles, cfg.List.RamOnly)
 
-		// Track fresh and rebuilt lists
 		if exists && overwrite && !cfg.List.RamOnly {
 			rebuilt++
 		} else {
 			fresh++
 		}
 
-		// Add system files to masterlist
 		for _, f := range systemFiles {
 			masterlist[systemId] = append(masterlist[systemId], f)
 			clean := utils.StripTimestamp(f)
@@ -359,7 +351,6 @@ func createGamelists(cfg *config.UserConfig,
 		}
 	}
 
-	// Write Search.txt and build its index
 	if overwrite || fresh > 0 || rebuilt > 0 {
 		sort.Strings(globalSearch)
 		cache.SetList("Search.txt", globalSearch)
@@ -381,11 +372,8 @@ func createGamelists(cfg *config.UserConfig,
 		if !quiet {
 			fmt.Printf("Built Search list with %d entries\n", len(globalSearch))
 		}
-		// Build the index for Search.txt
-		buildIndexFromSearch(globalSearch)
 	}
 
-	// Build Masterlist index and write
 	if overwrite || fresh > 0 || rebuilt > 0 {
 		var cacheMaster []string
 		var sb strings.Builder
