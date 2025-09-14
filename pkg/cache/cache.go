@@ -11,58 +11,44 @@ import (
 
 var (
 	mu    sync.RWMutex
-	lists = make(map[string][]string) // filename → lines
+	lists = make(map[string][]string)
 )
 
-// ReloadAll preloads all lists from tmpDir (e.g., /tmp/.SAM_List) into memory.
-func ReloadAll(tmpDir string) error {
-	files, err := os.ReadDir(tmpDir)
+// ReloadAll clears and reloads all .txt files from a directory into RAM.
+func ReloadAll(dir string) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	lists = make(map[string][]string)
+
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return fmt.Errorf("cache reload failed: %w", err)
+		return fmt.Errorf("reload cache: %w", err)
 	}
-
-	tmp := make(map[string][]string)
-
-	for _, f := range files {
-		if f.IsDir() {
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".txt") {
 			continue
 		}
-		path := filepath.Join(tmpDir, f.Name())
+		path := filepath.Join(dir, e.Name())
 		lines, err := readLines(path)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[WARN] Could not read %s: %v\n", f.Name(), err)
+			fmt.Fprintf(os.Stderr, "[WARN] failed to read %s: %v\n", path, err)
 			continue
 		}
-		tmp[f.Name()] = lines
+		lists[e.Name()] = lines
 	}
 
-	mu.Lock()
-	lists = tmp
-	mu.Unlock()
-
-	fmt.Printf("[CACHE] Preloaded %d lists into RAM\n", len(lists))
 	return nil
 }
 
-// GetList returns a list by filename (e.g., "Search.txt").
+// GetList returns the cached lines for a filename (e.g. "Search.txt").
 func GetList(name string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
-	return clone(lists[name])
+	return append([]string(nil), lists[name]...) // defensive copy
 }
 
-// GetSystemList returns <system>_gamelist.txt if available.
-func GetSystemList(systemId string) []string {
-	return GetList(systemId + "_gamelist.txt")
-}
-
-// GetMasterlist returns Masterlist.txt if available.
-func GetMasterlist() []string {
-	return GetList("Masterlist.txt")
-}
-
-// --- helpers ---
-
+// readLines helper
 func readLines(path string) ([]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -70,22 +56,13 @@ func readLines(path string) ([]string, error) {
 	}
 	defer f.Close()
 
-	var lines []string
+	var out []string
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line != "" {
-			lines = append(lines, line)
+			out = append(out, line)
 		}
 	}
-	return lines, scanner.Err()
-}
-
-func clone(in []string) []string {
-	if in == nil {
-		return nil
-	}
-	out := make([]string, len(in))
-	copy(out, in)
-	return out
+	return out, scanner.Err()
 }
