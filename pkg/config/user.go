@@ -53,9 +53,6 @@ type AttractConfig struct {
 	UseBlacklist       bool     `ini:"useblacklist,omitempty"`
 	BlacklistInclude   []string `ini:"blacklist_include,omitempty" delim:","`
 	BlacklistExclude   []string `ini:"blacklist_exclude,omitempty" delim:","`
-	UseStaticlist      bool     `ini:"usestaticlist,omitempty"`
-	StaticlistInclude  []string `ini:"staticlist_include,omitempty" delim:","`
-	StaticlistExclude  []string `ini:"staticlist_exclude,omitempty" delim:","`
 	SkipafterStatic    int      `ini:"skipafterstatic,omitempty"`
 	UseStaticDetector  bool     `ini:"usestaticdetector,omitempty"`
 	UseRatedlist       bool     `ini:"useratedlist,omitempty"`
@@ -64,7 +61,10 @@ type AttractConfig struct {
 }
 
 type ListConfig struct {
-	Exclude []string `ini:"exclude,omitempty" delim:","`
+	Exclude            []string `ini:"exclude,omitempty" delim:","`
+	UseStaticlist      bool     `ini:"usestaticlist,omitempty"`
+	StaticlistInclude  []string `ini:"staticlist_include,omitempty" delim:","`
+	StaticlistExclude  []string `ini:"staticlist_exclude,omitempty" delim:","`
 }
 
 type DisableRules struct {
