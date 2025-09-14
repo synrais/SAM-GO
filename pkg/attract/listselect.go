@@ -12,9 +12,6 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// new: all filterlists live in this subfolder
-const filterDirName = "SAM_Filterlists"
-
 func containsInsensitive(list []string, item string) bool {
 	for _, v := range list {
 		if strings.EqualFold(strings.TrimSpace(v), item) {
@@ -104,8 +101,8 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 			continue
 		}
 
-		// Build filterlist base path
-		filterBase := filepath.Join(fullDir, filterDirName)
+		// Build filterlist base path via config helper
+		filterBase := config.FilterlistDir()
 
 		// Rated list (whitelist)
 		if cfg.Attract.UseRatedlist && allowedFor(system,
@@ -186,8 +183,8 @@ func ParseLine(line string) (float64, string) {
 }
 
 // ReadStaticTimestamp returns the timestamp for a game from the static list.
-func ReadStaticTimestamp(fullDir, system, game string) float64 {
-	filterBase := filepath.Join(fullDir, filterDirName)
+func ReadStaticTimestamp(_ string, system, game string) float64 {
+	filterBase := config.FilterlistDir()
 	path := filepath.Join(filterBase, system+"_staticlist.txt")
 	f, err := os.Open(path)
 	if err != nil {
