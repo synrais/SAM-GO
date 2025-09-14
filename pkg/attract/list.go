@@ -16,9 +16,6 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// new: filterlists live inside gamelistDir/SAM_Filterlists
-const filterDirName = "SAM_Filterlists"
-
 func gamelistFilename(systemId string) string {
 	return systemId + "_gamelist.txt"
 }
@@ -96,8 +93,8 @@ func filterExtensions(files []string, systemId string, cfg *config.UserConfig) [
 }
 
 // ---- Filterlist merge (ratedlist, blacklist, staticlist) ----
-func applyFilterlists(gamelistDir, systemId string, files []string, cfg *config.UserConfig) []string {
-	filterBase := filepath.Join(gamelistDir, filterDirName)
+func applyFilterlists(_ string, systemId string, files []string, cfg *config.UserConfig) []string {
+	filterBase := config.FilterlistDir()
 
 	// Ratedlist (whitelist)
 	if cfg.Attract.UseRatedlist {
