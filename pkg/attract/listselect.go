@@ -1,12 +1,14 @@
 package attract
 
 import (
+	"bufio"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/cache"
 )
 
 // normalizeName converts a file path or name to lowercase base name without extension.
@@ -47,10 +49,16 @@ func allowedFor(system string, include, exclude []string) bool {
 	return true
 }
 
-func toNameSet(lines []string) map[string]struct{} {
+func readNameSet(path string) map[string]struct{} {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
 	set := make(map[string]struct{})
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
@@ -59,10 +67,16 @@ func toNameSet(lines []string) map[string]struct{} {
 	return set
 }
 
-func toStaticMap(lines []string) map[string]string {
+func readStaticMap(path string) map[string]string {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
 	m := make(map[string]string)
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
@@ -77,18 +91,15 @@ func toStaticMap(lines []string) map[string]string {
 	return m
 }
 
-// ProcessLists applies blacklist, staticlist, and ratedlist filtering.
-// (Include/Exclude is now handled in list.go, so no file deletions here.)
-func ProcessLists(tmpDir, fullDir string, cfg *config.UserConfig) {
-	files := cache.AllLists() // all *_gamelist.txt already loaded
-	for _, fname := range files {
-		if !strings.HasSuffix(fname, "_gamelist.txt") {
-			continue
-		}
-		system := strings.TrimSuffix(fname, "_gamelist.txt")
+// ProcessLists applies ratedlist, blacklist, and staticlist filtering.
+// Does NOT modify disk gamelists – only updates in-memory cache.
+func ProcessLists(fullDir string, cfg *config.UserConfig) {
+	files, _ := filepath.Glob(filepath.Join(fullDir, "*_gamelist.txt"))
+	for _, f := range files {
+		system := strings.TrimSuffix(filepath.Base(f), "_gamelist.txt")
 
-		lines := cache.GetList(fname)
-		if len(lines) == 0 {
+		lines, err := readLines(f)
+		if err != nil {
 			continue
 		}
 
@@ -96,7 +107,7 @@ func ProcessLists(tmpDir, fullDir string, cfg *config.UserConfig) {
 		if cfg.Attract.UseRatedlist && allowedFor(system,
 			cfg.Attract.RatedlistInclude, cfg.Attract.RatedlistExclude) {
 
-			rated := toNameSet(cache.GetList(system + "_ratedlist.txt"))
+			rated := readNameSet(filepath.Join(fullDir, system+"_ratedlist.txt"))
 			if rated != nil {
 				var kept []string
 				for _, l := range lines {
@@ -112,7 +123,7 @@ func ProcessLists(tmpDir, fullDir string, cfg *config.UserConfig) {
 		if cfg.Attract.UseBlacklist && allowedFor(system,
 			cfg.Attract.BlacklistInclude, cfg.Attract.BlacklistExclude) {
 
-			bl := toNameSet(cache.GetList(system + "_blacklist.txt"))
+			bl := readNameSet(filepath.Join(fullDir, system+"_blacklist.txt"))
 			if bl != nil {
 				var kept []string
 				for _, l := range lines {
@@ -128,7 +139,7 @@ func ProcessLists(tmpDir, fullDir string, cfg *config.UserConfig) {
 		if cfg.Attract.UseStaticlist && allowedFor(system,
 			cfg.Attract.StaticlistInclude, cfg.Attract.StaticlistExclude) {
 
-			sm := toStaticMap(cache.GetList(system + "_staticlist.txt"))
+			sm := readStaticMap(filepath.Join(fullDir, system+"_staticlist.txt"))
 			if sm != nil {
 				for i, l := range lines {
 					name := normalizeName(l)
@@ -139,8 +150,8 @@ func ProcessLists(tmpDir, fullDir string, cfg *config.UserConfig) {
 			}
 		}
 
-		// Save back into cache (and disk stays in sync when needed)
-		cache.SetList(fname, lines)
+		// Update only cache (runtime view)
+		cache.SetList(filepath.Base(f), lines)
 	}
 }
 
@@ -159,9 +170,19 @@ func ParseLine(line string) (float64, string) {
 
 // ReadStaticTimestamp returns the timestamp for a game from the static list.
 func ReadStaticTimestamp(fullDir, system, game string) float64 {
-	lines := cache.GetList(system + "_staticlist.txt")
-	for _, line := range lines {
-		parts := strings.SplitN(strings.TrimSpace(line), " ", 2)
+	path := filepath.Join(fullDir, system+"_staticlist.txt")
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
 		if len(parts) != 2 {
 			continue
 		}
