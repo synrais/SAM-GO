@@ -28,8 +28,13 @@ func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly 
 		return
 	}
 
-	// Write directly to FAT
 	gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
+
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(gamelistPath), 0755); err != nil {
+		panic(err)
+	}
+
 	f, err := os.Create(gamelistPath)
 	if err != nil {
 		panic(err)
@@ -174,6 +179,12 @@ func writeCustomList(dir, filename string, entries []string, ramOnly bool) {
 	}
 
 	path := filepath.Join(dir, filename)
+
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		panic(err)
+	}
+
 	f, err := os.Create(path)
 	if err != nil {
 		panic(err)
@@ -336,6 +347,11 @@ func createGamelists(cfg *config.UserConfig,
 
 		if !cfg.List.RamOnly {
 			searchPath := filepath.Join(gamelistDir, "Search.txt")
+
+			if err := os.MkdirAll(filepath.Dir(searchPath), 0755); err != nil {
+				panic(err)
+			}
+
 			f, _ := os.Create(searchPath)
 			for _, s := range globalSearch {
 				_, _ = f.WriteString(s + "\n")
@@ -364,6 +380,11 @@ func createGamelists(cfg *config.UserConfig,
 
 		if !cfg.List.RamOnly {
 			masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
+
+			if err := os.MkdirAll(filepath.Dir(masterPath), 0755); err != nil {
+				panic(err)
+			}
+
 			f, _ := os.Create(masterPath)
 			for system, entries := range masterlist {
 				sort.Strings(entries)
