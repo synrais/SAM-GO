@@ -288,8 +288,7 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 				_, _ = tmp.WriteString(e + "\n")
 				cacheMaster = append(cacheMaster, e)
 			}
-			_, _ = tmp.WriteString("\n")
-			cacheMaster = append(cacheMaster, "")
+			_, _ = tmp.WriteString("\n") // keep formatting in file only
 		}
 		tmp.Close()
 		_ = utils.MoveFile(tmp.Name(), masterPath)
