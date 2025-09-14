@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
+
+	"github.com/synrais/SAM-GO/pkg/cache"
 )
 
 var searching atomic.Bool
@@ -128,30 +130,26 @@ func ensureIndex() {
 }
 
 func buildIndex() {
-	searchFile := "/tmp/.SAM_List/Search.txt"
+    lines := cache.GetList("Search.txt")
+    if len(lines) == 0 {
+        fmt.Println("[ERROR] No Search.txt in cache – did you run list builder?")
+        return
+    }
 
-	f, err := os.Open(searchFile)
-	if err != nil {
-		fmt.Printf("[ERROR] Could not open %s: %v\n", searchFile, err)
-		return
-	}
-	defer f.Close()
+    for _, line := range lines {
+        line = strings.TrimSpace(stripTimestamp(line))
+        if line == "" {
+            continue
+        }
+        name, ext := normalizeEntry(line)
+        gameIndex = append(gameIndex, GameEntry{
+            Name: name,
+            Ext:  ext,
+            Path: line,
+        })
+    }
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(stripTimestamp(scanner.Text()))
-		if line == "" {
-			continue
-		}
-		name, ext := normalizeEntry(line)
-		gameIndex = append(gameIndex, GameEntry{
-			Name: name,
-			Ext:  ext,
-			Path: line,
-		})
-	}
-
-	fmt.Printf("[DEBUG] Indexed %d entries from Search.txt\n", len(gameIndex))
+    fmt.Printf("[DEBUG] Indexed %d entries from cache:Search.txt\n", len(gameIndex))
 }
 
 // --- Matching ---
