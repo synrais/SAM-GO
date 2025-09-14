@@ -206,8 +206,11 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map[string][]string,
-	progress bool, quiet bool, filter bool, overwrite bool) int {
+func createGamelists(cfg *config.UserConfig,
+    gamelistDir string,
+    systemPaths map[string][]string,
+    quiet bool,
+    overwrite bool) int
 
 	start := time.Now()
 	if !quiet && !progress {
