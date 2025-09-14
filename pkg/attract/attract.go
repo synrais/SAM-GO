@@ -206,7 +206,18 @@ func Run(args []string) {
 			fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, gamePath)
 			run.Run([]string{gamePath})
 
+			// base playtime
 			wait := parsePlayTime(attractCfg.PlayTime, r)
+
+			// if a static timestamp is set, cut playtime earlier
+			if ts > 0 {
+				skipDuration := time.Duration(ts*float64(time.Second)) +
+					time.Duration(attractCfg.SkipafterStatic)*time.Second
+				if skipDuration < wait {
+					wait = skipDuration
+				}
+			}
+
 			deadline := time.Now().Add(wait)
 
 			for time.Now().Before(deadline) {
