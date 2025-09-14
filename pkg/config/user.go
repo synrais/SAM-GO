@@ -193,7 +193,6 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 
 	// ---- Default List settings ----
 	if !defaultConfig.List.RamOnly {
-		defaultConfig.List.RamOnly = false // explicit default
 	}
 
 	// Return early if INI file doesn’t exist
