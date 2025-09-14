@@ -15,6 +15,7 @@ import (
 	"github.com/synrais/SAM-GO/pkg/history"
 	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/run"
+	"github.com/synrais/SAM-GO/pkg/utils"
 	"golang.org/x/sys/unix"
 )
 
@@ -110,19 +111,22 @@ func (r *resolution) Close() {
 
 // List helpers
 func isEntryInFile(path, game string) bool {
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
+    normGame := utils.NormalizeGameForList(game)
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		if scanner.Text() == game {
-			return true
-		}
-	}
-	return false
+    f, err := os.Open(path)
+    if err != nil {
+        return false
+    }
+    defer f.Close()
+
+    scanner := bufio.NewScanner(f)
+    for scanner.Scan() {
+        line := utils.StripTimestamp(scanner.Text())
+        if utils.NormalizeGameForList(line) == normGame {
+            return true
+        }
+    }
+    return false
 }
 
 func addToFile(system, game, suffix string) {
@@ -258,7 +262,8 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 
 				// game identifiers
 				displayGame := fmt.Sprintf("[%s] %s", run.LastPlayedSystem.Name, run.LastPlayedName)
-				cleanGame := run.LastPlayedName
+				// normalized clean name for lists
+				cleanGame := utils.NormalizeGameForList(run.LastPlayedName)
 
 				// detect game change → reset counters
 				if displayGame != lastGame {
