@@ -213,7 +213,7 @@ func createGamelists(cfg *config.UserConfig,
     overwrite bool) int
 
 	start := time.Now()
-	if !quiet && !progress {
+	if !quiet {
 		if cfg.List.RamOnly {
 			fmt.Println("Building lists in RAM-only mode (no SD writes)...")
 		} else {
