@@ -168,7 +168,6 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 	var emptySystems []string
 
 	// Accumulators
-	globalSeen := make(map[string]struct{}) // dedupe Search.txt globally
 	var globalSearch []string
 	masterlist := make(map[string][]string)
 
@@ -211,17 +210,15 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 		}
 		// Extension filtering
 		systemFiles = filterExtensions(systemFiles, systemId, cfg)
-		// Dedup within system
+		// Dedup within system (full filename+ext)
 		seenSys := make(map[string]struct{})
 		deduped := systemFiles[:0]
 		for _, f := range systemFiles {
-			base := strings.TrimSuffix(strings.ToLower(filepath.Base(f)), filepath.Ext(f))
-			ext := strings.ToLower(filepath.Ext(f))
-			key := base + ext
-			if _, ok := seenSys[key]; ok {
+			base := strings.ToLower(filepath.Base(f))
+			if _, ok := seenSys[base]; ok {
 				continue
 			}
-			seenSys[key] = struct{}{}
+			seenSys[base] = struct{}{}
 			deduped = append(deduped, f)
 		}
 		systemFiles = deduped
@@ -250,14 +247,10 @@ func createGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths map
 		for _, f := range systemFiles {
 			masterlist[systemId] = append(masterlist[systemId], f)
 
-			// Add to Search.txt (dedupe global)
+			// Add to Search.txt (per system deduped already)
 			line := stripTimestamp(f)
 			base := strings.TrimSpace(line)
-			if base == "" {
-				continue
-			}
-			if _, ok := globalSeen[base]; !ok {
-				globalSeen[base] = struct{}{}
+			if base != "" {
 				globalSearch = append(globalSearch, base)
 			}
 		}
@@ -332,7 +325,6 @@ func RunList(args []string) error {
 	progress := fs.Bool("p", false, "print output for dialog gauge")
 	quiet := fs.Bool("q", false, "suppress all status output")
 	detect := fs.Bool("d", false, "list active system folders")
-	noDupes := fs.Bool("nodupes", false, "filter out duplicate games")
 	overwrite := fs.Bool("overwrite", false, "overwrite existing gamelists if present")
 
 	if err := fs.Parse(args); err != nil {
@@ -377,7 +369,7 @@ func RunList(args []string) error {
 		systemPathsMap[p.System.Id] = append(systemPathsMap[p.System.Id], p.Path)
 	}
 
-	total := createGamelists(cfg, *gamelistDir, systemPathsMap, *progress, *quiet, *noDupes, *overwrite)
+	total := createGamelists(cfg, *gamelistDir, systemPathsMap, *progress, *quiet, *overwrite, *overwrite)
 
 	if total == 0 {
 		return fmt.Errorf("no games indexed")
