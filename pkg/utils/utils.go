@@ -323,3 +323,23 @@ func RemoveFileExt(s string) string {
 	}
 	return s
 }
+
+// ReadLines opens a file and returns its non-empty trimmed lines.
+func ReadLines(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var out []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out, scanner.Err()
+}
+
