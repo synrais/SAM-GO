@@ -326,7 +326,10 @@ func Run(args []string) {
 		}
 
 		if len(files) == 0 {
-			rebuildLists()
+			// Instead of exiting, reset from shadow
+			fmt.Println("All systems exhausted — refreshing from cache masters")
+			cache.ResetAll()
+
 			allKeys = cache.ListKeys()
 			allFiles = nil
 			for _, k := range allKeys {
@@ -335,8 +338,9 @@ func Run(args []string) {
 				}
 			}
 			files = filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
+
 			if len(files) == 0 {
-				fmt.Println("Failed to rebuild gamelists, exiting.")
+				fmt.Println("No gamelists even after reset, exiting.")
 				return
 			}
 		}
