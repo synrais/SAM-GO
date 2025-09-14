@@ -1,7 +1,6 @@
 package history
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -10,47 +9,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
 )
 
 const (
 	nowPlayingFile = "/tmp/Now_Playing.txt"
-	historyFile    = "/tmp/.SAM_List/History.txt"
 )
 
 // --- utils ---
-
-func readLines(path string) ([]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	var lines []string
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line != "" {
-			lines = append(lines, line)
-		}
-	}
-	return lines, sc.Err()
-}
-
-func writeLines(path string, lines []string) error {
-	_ = os.MkdirAll(filepath.Dir(path), 0777)
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	for _, l := range lines {
-		if _, err := f.WriteString(l + "\n"); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 func indexOf(slice []string, val string) int {
 	for i, v := range slice {
@@ -71,38 +38,31 @@ func readNowPlaying() (string, error) {
 
 // --- core API ---
 
-// WriteNowPlaying moves Now_Playing to `path` and ensures it's in history.
-// If already present, does not duplicate.
+// WriteNowPlaying sets Now_Playing and appends to in-memory History.
 func WriteNowPlaying(path string) error {
-	_ = os.MkdirAll(filepath.Dir(historyFile), 0777)
-
-	// Always set Now_Playing
+	// Always set Now_Playing on disk so other tools can read it
 	if err := os.WriteFile(nowPlayingFile, []byte(path), 0644); err != nil {
 		return err
 	}
 
-	// Ensure unique history
-	hist, _ := readLines(historyFile)
+	// Update in-memory history
+	hist := cache.GetList("History.txt")
 	if indexOf(hist, path) == -1 {
 		hist = append(hist, path)
-		if err := writeLines(historyFile, hist); err != nil {
-			return err
-		}
+		cache.SetList("History.txt", hist)
 	}
 	return nil
 }
 
-// SetNowPlaying updates Now_Playing only (does not change history order).
+// SetNowPlaying updates Now_Playing only (no history update).
 func SetNowPlaying(path string) error {
-	_ = os.MkdirAll(filepath.Dir(historyFile), 0777)
 	return os.WriteFile(nowPlayingFile, []byte(path), 0644)
 }
 
-// Next returns the next history entry after the current Now_Playing.
-// If at the end of history, returns "", false (caller should random).
+// Next returns the next history entry after Now_Playing.
 func Next() (string, bool) {
-	hist, err := readLines(historyFile)
-	if err != nil || len(hist) == 0 {
+	hist := cache.GetList("History.txt")
+	if len(hist) == 0 {
 		return "", false
 	}
 	cur, err := readNowPlaying()
@@ -117,10 +77,9 @@ func Next() (string, bool) {
 }
 
 // Back returns the previous history entry before Now_Playing.
-// If already at the first entry, returns "", false (no wrap, no random).
 func Back() (string, bool) {
-	hist, err := readLines(historyFile)
-	if err != nil || len(hist) == 0 {
+	hist := cache.GetList("History.txt")
+	if len(hist) == 0 {
 		return "", false
 	}
 	cur, err := readNowPlaying()
@@ -161,7 +120,7 @@ func PlayNext() (string, error) {
 	return p, nil
 }
 
-// PlayBack moves to the previous entry in history (no random fallback).
+// PlayBack moves to the previous entry in history.
 func PlayBack() (string, error) {
 	if p, ok := Back(); ok {
 		if err := Play(p); err != nil {
@@ -180,14 +139,32 @@ func NowPlayingPath() string {
 
 // --- random picker ---
 
-func filterAllowed(allFiles []string, include, exclude []string) []string {
+func randomGame() (string, error) {
+	cfg, err := config.LoadUserConfig("SAM", &config.UserConfig{})
+	if err != nil {
+		return "", err
+	}
+
+	// Collect all system gamelists from cache
+	allKeys := cache.ListKeys()
+	var systems []string
+	for _, k := range allKeys {
+		if strings.HasSuffix(k, "_gamelist.txt") {
+			systems = append(systems, k)
+		}
+	}
+	if len(systems) == 0 {
+		return "", errors.New("no gamelists in cache")
+	}
+
+	// Apply include/exclude
 	var filtered []string
-	for _, f := range allFiles {
-		base := strings.TrimSuffix(filepath.Base(f), "_gamelist.txt")
-		if len(include) > 0 {
+	for _, sys := range systems {
+		base := strings.TrimSuffix(filepath.Base(sys), "_gamelist.txt")
+		if len(cfg.Attract.Include) > 0 {
 			match := false
-			for _, sys := range include {
-				if strings.EqualFold(strings.TrimSpace(sys), base) {
+			for _, inc := range cfg.Attract.Include {
+				if strings.EqualFold(strings.TrimSpace(inc), base) {
 					match = true
 					break
 				}
@@ -197,8 +174,8 @@ func filterAllowed(allFiles []string, include, exclude []string) []string {
 			}
 		}
 		skip := false
-		for _, sys := range exclude {
-			if strings.EqualFold(strings.TrimSpace(sys), base) {
+		for _, ex := range cfg.Attract.Exclude {
+			if strings.EqualFold(strings.TrimSpace(ex), base) {
 				skip = true
 				break
 			}
@@ -206,37 +183,25 @@ func filterAllowed(allFiles []string, include, exclude []string) []string {
 		if skip {
 			continue
 		}
-		filtered = append(filtered, f)
+		filtered = append(filtered, sys)
 	}
-	return filtered
-}
-
-func randomGame() (string, error) {
-	cfg, err := config.LoadUserConfig("SAM", &config.UserConfig{})
-	if err != nil {
-		return "", err
-	}
-	listDir := "/tmp/.SAM_List"
-	files, err := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
-	if err != nil || len(files) == 0 {
-		return "", errors.New("no gamelists")
-	}
-	files = filterAllowed(files, cfg.Attract.Include, cfg.Attract.Exclude)
-	if len(files) == 0 {
+	if len(filtered) == 0 {
 		return "", errors.New("no gamelists match systems")
 	}
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	for len(files) > 0 {
-		listFile := files[r.Intn(len(files))]
-		lines, err := readLines(listFile)
-		if err != nil || len(lines) == 0 {
-			for i, f := range files {
-				if f == listFile {
-					files = append(files[:i], files[i+1:]...)
-					break
+	for len(filtered) > 0 {
+		listKey := filtered[r.Intn(len(filtered))]
+		lines := cache.GetList(listKey)
+		if len(lines) == 0 {
+			// remove empty system from rotation
+			var tmp []string
+			for _, f := range filtered {
+				if f != listKey {
+					tmp = append(tmp, f)
 				}
 			}
+			filtered = tmp
 			continue
 		}
 
@@ -245,9 +210,10 @@ func randomGame() (string, error) {
 			index = r.Intn(len(lines))
 		}
 		gamePath := lines[index]
-		// remove from list so it won't repeat immediately
+
+		// remove so it won’t repeat immediately
 		lines = append(lines[:index], lines[index+1:]...)
-		_ = writeLines(listFile, lines)
+		cache.SetList(listKey, lines)
 
 		return gamePath, nil
 	}
