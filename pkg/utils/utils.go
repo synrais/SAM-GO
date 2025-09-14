@@ -393,18 +393,22 @@ var (
 // (lowercase, strips punctuation, preserves word spacing, collapses multiple spaces).
 // Returns (normalized name, extension).
 func NormalizeEntry(p string) (string, string) {
-	base := filepath.Base(StripTimestamp(p))
-	ext := strings.ToLower(filepath.Ext(base))
-	name := strings.TrimSuffix(base, ext)
+	base := filepath.Base(StripTimestamp(p)) // Remove timestamp if present
+	ext := strings.ToLower(filepath.Ext(base)) // Get the extension and convert it to lowercase
+	name := strings.TrimSuffix(base, ext) // Strip the extension from the filename
 
-	// lowercase
+	// Convert to lowercase
 	name = strings.ToLower(name)
 
-	// replace non-alphanumeric with spaces
+	// Replace non-alphanumeric characters (except spaces) with spaces
+	// So it keeps spaces but removes punctuation, underscores, etc.
 	name = nonWord.ReplaceAllString(name, " ")
 
-	// collapse multiple spaces
+	// Collapse multiple spaces into a single space
 	name = strings.TrimSpace(multiSpace.ReplaceAllString(name, " "))
 
+	// Return the cleaned name and the extension without the dot
 	return name, strings.TrimPrefix(ext, ".")
+}
+
 }
