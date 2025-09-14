@@ -56,7 +56,8 @@ func readNameSet(path string) map[string]struct{} {
 		if line == "" {
 			continue
 		}
-		set[strings.ToLower(line)] = struct{}{}
+		// normalize consistently
+		set[utils.NormalizeName(line)] = struct{}{}
 	}
 	return set
 }
@@ -79,7 +80,7 @@ func readStaticMap(path string) map[string]string {
 			continue
 		}
 		ts := strings.TrimSpace(parts[0])
-		name := strings.ToLower(strings.TrimSpace(parts[1]))
+		name := utils.NormalizeName(parts[1])
 		m[name] = ts
 	}
 	return m
