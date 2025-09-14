@@ -16,6 +16,7 @@ import (
 	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/run"
 	"github.com/synrais/SAM-GO/pkg/staticdetector"
+	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 // parsePlayTime handles "40" or "40-130"
@@ -209,7 +210,7 @@ func Run(args []string) {
 
 			if attractCfg.UseStaticlist {
 				start := time.Now()
-				norm := normalizeName(gamePath)
+				norm := utils.NormalizeName(gamePath)
 				deadline := start.Add(wait)
 				var skipAt time.Time
 				if ts > 0 {
