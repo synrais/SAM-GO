@@ -1,483 +1,503 @@
-package games
+package attract
 
 import (
+	"bufio"
+	"flag"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
+	"sort"
 	"strings"
+	"time"
 
+	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// --- Global extension registry ---
-var systemExts map[string]map[string]struct{}
-
-// GetSystem looks up an exact system definition by ID.
-func GetSystem(id string) (*System, error) {
-	if system, ok := Systems[id]; ok {
-		return &system, nil
-	}
-	return nil, fmt.Errorf("unknown system: %s", id)
+func gamelistFilename(systemId string) string {
+	return systemId + "_gamelist.txt"
 }
 
-func GetGroup(groupId string) (System, error) {
-	var merged System
-	if _, ok := CoreGroups[groupId]; !ok {
-		return merged, fmt.Errorf("no system group found for %s", groupId)
-	}
-	if len(CoreGroups[groupId]) < 1 {
-		return merged, fmt.Errorf("no systems in %s", groupId)
-	} else if len(CoreGroups[groupId]) == 1 {
-		return CoreGroups[groupId][0], nil
-	}
-	merged = CoreGroups[groupId][0]
-	merged.Slots = make([]Slot, 0)
-	for _, s := range CoreGroups[groupId] {
-		merged.Slots = append(merged.Slots, s.Slots...)
-	}
-	return merged, nil
-}
-
-// LookupSystem case-insensitively looks up system ID definition including aliases.
-func LookupSystem(id string) (*System, error) {
-	if system, err := GetGroup(id); err == nil {
-		return &system, nil
-	}
-	for k, v := range Systems {
-		if strings.EqualFold(k, id) {
-			return &v, nil
-		}
-		for _, alias := range v.Alias {
-			if strings.EqualFold(alias, id) {
-				return &v, nil
-			}
-		}
-	}
-	return nil, fmt.Errorf("unknown system: %s", id)
-}
-
-// MatchSystemFile returns true if a given file's extension is valid for a system.
-// Priority: .mgl > everything else
-func MatchSystemFile(system System, path string) bool {
-	// ignore dot files
-	if strings.HasPrefix(filepath.Base(path), ".") {
-		return false
-	}
-
-	ext := strings.ToLower(filepath.Ext(path))
-
-	// .mgl always allowed
-	if ext == ".mgl" {
-		return true
-	}
-
-	// check precomputed map
-	if exts, ok := systemExts[system.Id]; ok {
-		_, ok := exts[ext]
-		return ok
-	}
-	return false
-}
-
-func AllSystems() []System {
-	var systems []System
-	keys := utils.AlphaMapKeys(Systems)
-	for _, k := range keys {
-		systems = append(systems, Systems[k])
-	}
-	return systems
-}
-
-func AllSystemsExcept(excluded []string) []System {
-	var systems []System
-	excludeMap := make(map[string]bool)
-	for _, e := range excluded {
-		excludeMap[strings.TrimSpace(e)] = true
-	}
-	keys := utils.AlphaMapKeys(Systems)
-	for _, k := range keys {
-		sys := Systems[k]
-		if containsFold(excludeMap, sys.Id) {
-			continue
-		}
-		skip := false
-		for _, alias := range sys.Alias {
-			if containsFold(excludeMap, alias) {
-				skip = true
-				break
-			}
-		}
-		if skip {
-			continue
-		}
-		systems = append(systems, sys)
-	}
-	return systems
-}
-
-// helper: case-insensitive key lookup
-func containsFold(m map[string]bool, key string) bool {
-	for k := range m {
-		if strings.EqualFold(k, key) {
-			return true
-		}
-	}
-	return false
-}
-
-type resultsStack [][]string
-
-func (r *resultsStack) new() {
-	*r = append(*r, []string{})
-}
-func (r *resultsStack) pop() {
-	if len(*r) == 0 {
+func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly bool) {
+	cache.SetList(gamelistFilename(systemId), files)
+	if ramOnly {
 		return
 	}
-	*r = (*r)[:len(*r)-1]
+
+	var sb strings.Builder
+	for _, file := range files {
+		sb.WriteString(file)
+		sb.WriteByte('\n')
+	}
+	data := []byte(sb.String())
+
+	gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
+	if err := os.MkdirAll(filepath.Dir(gamelistPath), 0755); err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(gamelistPath, data, 0644); err != nil {
+		panic(err)
+	}
 }
-func (r *resultsStack) get() (*[]string, error) {
-	if len(*r) == 0 {
-		return nil, fmt.Errorf("nothing on stack")
-	}
-	return &(*r)[len(*r)-1], nil
-}
 
-// GetFiles searches for all valid games in a given path and return a list of files.
-// Priority rule: if a .mgl exists for a game, ignore its sibling non-mgl files.
-func GetFiles(systemId string, path string) ([]string, error) {
-	var allResults []string
-	var stack resultsStack
-	visited := make(map[string]struct{})
-
-	system, err := GetSystem(systemId)
-	if err != nil {
-		return nil, err
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-
-	var scanner func(path string, file fs.DirEntry, err error) error
-	scanner = func(path string, file fs.DirEntry, _ error) error {
-		// avoid recursive symlinks
-		if file.IsDir() {
-			if _, ok := visited[path]; ok {
-				return filepath.SkipDir
+func filterUniqueWithMGL(files []string) []string {
+	chosen := make(map[string]string)
+	for _, f := range files {
+		base := strings.TrimSuffix(strings.ToLower(filepath.Base(f)), filepath.Ext(f))
+		ext := strings.ToLower(filepath.Ext(f))
+		if prev, ok := chosen[base]; ok {
+			if strings.HasSuffix(prev, ".mgl") {
+				continue
 			}
-			visited[path] = struct{}{}
+			if ext == ".mgl" {
+				chosen[base] = f
+			}
+		} else {
+			chosen[base] = f
 		}
+	}
+	result := []string{}
+	for _, v := range chosen {
+		result = append(result, v)
+	}
+	return result
+}
 
-		// handle symlinked directories
-		if file.Type()&os.ModeSymlink != 0 {
-			err = os.Chdir(filepath.Dir(path))
-			if err != nil {
-				return err
+func filterExtensions(files []string, systemId string, cfg *config.UserConfig) []string {
+	rules, ok := cfg.Disable[systemId]
+	if !ok || len(rules.Extensions) == 0 {
+		return files
+	}
+
+	extMap := make(map[string]struct{})
+	for _, e := range rules.Extensions {
+		e = strings.ToLower(e)
+		if !strings.HasPrefix(e, ".") {
+			e = "." + e
+		}
+		extMap[e] = struct{}{}
+	}
+
+	var filtered []string
+	for _, f := range files {
+		ext := strings.ToLower(filepath.Ext(f))
+		if _, skip := extMap[ext]; skip {
+			continue
+		}
+		filtered = append(filtered, f)
+	}
+
+	return filtered
+}
+
+// ---- Filterlist merge (ratedlist, blacklist, staticlist) ----
+func applyFilterlists(_ string, systemId string, files []string, cfg *config.UserConfig) []string {
+	filterBase := config.FilterlistDir()
+
+	// Ratedlist (whitelist)
+	if cfg.Attract.UseRatedlist {
+		ratedPath := filepath.Join(filterBase, systemId+"_ratedlist.txt")
+		if f, err := os.Open(ratedPath); err == nil {
+			defer f.Close()
+			rated := make(map[string]struct{})
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				name, _ := utils.NormalizeEntry(scanner.Text())
+				if name != "" {
+					rated[name] = struct{}{}
+				}
 			}
-			realPath, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return err
+			var kept []string
+			for _, file := range files {
+				name, _ := utils.NormalizeEntry(filepath.Base(file))
+				if _, ok := rated[name]; ok {
+					kept = append(kept, file)
+				}
 			}
-			file, err := os.Stat(realPath)
-			if err != nil {
-				return err
+			files = kept
+		}
+	}
+
+	// Blacklist
+	if cfg.Attract.UseBlacklist {
+		blPath := filepath.Join(filterBase, systemId+"_blacklist.txt")
+		if f, err := os.Open(blPath); err == nil {
+			defer f.Close()
+			blacklist := make(map[string]struct{})
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				name, _ := utils.NormalizeEntry(scanner.Text())
+				if name != "" {
+					blacklist[name] = struct{}{}
+				}
 			}
-			if file.IsDir() {
-				err = os.Chdir(path)
-				if err != nil {
-					return err
+			var kept []string
+			for _, file := range files {
+				name, _ := utils.NormalizeEntry(filepath.Base(file))
+				if _, bad := blacklist[name]; !bad {
+					kept = append(kept, file)
 				}
-				stack.new()
-				defer stack.pop()
-				err = filepath.WalkDir(realPath, scanner)
-				if err != nil {
-					return err
+			}
+			files = kept
+		}
+	}
+
+	// Staticlist (timestamps)
+	if cfg.List.UseStaticlist {
+		staticPath := filepath.Join(filterBase, systemId+"_staticlist.txt")
+		if f, err := os.Open(staticPath); err == nil {
+			defer f.Close()
+			staticMap := make(map[string]string)
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if line == "" {
+					continue
 				}
-				results, err := stack.get()
-				if err != nil {
-					return err
+				parts := strings.SplitN(line, " ", 2)
+				if len(parts) != 2 {
+					continue
 				}
-				for i := range *results {
-					allResults = append(allResults, strings.Replace((*results)[i], realPath, path, 1))
+				ts := strings.Trim(parts[0], "<>")
+				name, _ := utils.NormalizeEntry(parts[1])
+				staticMap[name] = ts
+			}
+			for i, f := range files {
+				name, _ := utils.NormalizeEntry(filepath.Base(f))
+				if ts, ok := staticMap[name]; ok {
+					files[i] = "<" + ts + ">" + f
 				}
+			}
+		}
+	}
+
+	return files
+}
+
+// ---- AmigaVision helpers ----
+func parseLines(data string) []string {
+	var out []string
+	lines := strings.Split(strings.ReplaceAll(data, "\r\n", "\n"), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func writeCustomList(dir, filename string, entries []string, ramOnly bool) {
+	cache.SetList(filename, entries)
+	if ramOnly {
+		return
+	}
+
+	var sb strings.Builder
+	for _, e := range entries {
+		sb.WriteString(e)
+		sb.WriteByte('\n')
+	}
+	data := []byte(sb.String())
+
+	path := filepath.Join(dir, filename)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		panic(err)
+	}
+}
+
+func writeAmigaVisionLists(gamelistDir string, paths []string, ramOnly bool) (int, int) {
+	var gamesList, demosList []string
+
+	for _, path := range paths {
+		filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
 				return nil
 			}
-		}
-
-		results, err := stack.get()
-		if err != nil {
-			return err
-		}
-
-		ext := strings.ToLower(filepath.Ext(path))
-		if ext == ".zip" {
-			zipFiles, err := utils.ListZip(path)
-			if err != nil {
-				return nil
+			switch strings.ToLower(d.Name()) {
+			case "games.txt":
+				data, _ := os.ReadFile(p)
+				gamesList = append(gamesList, parseLines(string(data))...)
+			case "demos.txt":
+				data, _ := os.ReadFile(p)
+				demosList = append(demosList, parseLines(string(data))...)
 			}
-			for i := range zipFiles {
-				if MatchSystemFile(*system, zipFiles[i]) {
-					abs := filepath.Join(path, zipFiles[i])
-					*results = append(*results, abs)
+			return nil
+		})
+	}
+
+	if len(gamesList) > 0 {
+		writeCustomList(gamelistDir, "AmigaVisionGames_gamelist.txt", gamesList, ramOnly)
+	}
+	if len(demosList) > 0 {
+		writeCustomList(gamelistDir, "AmigaVisionDemos_gamelist.txt", demosList, ramOnly)
+	}
+
+	return len(gamesList), len(demosList)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func createGamelists(cfg *config.UserConfig,
+	gamelistDir string,
+	systemPaths map[string][]string,
+	quiet bool,
+	overwrite bool) int {
+
+	start := time.Now()
+	if !quiet {
+		if cfg.List.RamOnly {
+			fmt.Println("Building lists in RAM-only mode (no SD writes)...")
+		} else {
+			fmt.Println("Finding system folders...")
+		}
+	}
+
+	totalGames := 0
+	fresh, rebuilt, reused := 0, 0, 0
+	var emptySystems []string
+
+	var globalSearch []string
+	masterlist := make(map[string][]string)
+
+	for systemId, paths := range systemPaths {
+		sysStart := time.Now()
+		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
+		exists := fileExists(gamelistPath)
+
+		if !overwrite && exists && !cfg.List.RamOnly {
+			if !quiet {
+				fmt.Printf("Reusing %s: gamelist already exists\n", systemId)
+			}
+			reused++
+			lines, _ := utils.ReadLines(gamelistPath)
+			totalGames += len(lines)
+			cache.SetList(gamelistFilename(systemId), lines)
+			if !quiet {
+				fmt.Printf("Finished %s in %.2fs (reused %d entries)\n",
+					systemId, time.Since(sysStart).Seconds(), len(lines))
+			}
+			continue
+		}
+
+		if exists && overwrite && !quiet && !cfg.List.RamOnly {
+			fmt.Printf("Rebuilding %s (overwrite enabled)\n", systemId)
+		}
+
+		var systemFiles []string
+		for _, path := range paths {
+			files, err := games.GetFiles(systemId, path)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				continue
+			}
+			systemFiles = append(systemFiles, files...)
+		}
+
+		systemFiles = filterUniqueWithMGL(systemFiles)
+		systemFiles = filterExtensions(systemFiles, systemId, cfg)
+
+		seenSys := make(map[string]struct{})
+		deduped := systemFiles[:0]
+		for _, f := range systemFiles {
+			base := strings.ToLower(filepath.Base(f))
+			if _, ok := seenSys[base]; ok {
+				continue
+			}
+			seenSys[base] = struct{}{}
+			deduped = append(deduped, f)
+		}
+		systemFiles = deduped
+
+		if len(systemFiles) == 0 {
+			emptySystems = append(emptySystems, systemId)
+			continue
+		}
+
+		// Apply filterlists
+		systemFiles = applyFilterlists(gamelistDir, systemId, systemFiles, cfg)
+
+		sort.Strings(systemFiles)
+		totalGames += len(systemFiles)
+
+		writeGamelist(gamelistDir, systemId, systemFiles, cfg.List.RamOnly)
+
+		if exists && overwrite && !cfg.List.RamOnly {
+			rebuilt++
+		} else {
+			fresh++
+		}
+
+		for _, f := range systemFiles {
+			masterlist[systemId] = append(masterlist[systemId], f)
+			clean := utils.StripTimestamp(f)
+			base := strings.TrimSpace(clean)
+			if base != "" {
+				globalSearch = append(globalSearch, base)
+			}
+		}
+
+		if !quiet {
+			// FIXED: dump extension map for this system
+			if sys, err := games.GetSystem(systemId); err == nil {
+				if extMap, ok := games.systemExts[sys.Id]; ok {
+					var exts []string
+					for e := range extMap {
+						exts = append(exts, e)
+					}
+					sort.Strings(exts)
+					fmt.Printf("  [DEBUG] %s extensions: %v\n", sys.Id, exts)
 				}
 			}
-		} else if MatchSystemFile(*system, path) {
-			*results = append(*results, path)
+
+			fmt.Printf("Finished %s in %.2fs (%d entries)\n",
+				systemId, time.Since(sysStart).Seconds(), len(systemFiles))
+		}
+	}
+
+	if overwrite || fresh > 0 || rebuilt > 0 {
+		sort.Strings(globalSearch)
+		cache.SetList("Search.txt", globalSearch)
+		if !cfg.List.RamOnly {
+			var sb strings.Builder
+			for _, s := range globalSearch {
+				sb.WriteString(s)
+				sb.WriteByte('\n')
+			}
+			data := []byte(sb.String())
+			searchPath := filepath.Join(gamelistDir, "Search.txt")
+			if err := os.MkdirAll(filepath.Dir(searchPath), 0755); err != nil {
+				panic(err)
+			}
+			if err := os.WriteFile(searchPath, data, 0644); err != nil {
+				panic(err)
+			}
+		}
+		if !quiet {
+			fmt.Printf("Built Search list with %d entries\n", len(globalSearch))
+		}
+	}
+
+	if overwrite || fresh > 0 || rebuilt > 0 {
+		var cacheMaster []string
+		var sb strings.Builder
+		for system, entries := range masterlist {
+			sort.Strings(entries)
+			header := fmt.Sprintf("### %s (%d)", system, len(entries))
+			cacheMaster = append(cacheMaster, header)
+			sb.WriteString(header + "\n")
+			for _, e := range entries {
+				clean := utils.StripTimestamp(e)
+				cacheMaster = append(cacheMaster, clean)
+				sb.WriteString(clean + "\n")
+			}
+			sb.WriteByte('\n')
+		}
+		cache.SetList("Masterlist.txt", cacheMaster)
+		if !cfg.List.RamOnly {
+			masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
+			if err := os.MkdirAll(filepath.Dir(masterPath), 0755); err != nil {
+				panic(err)
+			}
+			if err := os.WriteFile(masterPath, []byte(sb.String()), 0644); err != nil {
+				panic(err)
+			}
+		}
+		if !quiet {
+			fmt.Printf("Built Masterlist with %d systems\n", len(masterlist))
+		}
+	}
+
+	if !quiet {
+		taken := time.Since(start).Seconds()
+		fmt.Printf("Indexing complete: %d games in %.1fs (%d fresh, %d rebuilt, %d reused)\n",
+			totalGames, taken, fresh, rebuilt, reused)
+		if len(emptySystems) > 0 {
+			fmt.Printf("No games found for: %s\n", strings.Join(emptySystems, ", "))
+		}
+	}
+
+	return totalGames
+}
+
+// Entry point for this tool when called from SAM
+func RunList(args []string) error {
+	fs := flag.NewFlagSet("list", flag.ContinueOnError)
+
+	// Figure out base path relative to the SAM binary
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to detect SAM install path: %w", err)
+	}
+	baseDir := filepath.Dir(exePath)
+
+	// Default gamelist directory inside SAM’s folder
+	defaultOut := filepath.Join(baseDir, "SAM_Gamelists")
+	gamelistDir := fs.String("o", defaultOut, "gamelist files directory")
+
+	filter := fs.String("s", "all", "list of systems to index (comma separated)")
+	quiet := fs.Bool("q", false, "suppress all status output")
+	detect := fs.Bool("d", false, "list active system folders")
+	overwrite := fs.Bool("overwrite", false, "overwrite existing gamelists if present")
+	ramOnly := fs.Bool("ramonly", false, "build lists in RAM only (do not write to SD)")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
+
+	if *ramOnly {
+		cfg.List.RamOnly = true
+		if !*quiet {
+			fmt.Println("[LIST] RamOnly mode enabled via CLI")
+		}
+	}
+
+	var systems []games.System
+	if *filter == "all" {
+		if len(cfg.List.Exclude) > 0 {
+			systems = games.AllSystemsExcept(cfg.List.Exclude)
+		} else {
+			systems = games.AllSystems()
+		}
+	} else {
+		for _, filterId := range strings.Split(*filter, ",") {
+			filterId = strings.TrimSpace(filterId)
+			system, err := games.LookupSystem(filterId)
+			if err != nil {
+				continue
+			}
+			systems = append(systems, *system)
+		}
+	}
+
+	if *detect {
+		results := games.GetActiveSystemPaths(cfg, systems)
+		for _, r := range results {
+			fmt.Printf("%s:%s\n", strings.ToLower(r.System.Id), r.Path)
 		}
 		return nil
 	}
 
-	stack.new()
-	defer stack.pop()
-
-	root, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	err = os.Chdir(filepath.Dir(path))
-	if err != nil {
-		return nil, err
+	systemPaths := games.GetSystemPaths(cfg, systems)
+	systemPathsMap := make(map[string][]string)
+	for _, p := range systemPaths {
+		systemPathsMap[p.System.Id] = append(systemPathsMap[p.System.Id], p.Path)
 	}
 
-	var realPath string
-	if root.Mode()&os.ModeSymlink == 0 {
-		realPath = path
-	} else {
-		realPath, err = filepath.EvalSymlinks(path)
-		if err != nil {
-			return nil, err
-		}
-	}
-	realRoot, err := os.Stat(realPath)
-	if err != nil {
-		return nil, err
-	}
-	if !realRoot.IsDir() {
-		return nil, fmt.Errorf("root is not a directory")
-	}
-	err = filepath.WalkDir(realPath, scanner)
-	if err != nil {
-		return nil, err
-	}
-	results, err := stack.get()
-	if err != nil {
-		return nil, err
-	}
-	allResults = append(allResults, *results...)
+	total := createGamelists(cfg, *gamelistDir, systemPathsMap, *quiet, *overwrite)
 
-	if realPath != path {
-		for i := range allResults {
-			allResults[i] = strings.Replace(allResults[i], realPath, path, 1)
-		}
+	if total == 0 {
+		return fmt.Errorf("no games indexed")
 	}
-	err = os.Chdir(cwd)
-	if err != nil {
-		return nil, err
-	}
-
-	// enforce .mgl priority: drop non-mgl siblings if a .mgl exists
-	finalResults := filterMglPriority(allResults)
-
-	return finalResults, nil
-}
-
-func filterMglPriority(files []string) []string {
-	mglMap := make(map[string]string)
-	for _, f := range files {
-		if strings.HasSuffix(strings.ToLower(f), ".mgl") {
-			base := strings.TrimSuffix(filepath.Base(f), filepath.Ext(f))
-			mglMap[base] = f
-		}
-	}
-
-	if len(mglMap) == 0 {
-		return files
-	}
-
-	var results []string
-	for _, f := range files {
-		ext := strings.ToLower(filepath.Ext(f))
-		if ext == ".mgl" {
-			results = append(results, f)
-			continue
-		}
-		base := strings.TrimSuffix(filepath.Base(f), ext)
-		if _, ok := mglMap[base]; !ok {
-			results = append(results, f)
-		}
-	}
-	return results
-}
-
-func GetAllFiles(systemPaths map[string][]string, statusFn func(systemId string, path string)) ([][2]string, error) {
-	var allFiles [][2]string
-	for systemId, paths := range systemPaths {
-		for i := range paths {
-			statusFn(systemId, paths[i])
-			files, err := GetFiles(systemId, paths[i])
-			if err != nil {
-				return nil, err
-			}
-			for i := range files {
-				allFiles = append(allFiles, [2]string{systemId, files[i]})
-			}
-		}
-	}
-	return allFiles, nil
-}
-
-func FilterUniqueFilenames(files []string) []string {
-	var filtered []string
-	filenames := make(map[string]struct{})
-	for i := range files {
-		fn := filepath.Base(files[i])
-		if _, ok := filenames[fn]; ok {
-			continue
-		}
-		filenames[fn] = struct{}{}
-		filtered = append(filtered, files[i])
-	}
-	return filtered
-}
-
-var zipRe = regexp.MustCompile(`^(.*\.zip)/(.+)$`)
-
-func FileExists(path string) bool {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true
-	}
-	zipMatch := zipRe.FindStringSubmatch(path)
-	if zipMatch != nil {
-		zipPath := zipMatch[1]
-		file := zipMatch[2]
-		zipFiles, err := utils.ListZip(zipPath)
-		if err != nil {
-			return false
-		}
-		for i := range zipFiles {
-			if zipFiles[i] == file {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-type RbfInfo struct {
-	Path      string
-	Filename  string
-	ShortName string
-	MglName   string
-}
-
-func ParseRbf(path string) RbfInfo {
-	info := RbfInfo{
-		Path:     path,
-		Filename: filepath.Base(path),
-	}
-	if strings.Contains(info.Filename, "_") {
-		info.ShortName = info.Filename[0:strings.LastIndex(info.Filename, "_")]
-	} else {
-		info.ShortName = strings.TrimSuffix(info.Filename, filepath.Ext(info.Filename))
-	}
-	if strings.HasPrefix(path, config.SdFolder) {
-		relDir := strings.TrimPrefix(filepath.Dir(path), config.SdFolder+"/")
-		info.MglName = filepath.Join(relDir, info.ShortName)
-	} else {
-		info.MglName = path
-	}
-	return info
-}
-
-func shallowScanRbf() ([]RbfInfo, error) {
-	results := make([]RbfInfo, 0)
-	isRbf := func(file os.DirEntry) bool {
-		return filepath.Ext(strings.ToLower(file.Name())) == ".rbf"
-	}
-	infoSymlink := func(path string) (RbfInfo, error) {
-		info, err := os.Lstat(path)
-		if err != nil {
-			return RbfInfo{}, err
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			newPath, err := os.Readlink(path)
-			if err != nil {
-				return RbfInfo{}, err
-			}
-			return ParseRbf(newPath), nil
-		}
-		return ParseRbf(path), nil
-	}
-	files, err := os.ReadDir(config.SdFolder)
-	if err != nil {
-		return results, err
-	}
-	for _, file := range files {
-		if file.IsDir() && strings.HasPrefix(file.Name(), "_") {
-			subFiles, err := os.ReadDir(filepath.Join(config.SdFolder, file.Name()))
-			if err != nil {
-				continue
-			}
-			for _, subFile := range subFiles {
-				if isRbf(subFile) {
-					path := filepath.Join(config.SdFolder, file.Name(), subFile.Name())
-					info, err := infoSymlink(path)
-					if err != nil {
-						continue
-					}
-					results = append(results, info)
-				}
-			}
-		} else if isRbf(file) {
-			path := filepath.Join(config.SdFolder, file.Name())
-			info, err := infoSymlink(path)
-			if err != nil {
-				continue
-			}
-			results = append(results, info)
-		}
-	}
-	return results, nil
-}
-
-func SystemsWithRbf() map[string]RbfInfo {
-	results := make(map[string]RbfInfo)
-	rbfFiles, err := shallowScanRbf()
-	if err != nil {
-		return results
-	}
-	for _, rbfFile := range rbfFiles {
-		for _, system := range Systems {
-			shortName := system.Rbf
-			if strings.Contains(shortName, "/") {
-				shortName = shortName[strings.LastIndex(shortName, "/")+1:]
-			}
-			if strings.EqualFold(rbfFile.ShortName, shortName) {
-				results[system.Id] = rbfFile
-			}
-		}
-	}
-	return results
-}
-
-// --- Precompute extension maps ---
-func init() {
-	systemExts = make(map[string]map[string]struct{})
-	for _, sys := range Systems {
-		extMap := make(map[string]struct{})
-		for _, slot := range sys.Slots {
-			for _, ext := range slot.Exts {
-				extMap[strings.ToLower(ext)] = struct{}{}
-			}
-		}
-		// also add .mgl globally
-		extMap[".mgl"] = struct{}{}
-		systemExts[sys.Id] = extMap
-	}
+	return nil
 }
