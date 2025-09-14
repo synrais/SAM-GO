@@ -346,18 +346,6 @@ func createGamelists(cfg *config.UserConfig,
 		}
 
 		if !quiet {
-			// NEW: dump extension map for this system
-			if sys, err := games.GetSystem(systemId); err == nil {
-				if extMap, ok := games.SystemExts[sys.Id]; ok {
-					var exts []string
-					for e := range extMap {
-						exts = append(exts, e)
-					}
-					sort.Strings(exts)
-					fmt.Printf("  [DEBUG] %s extensions: %v\n", sys.Id, exts)
-				}
-			}
-
 			fmt.Printf("Finished %s in %.2fs (%d entries)\n",
 				systemId, time.Since(sysStart).Seconds(), len(systemFiles))
 		}
