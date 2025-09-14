@@ -160,7 +160,9 @@ func addToFile(system, game, suffix string) {
 	defer f.Close()
 
 	fmt.Fprintf(f, "%s\n", entry)
-	fmt.Printf("\n[LIST] Added \"%s\" to %s%s\n", entry, system, suffix)
+
+	// Log the raw game string for readability
+	fmt.Printf("\n[LIST] Added \"%s\" to %s%s\n", game, system, suffix)
 }
 
 // StaticEvent describes a snapshot of the static detector state.
