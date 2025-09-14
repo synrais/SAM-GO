@@ -71,34 +71,15 @@ func MatchSystemFile(system System, path string) bool {
 
 	// .mgl always allowed
 	if ext == ".mgl" {
-		if os.Getenv("SAM_DEBUG_EXT") == "1" {
-			fmt.Printf("[DEBUG][%s] Allowing %s (special .mgl)\n", system.Id, filepath.Base(path))
-		}
 		return true
 	}
 
 	// check precomputed map
 	if exts, ok := systemExts[system.Id]; ok {
 		_, ok := exts[ext]
-
-		// --- DEBUG OUTPUT ---
-		if os.Getenv("SAM_DEBUG_EXT") == "1" {
-			fmt.Printf("[DEBUG][%s] Checking file: %s (ext=%s) → match=%v, allowed=%v\n",
-				system.Id, filepath.Base(path), ext, ok, keys(exts))
-		}
-
 		return ok
 	}
 	return false
-}
-
-// helper to stringify map keys
-func keys(m map[string]struct{}) []string {
-	out := []string{}
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
 }
 
 func AllSystems() []System {
