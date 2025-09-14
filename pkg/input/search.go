@@ -61,7 +61,7 @@ func SearchAndPlay() {
 
 			switch key {
 			case "ENTER":
-				qn, qext := normalizeQuery(sb.String())
+				qn, qext := utils.NormalizeEntry(sb.String())
 				if qn != "" {
 					fmt.Printf("[SEARCH] Searching... (%d titles for %q)\n", len(gameIndex), sb.String())
 					candidates = findMatches(qn, qext)
@@ -206,16 +206,6 @@ func launchGame(path string) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	_ = cmd.Start()
-}
-
-func normalizeQuery(q string) (string, string) {
-	base := filepath.Base(q)
-	ext := strings.ToLower(filepath.Ext(base))
-	name := strings.TrimSuffix(base, ext)
-	name = utils.BracketChars.ReplaceAllString(name, "")
-	name = strings.ToLower(name)
-	name = utils.NonAlnum.ReplaceAllString(name, "")
-	return name, strings.TrimPrefix(ext, ".")
 }
 
 func levenshtein(a, b string) int {
