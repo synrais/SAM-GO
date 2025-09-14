@@ -207,10 +207,10 @@ func fileExists(path string) bool {
 }
 
 func createGamelists(cfg *config.UserConfig,
-    gamelistDir string,
-    systemPaths map[string][]string,
-    quiet bool,
-    overwrite bool) int
+	gamelistDir string,
+	systemPaths map[string][]string,
+	quiet bool,
+	overwrite bool) int {
 
 	start := time.Now()
 	if !quiet {
@@ -262,12 +262,12 @@ func createGamelists(cfg *config.UserConfig,
 			systemFiles = append(systemFiles, files...)
 		}
 
-		// .mgl preference
-		if filter {
-			systemFiles = filterUniqueWithMGL(systemFiles)
-		}
+		// .mgl preference (always applied)
+		systemFiles = filterUniqueWithMGL(systemFiles)
+
 		// Extension filtering
 		systemFiles = filterExtensions(systemFiles, systemId, cfg)
+
 		// Dedup within system (full filename+ext)
 		seenSys := make(map[string]struct{})
 		deduped := systemFiles[:0]
