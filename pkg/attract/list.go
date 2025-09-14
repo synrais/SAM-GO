@@ -4,15 +4,16 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"github.com/synrais/SAM-GO/pkg/cache"
-	"github.com/synrais/SAM-GO/pkg/config"
-	"github.com/synrais/SAM-GO/pkg/games"
-	"github.com/synrais/SAM-GO/pkg/utils"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/synrais/SAM-GO/pkg/cache"
+	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/games"
+	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 func gamelistFilename(systemId string) string {
