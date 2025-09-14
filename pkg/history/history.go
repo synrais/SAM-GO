@@ -11,6 +11,7 @@ import (
 
 	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 const (
@@ -160,14 +161,19 @@ retry:
 		return "", errors.New("no gamelists in cache")
 	}
 
-	// Apply include/exclude
+	// Apply include/exclude filters consistently
 	var filtered []string
 	for _, sys := range systems {
 		base := strings.TrimSuffix(filepath.Base(sys), "_gamelist.txt")
+
+		// normalize comparisons
+		baseNorm := utils.NormalizeName(base)
+
+		// include filter
 		if len(cfg.Attract.Include) > 0 {
 			match := false
 			for _, inc := range cfg.Attract.Include {
-				if strings.EqualFold(strings.TrimSpace(inc), base) {
+				if utils.NormalizeName(inc) == baseNorm {
 					match = true
 					break
 				}
@@ -176,9 +182,11 @@ retry:
 				continue
 			}
 		}
+
+		// exclude filter
 		skip := false
 		for _, ex := range cfg.Attract.Exclude {
-			if strings.EqualFold(strings.TrimSpace(ex), base) {
+			if utils.NormalizeName(ex) == baseNorm {
 				skip = true
 				break
 			}
@@ -186,6 +194,7 @@ retry:
 		if skip {
 			continue
 		}
+
 		filtered = append(filtered, sys)
 	}
 	if len(filtered) == 0 {
