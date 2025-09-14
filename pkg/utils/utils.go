@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -356,11 +357,29 @@ func NormalizeName(p string) string {
 // StripTimestamp removes a leading <timestamp> prefix from a line, if present.
 func StripTimestamp(line string) string {
 	if strings.HasPrefix(line, "<") {
-		if idx := strings.Index(line, ">"); idx > 1 {
-			return line[idx+1:]
+		if idx := strings.Index(line, ">"); idx != -1 {
+			return strings.TrimSpace(line[idx+1:])
 		}
 	}
 	return line
+}
+
+// ParseLine extracts (timestamp, path) from a gamelist entry.
+// If no timestamp is present, ts = 0.
+func ParseLine(line string) (float64, string) {
+	line = strings.TrimSpace(line)
+	if strings.HasPrefix(line, "<") {
+		if idx := strings.Index(line, ">"); idx != -1 {
+			tsStr := strings.TrimSpace(line[1:idx])
+			path := strings.TrimSpace(line[idx+1:])
+			if t, err := strconv.ParseFloat(tsStr, 64); err == nil {
+				return t, path
+			}
+			// malformed timestamp: ignore, return as plain path
+			return 0, path
+		}
+	}
+	return 0, line
 }
 
 var (
