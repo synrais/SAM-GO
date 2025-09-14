@@ -394,10 +394,10 @@ func RunList(args []string) error {
 	gamelistDir := fs.String("o", defaultOut, "gamelist files directory")
 
 	filter := fs.String("s", "all", "list of systems to index (comma separated)")
-	progress := fs.Bool("p", false, "print output for dialog gauge")
 	quiet := fs.Bool("q", false, "suppress all status output")
 	detect := fs.Bool("d", false, "list active system folders")
 	overwrite := fs.Bool("overwrite", false, "overwrite existing gamelists if present")
+	ramOnly := fs.Bool("ramonly", false, "build lists in RAM only (do not write to SD)")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -405,6 +405,14 @@ func RunList(args []string) error {
 
 	// Load user config (for List options)
 	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
+
+	// CLI flag overrides INI
+	if *ramOnly {
+		cfg.List.RamOnly = true
+		if !*quiet {
+			fmt.Println("[LIST] RamOnly mode enabled via CLI")
+		}
+	}
 
 	var systems []games.System
 	if *filter == "all" {
@@ -441,7 +449,7 @@ func RunList(args []string) error {
 		systemPathsMap[p.System.Id] = append(systemPathsMap[p.System.Id], p.Path)
 	}
 
-	total := createGamelists(cfg, *gamelistDir, systemPathsMap, *progress, *quiet, *overwrite, *overwrite)
+	total := createGamelists(cfg, *gamelistDir, systemPathsMap, *quiet, *overwrite, *overwrite)
 
 	if total == 0 {
 		return fmt.Errorf("no games indexed")
