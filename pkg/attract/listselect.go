@@ -137,7 +137,7 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 
 		// Static list timestamps
 		if cfg.List.UseStaticlist && allowedFor(system,
-			cfg.Attract.StaticlistInclude, cfg.Attract.StaticlistExclude) {
+			cfg.List.StaticlistInclude, cfg.List.StaticlistExclude) {
 
 			sm := readStaticMap(filepath.Join(fullDir, system+"_staticlist.txt"))
 			if sm != nil {
