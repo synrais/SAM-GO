@@ -207,115 +207,50 @@ func Run(args []string) {
 			run.Run([]string{gamePath})
 
 			wait := parsePlayTime(attractCfg.PlayTime, r)
+			deadline := time.Now().Add(wait)
 
-			if attractCfg.UseStaticlist {
-				start := time.Now()
-
-				// normalize path consistently
-				base, _ := utils.NormalizeEntry(gamePath)
-
-				deadline := start.Add(wait)
-				var skipAt time.Time
-				if ts > 0 {
-					skipDuration := time.Duration(ts*float64(time.Second)) +
-						time.Duration(attractCfg.SkipafterStatic)*time.Second
-					skipAt = start.Add(skipDuration)
+			for time.Now().Before(deadline) {
+				if input.IsSearching() {
+					time.Sleep(100 * time.Millisecond)
+					deadline = deadline.Add(100 * time.Millisecond)
+					continue
 				}
-				for time.Now().Before(deadline) {
-					if input.IsSearching() {
-						time.Sleep(100 * time.Millisecond)
-						deadline = deadline.Add(100 * time.Millisecond)
-						if !skipAt.IsZero() {
-							skipAt = skipAt.Add(100 * time.Millisecond)
-						}
-						continue
+				remaining := time.Until(deadline)
+				select {
+				case <-time.After(remaining):
+					if next, err := history.PlayNext(); err == nil && next != "" {
+						_ = history.SetNowPlaying(next) // browsing only
+						gamePath = next
+						systemID = ""
+						ts = 0
+						continue Launch
 					}
-					select {
-					case <-time.After(1 * time.Second):
-					case <-skipCh:
-						if next, err := history.PlayNext(); err == nil && next != "" {
-							_ = history.SetNowPlaying(next) // browsing only
-							gamePath = next
-							systemID = ""
-							ts = 0
-							continue Launch
-						}
-						return
-					case <-backCh:
-						if prev, err := history.PlayBack(); err == nil && prev != "" {
-							_ = history.SetNowPlaying(prev) // browsing only
-							gamePath = prev
-							systemID = ""
-							ts = 0
-							continue Launch
-						}
+					return
+				case <-skipCh:
+					if next, err := history.PlayNext(); err == nil && next != "" {
+						_ = history.SetNowPlaying(next) // browsing only
+						gamePath = next
+						systemID = ""
+						ts = 0
+						continue Launch
 					}
-					if !skipAt.IsZero() && time.Now().After(skipAt) {
-						break
-					}
-					newTs := ReadStaticTimestamp("/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists", systemID, base)
-					if newTs > 0 && newTs != ts {
-						ts = newTs
-						skipDuration := time.Duration(newTs*float64(time.Second)) +
-							time.Duration(attractCfg.SkipafterStatic)*time.Second
-						skipAt = start.Add(skipDuration)
-						if time.Now().After(skipAt) {
-							break
-						}
+					return
+				case <-backCh:
+					if prev, err := history.PlayBack(); err == nil && prev != "" {
+						_ = history.SetNowPlaying(prev) // browsing only
+						gamePath = prev
+						systemID = ""
+						ts = 0
+						continue Launch
 					}
 				}
-				if next, err := history.PlayNext(); err == nil && next != "" {
-					_ = history.SetNowPlaying(next) // browsing only
-					gamePath = next
-					systemID = ""
-					ts = 0
-					continue Launch
-				}
-			} else {
-				deadline := time.Now().Add(wait)
-				for time.Now().Before(deadline) {
-					if input.IsSearching() {
-						time.Sleep(100 * time.Millisecond)
-						deadline = deadline.Add(100 * time.Millisecond)
-						continue
-					}
-					remaining := time.Until(deadline)
-					select {
-					case <-time.After(remaining):
-						if next, err := history.PlayNext(); err == nil && next != "" {
-							_ = history.SetNowPlaying(next) // browsing only
-							gamePath = next
-							systemID = ""
-							ts = 0
-							continue Launch
-						}
-						return
-					case <-skipCh:
-						if next, err := history.PlayNext(); err == nil && next != "" {
-							_ = history.SetNowPlaying(next) // browsing only
-							gamePath = next
-							systemID = ""
-							ts = 0
-							continue Launch
-						}
-						return
-					case <-backCh:
-						if prev, err := history.PlayBack(); err == nil && prev != "" {
-							_ = history.SetNowPlaying(prev) // browsing only
-							gamePath = prev
-							systemID = ""
-							ts = 0
-							continue Launch
-						}
-					}
-				}
-				if next, err := history.PlayNext(); err == nil && next != "" {
-					_ = history.SetNowPlaying(next) // browsing only
-					gamePath = next
-					systemID = ""
-					ts = 0
-					continue Launch
-				}
+			}
+			if next, err := history.PlayNext(); err == nil && next != "" {
+				_ = history.SetNowPlaying(next) // browsing only
+				gamePath = next
+				systemID = ""
+				ts = 0
+				continue Launch
 			}
 			return
 		}
