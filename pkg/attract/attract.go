@@ -1,7 +1,6 @@
 package attract
 
 import (
-	"bufio"
 	"fmt"
 	"math/rand"
 	"os"
@@ -11,45 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/history"
 	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/run"
 	"github.com/synrais/SAM-GO/pkg/staticdetector"
 )
-
-// readLines reads all non-empty lines from a file.
-func readLines(path string) ([]string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var lines []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line != "" {
-			lines = append(lines, line)
-		}
-	}
-	return lines, scanner.Err()
-}
-
-// writeLines writes lines to a file (overwrites).
-func writeLines(path string, lines []string) error {
-	tmp, err := os.CreateTemp("", "list-*.txt")
-	if err != nil {
-		return err
-	}
-	defer tmp.Close()
-
-	for _, l := range lines {
-		_, _ = tmp.WriteString(l + "\n")
-	}
-	return os.Rename(tmp.Name(), path)
-}
 
 // parsePlayTime handles "40" or "40-130"
 func parsePlayTime(value string, r *rand.Rand) time.Duration {
@@ -113,31 +80,27 @@ func disabled(system string, gamePath string, cfg *config.UserConfig) bool {
 }
 
 // rebuildLists calls SAM -list to regenerate gamelists.
-func rebuildLists(listDir string) []string {
+func rebuildLists() {
 	fmt.Println("All gamelists empty. Rebuilding with SAM -list...")
 
 	exe, _ := os.Executable()
-	cmd := exec.Command(exe, "-list")
+	cmd := exec.Command(exe, "-list", "-overwrite")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	_ = cmd.Run()
 
-	refreshed, _ := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
-	if len(refreshed) > 0 {
-		fmt.Printf("Rebuilt %d gamelists, resuming Attract Mode.\n", len(refreshed))
-	}
-	return refreshed
+	fmt.Println("Rebuilt gamelists, cache refreshed.")
 }
 
 // filterAllowed applies include/exclude restrictions case-insensitively.
-func filterAllowed(allFiles []string, include, exclude []string) []string {
+func filterAllowed(all []string, include, exclude []string) []string {
 	var filtered []string
-	for _, f := range allFiles {
-		base := strings.TrimSuffix(filepath.Base(f), "_gamelist.txt")
+	for _, sys := range all {
+		base := strings.TrimSuffix(filepath.Base(sys), "_gamelist.txt")
 		if len(include) > 0 {
 			match := false
-			for _, sys := range include {
-				if strings.EqualFold(strings.TrimSpace(sys), base) {
+			for _, s := range include {
+				if strings.EqualFold(strings.TrimSpace(s), base) {
 					match = true
 					break
 				}
@@ -147,8 +110,8 @@ func filterAllowed(allFiles []string, include, exclude []string) []string {
 			}
 		}
 		skip := false
-		for _, sys := range exclude {
-			if strings.EqualFold(strings.TrimSpace(sys), base) {
+		for _, s := range exclude {
+			if strings.EqualFold(strings.TrimSpace(s), base) {
 				skip = true
 				break
 			}
@@ -156,7 +119,7 @@ func filterAllowed(allFiles []string, include, exclude []string) []string {
 		if skip {
 			continue
 		}
-		filtered = append(filtered, f)
+		filtered = append(filtered, sys)
 	}
 	return filtered
 }
@@ -166,9 +129,6 @@ func Run(args []string) {
 	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
 	attractCfg := cfg.Attract
 
-	listDir := "/tmp/.SAM_List"
-	fullDir := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
-
 	// Build gamelists before processing
 	listArgs := []string{}
 	if attractCfg.FreshListsEachLoad {
@@ -177,7 +137,7 @@ func Run(args []string) {
 	if err := RunList(listArgs); err != nil {
 		fmt.Fprintln(os.Stderr, "List build failed:", err)
 	}
-	ProcessLists(listDir, fullDir, cfg)
+	ProcessLists("", "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists", cfg)
 
 	// control channels
 	skipCh := make(chan struct{}, 1)
@@ -220,20 +180,23 @@ func Run(args []string) {
 		)
 	}
 
-	// Collect gamelists
-	allFiles, err := filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
-	if err != nil || len(allFiles) == 0 {
-		fmt.Println("No gamelists found in", listDir)
-		os.Exit(1)
+	// Collect gamelists from cache
+	allKeys := cache.ListKeys()
+	var allFiles []string
+	for _, k := range allKeys {
+		if strings.HasSuffix(k, "_gamelist.txt") {
+			allFiles = append(allFiles, k)
+		}
 	}
 	files := filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
 	if len(files) == 0 {
-		fmt.Println("No gamelists match Include/Exclude in INI")
+		fmt.Println("No gamelists found in cache")
 		os.Exit(1)
 	}
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	fmt.Println("Attract mode running. Ctrl-C to exit.")
+
 	playGame := func(gamePath, systemID string, ts float64) {
 	Launch:
 		for {
@@ -280,12 +243,11 @@ func Run(args []string) {
 							ts = 0
 							continue Launch
 						}
-						// no previous: keep waiting
 					}
 					if !skipAt.IsZero() && time.Now().After(skipAt) {
 						break
 					}
-					newTs := ReadStaticTimestamp(fullDir, systemID, norm)
+					newTs := ReadStaticTimestamp("/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists", systemID, norm)
 					if newTs > 0 && newTs != ts {
 						ts = newTs
 						skipDuration := time.Duration(newTs*float64(time.Second)) +
@@ -335,7 +297,6 @@ func Run(args []string) {
 							ts = 0
 							continue Launch
 						}
-						// no previous: continue waiting
 					}
 				}
 				if next, err := history.PlayNext(); err == nil && next != "" {
@@ -365,9 +326,14 @@ func Run(args []string) {
 		}
 
 		if len(files) == 0 {
-			rebuildLists(listDir)
-			ProcessLists(listDir, fullDir, cfg)
-			allFiles, _ = filepath.Glob(filepath.Join(listDir, "*_gamelist.txt"))
+			rebuildLists()
+			allKeys = cache.ListKeys()
+			allFiles = nil
+			for _, k := range allKeys {
+				if strings.HasSuffix(k, "_gamelist.txt") {
+					allFiles = append(allFiles, k)
+				}
+			}
 			files = filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
 			if len(files) == 0 {
 				fmt.Println("Failed to rebuild gamelists, exiting.")
@@ -375,15 +341,17 @@ func Run(args []string) {
 			}
 		}
 
-		listFile := files[r.Intn(len(files))]
-		lines, err := readLines(listFile)
-		if err != nil || len(lines) == 0 {
-			for i, f := range files {
-				if f == listFile {
-					files = append(files[:i], files[i+1:]...)
-					break
+		listKey := files[r.Intn(len(files))]
+		lines := cache.GetList(listKey)
+		if len(lines) == 0 {
+			// drop empty system from rotation
+			var newFiles []string
+			for _, f := range files {
+				if f != listKey {
+					newFiles = append(newFiles, f)
 				}
 			}
+			files = newFiles
 			continue
 		}
 
@@ -392,19 +360,19 @@ func Run(args []string) {
 			index = r.Intn(len(lines))
 		}
 		ts, gamePath := ParseLine(lines[index])
-		systemID := strings.TrimSuffix(filepath.Base(listFile), "_gamelist.txt")
+		systemID := strings.TrimSuffix(filepath.Base(listKey), "_gamelist.txt")
 
 		if disabled(systemID, gamePath, cfg) {
 			lines = append(lines[:index], lines[index+1:]...)
-			_ = writeLines(listFile, lines)
+			cache.SetList(listKey, lines)
 			continue
 		}
 
 		_ = history.Play(gamePath)
 		playGame(gamePath, systemID, ts)
 
+		// remove from RAM copy
 		lines = append(lines[:index], lines[index+1:]...)
-		_ = writeLines(listFile, lines)
-
+		cache.SetList(listKey, lines)
 	}
 }
