@@ -20,22 +20,26 @@ func gamelistFilename(systemId string) string {
 	return systemId + "_gamelist.txt"
 }
 
-func writeGamelist(gamelistDir string, systemId string, files []string) {
+func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly bool) {
+	// Always cache in memory
+	cache.SetList(gamelistFilename(systemId), files)
+
+	if ramOnly {
+		return
+	}
+
+	// Write directly to FAT
 	gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
-	tmpPath, err := os.CreateTemp("", "gamelist-*.txt")
+	f, err := os.Create(gamelistPath)
 	if err != nil {
 		panic(err)
 	}
+	defer f.Close()
 
 	for _, file := range files {
-		_, _ = tmpPath.WriteString(file + "\n")
+		_, _ = f.WriteString(file + "\n")
 	}
-	_ = tmpPath.Sync()
-	_ = tmpPath.Close()
-
-	if err := utils.MoveFile(tmpPath.Name(), gamelistPath); err != nil {
-		panic(err)
-	}
+	f.Sync()
 }
 
 func filterUniqueWithMGL(files []string) []string {
@@ -161,17 +165,28 @@ func parseLines(data string) []string {
 	return out
 }
 
-func writeCustomList(dir, filename string, entries []string) {
-	path := filepath.Join(dir, filename)
-	tmp, _ := os.CreateTemp("", "amiga-*.txt")
-	for _, e := range entries {
-		_, _ = tmp.WriteString(e + "\n")
+func writeCustomList(dir, filename string, entries []string, ramOnly bool) {
+	// Always cache
+	cache.SetList(filename, entries)
+
+	if ramOnly {
+		return
 	}
-	tmp.Close()
-	_ = utils.MoveFile(tmp.Name(), path)
+
+	path := filepath.Join(dir, filename)
+	f, err := os.Create(path)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	for _, e := range entries {
+		_, _ = f.WriteString(e + "\n")
+	}
+	f.Sync()
 }
 
-func writeAmigaVisionLists(gamelistDir string, paths []string) (int, int) {
+func writeAmigaVisionLists(gamelistDir string, paths []string, ramOnly bool) (int, int) {
 	var gamesList, demosList []string
 
 	for _, path := range paths {
@@ -192,10 +207,10 @@ func writeAmigaVisionLists(gamelistDir string, paths []string) (int, int) {
 	}
 
 	if len(gamesList) > 0 {
-		writeCustomList(gamelistDir, "AmigaVisionGames_gamelist.txt", gamesList)
+		writeCustomList(gamelistDir, "AmigaVisionGames_gamelist.txt", gamesList, ramOnly)
 	}
 	if len(demosList) > 0 {
-		writeCustomList(gamelistDir, "AmigaVisionDemos_gamelist.txt", demosList)
+		writeCustomList(gamelistDir, "AmigaVisionDemos_gamelist.txt", demosList, ramOnly)
 	}
 
 	return len(gamesList), len(demosList)
@@ -292,13 +307,8 @@ func createGamelists(cfg *config.UserConfig,
 		sort.Strings(systemFiles)
 		totalGames += len(systemFiles)
 
-		// Only write gamelist if not in RAM-only mode
-		if !cfg.List.RamOnly {
-			writeGamelist(gamelistDir, systemId, systemFiles)
-		}
-
-		// Push gamelist into cache
-		cache.SetList(gamelistFilename(systemId), systemFiles)
+		// Write gamelist (RAM-only or FAT depending on flag)
+		writeGamelist(gamelistDir, systemId, systemFiles, cfg.List.RamOnly)
 
 		if exists && overwrite && !cfg.List.RamOnly {
 			rebuilt++
@@ -322,16 +332,16 @@ func createGamelists(cfg *config.UserConfig,
 	// Build Search.txt
 	if overwrite || fresh > 0 || rebuilt > 0 {
 		sort.Strings(globalSearch)
+		cache.SetList("Search.txt", globalSearch)
+
 		if !cfg.List.RamOnly {
 			searchPath := filepath.Join(gamelistDir, "Search.txt")
-			tmp, _ := os.CreateTemp("", "search-*.txt")
+			f, _ := os.Create(searchPath)
 			for _, s := range globalSearch {
-				_, _ = tmp.WriteString(s + "\n")
+				_, _ = f.WriteString(s + "\n")
 			}
-			tmp.Close()
-			_ = utils.MoveFile(tmp.Name(), searchPath)
+			f.Close()
 		}
-		cache.SetList("Search.txt", globalSearch)
 
 		if !quiet {
 			fmt.Printf("Built Search list with %d entries\n", len(globalSearch))
@@ -341,35 +351,32 @@ func createGamelists(cfg *config.UserConfig,
 	// Build Masterlist.txt
 	if overwrite || fresh > 0 || rebuilt > 0 {
 		var cacheMaster []string
-		if !cfg.List.RamOnly {
-			masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
-			tmp, _ := os.CreateTemp("", "master-*.txt")
-			for system, entries := range masterlist {
-				sort.Strings(entries)
-				header := fmt.Sprintf("### %s (%d)", system, len(entries))
-				_, _ = tmp.WriteString(header + "\n")
-				cacheMaster = append(cacheMaster, header)
-				for _, e := range entries {
-					clean := utils.StripTimestamp(e)
-					_, _ = tmp.WriteString(clean + "\n")
-					cacheMaster = append(cacheMaster, clean)
-				}
-				_, _ = tmp.WriteString("\n")
-			}
-			tmp.Close()
-			_ = utils.MoveFile(tmp.Name(), masterPath)
-		} else {
-			for system, entries := range masterlist {
-				sort.Strings(entries)
-				header := fmt.Sprintf("### %s (%d)", system, len(entries))
-				cacheMaster = append(cacheMaster, header)
-				for _, e := range entries {
-					clean := utils.StripTimestamp(e)
-					cacheMaster = append(cacheMaster, clean)
-				}
+		for system, entries := range masterlist {
+			sort.Strings(entries)
+			header := fmt.Sprintf("### %s (%d)", system, len(entries))
+			cacheMaster = append(cacheMaster, header)
+			for _, e := range entries {
+				clean := utils.StripTimestamp(e)
+				cacheMaster = append(cacheMaster, clean)
 			}
 		}
 		cache.SetList("Masterlist.txt", cacheMaster)
+
+		if !cfg.List.RamOnly {
+			masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
+			f, _ := os.Create(masterPath)
+			for system, entries := range masterlist {
+				sort.Strings(entries)
+				header := fmt.Sprintf("### %s (%d)", system, len(entries))
+				_, _ = f.WriteString(header + "\n")
+				for _, e := range entries {
+					clean := utils.StripTimestamp(e)
+					_, _ = f.WriteString(clean + "\n")
+				}
+				_, _ = f.WriteString("\n")
+			}
+			f.Close()
+		}
 
 		if !quiet {
 			fmt.Printf("Built Masterlist with %d systems\n", len(masterlist))
