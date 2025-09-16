@@ -130,7 +130,7 @@ func createGamelists(cfg *config.UserConfig,
 					continue
 				}
 
-				// Apply filterlists to the files (e.g., blacklist, ratedlist)
+				// Apply filterlists to the files (e.g., blacklist, whitelist)
 				systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
 
 				sort.Strings(systemFiles)
