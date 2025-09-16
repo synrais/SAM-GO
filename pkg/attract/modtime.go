@@ -85,7 +85,7 @@ func checkAndHandleModifiedFolder(systemId, folderPath, gamelistDir string, save
 		return false, err
 	}
 
-	// If modified, update the timestamp file after the scan
+	// Check for system folder modification and update the timestamp file if modified
 	if modified {
 		// Save the current timestamp for future comparison
 		if savedTimestamps == nil {
@@ -95,6 +95,7 @@ func checkAndHandleModifiedFolder(systemId, folderPath, gamelistDir string, save
 		if err != nil {
 			return false, err
 		}
+
 		// Update the timestamp for the specific system
 		savedTimestamps[systemId] = currentTimestamp
 
@@ -103,7 +104,19 @@ func checkAndHandleModifiedFolder(systemId, folderPath, gamelistDir string, save
 		if err != nil {
 			return false, err
 		}
+
+		// Output to the terminal if the folder was modified
+		fmt.Printf("System '%s' folder modified. New timestamp saved: %s\n", systemId, currentTimestamp.Format(time.RFC3339))
+	} else {
+		// If no modification detected, print a message indicating it
+		if _, exists := savedTimestamps[systemId]; exists {
+			fmt.Printf("System '%s' folder timestamp matched, no modification detected.\n", systemId)
+		} else {
+			// This is the first time checking the folder (timestamp is not yet saved)
+			fmt.Printf("System '%s' folder is being checked for the first time. Timestamp not saved yet.\n", systemId)
+		}
 	}
 
 	return modified, nil
 }
+
