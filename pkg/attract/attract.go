@@ -149,13 +149,13 @@ func Run(args []string) {
 
 		// Skip invalid paths first
 		if pathStr == "" {
-			fmt.Printf("Skipping invalid path for system '%s'\n", systemId)
+			fmt.Printf("Skipping invalid path for system '%s'\n", systemIdStr)
 			continue
 		}
 
 		// Ensure the path exists before proceeding
 		if _, err := os.Stat(pathStr); os.IsNotExist(err) {
-			fmt.Printf("Skipping non-existent folder '%s' for system '%s'\n", pathStr, systemId)
+			fmt.Printf("Skipping non-existent folder '%s' for system '%s'\n", pathStr, systemIdStr)
 			continue
 		}
 
