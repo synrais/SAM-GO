@@ -66,7 +66,7 @@ func FilterExtensions(files []string, systemId string, cfg *config.UserConfig) [
 func ApplyFilterlists(gamelistDir string, systemId string, files []string, cfg *config.UserConfig) []string {
 	filterBase := config.FilterlistDir()
 
-	// Whitelist (formerly ratedlist)
+	// Whitelist
 	if cfg.Attract.UseWhitelist {
 		whitelistPath := filepath.Join(filterBase, systemId+"_whitelist.txt")
 		if f, err := os.Open(whitelistPath); err == nil {
