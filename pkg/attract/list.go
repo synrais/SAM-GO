@@ -76,14 +76,19 @@ func createGamelists(cfg *config.UserConfig,
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
 		exists := fileExists(gamelistPath)
 
+		// If gamelist already exists and we are not overwriting, reuse the cached version
 		if !overwrite && exists && !cfg.List.RamOnly {
 			if !quiet {
 				fmt.Printf("Reusing %s: gamelist already exists\n", systemId)
 			}
 			reused++
-			lines, _ := utils.ReadLines(gamelistPath)
+			lines := cache.GetList(gamelistFilename(systemId))
+			if len(lines) == 0 {
+				// If cache is empty, load from file and cache it once
+				lines, _ = utils.ReadLines(gamelistPath)
+				cache.SetList(gamelistFilename(systemId), lines)
+			}
 			totalGames += len(lines)
-			cache.SetList(gamelistFilename(systemId), lines)
 			if !quiet {
 				fmt.Printf("Finished %s in %.2fs (reused %d entries)\n",
 					systemId, time.Since(sysStart).Seconds(), len(lines))
@@ -91,6 +96,7 @@ func createGamelists(cfg *config.UserConfig,
 			continue
 		}
 
+		// If the gamelist exists but overwrite is enabled, rebuild it
 		if exists && overwrite && !quiet && !cfg.List.RamOnly {
 			fmt.Printf("Rebuilding %s (overwrite enabled)\n", systemId)
 		}
@@ -109,6 +115,7 @@ func createGamelists(cfg *config.UserConfig,
 		systemFiles = FilterUniqueWithMGL(systemFiles)
 		systemFiles = FilterExtensions(systemFiles, systemId, cfg)
 
+		// Deduplicate files based on the base name (case insensitive)
 		seenSys := make(map[string]struct{})
 		deduped := systemFiles[:0]
 		for _, f := range systemFiles {
@@ -126,20 +133,23 @@ func createGamelists(cfg *config.UserConfig,
 			continue
 		}
 
-		// Apply filterlists
+		// Apply filterlists to the files (e.g., blacklist, ratedlist)
 		systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
 
 		sort.Strings(systemFiles)
 		totalGames += len(systemFiles)
 
+		// Write the gamelist to disk (and cache it)
 		writeGamelist(gamelistDir, systemId, systemFiles, cfg.List.RamOnly)
 
+		// Cache the gamelist only if it's a new list (not a reuse)
 		if exists && overwrite && !cfg.List.RamOnly {
 			rebuilt++
 		} else {
 			fresh++
 		}
 
+		// Add files to the global search and masterlist
 		for _, f := range systemFiles {
 			masterlist[systemId] = append(masterlist[systemId], f)
 			clean := utils.StripTimestamp(f)
