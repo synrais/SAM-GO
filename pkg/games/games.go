@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/wizzomafizzo/mrext/pkg/config"
-	"github.com/wizzomafizzo/mrext/pkg/utils"
+	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 // GetSystem looks up an exact system definition by ID.
@@ -72,7 +72,7 @@ func MatchSystemFile(system System, path string) bool {
 
 	for _, args := range system.Slots {
 		for _, ext := range args.Exts {
-			if strings.HasSuffix(strings.ToLower(path), ext) {
+			if strings.EqualFold(filepath.Ext(path), ext) {
 				return true
 			}
 		}
@@ -90,6 +90,51 @@ func AllSystems() []System {
 	}
 
 	return systems
+}
+
+func AllSystemsExcept(excluded []string) []System {
+	var systems []System
+	excludeMap := make(map[string]bool)
+
+	// Normalize once (case-insensitive)
+	for _, e := range excluded {
+		excludeMap[strings.TrimSpace(e)] = true
+	}
+
+	keys := utils.AlphaMapKeys(Systems)
+	for _, k := range keys {
+		sys := Systems[k]
+
+		// Compare case-insensitively
+		if containsFold(excludeMap, sys.Id) {
+			continue
+		}
+
+		skip := false
+		for _, alias := range sys.Alias {
+			if containsFold(excludeMap, alias) {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+
+		systems = append(systems, sys)
+	}
+
+	return systems
+}
+
+// helper: case-insensitive key lookup
+func containsFold(m map[string]bool, key string) bool {
+	for k := range m {
+		if strings.EqualFold(k, key) {
+			return true
+		}
+	}
+	return false
 }
 
 type resultsStack [][]string
@@ -114,7 +159,7 @@ func (r *resultsStack) get() (*[]string, error) {
 
 // GetFiles searches for all valid games in a given path and return a list of
 // files. This function deep searches .zip files and handles symlinks at all
-// levels, and applies edge cases for special systems.
+// levels.
 func GetFiles(systemId string, path string) ([]string, error) {
 	var allResults []string
 	var stack resultsStack
@@ -206,17 +251,8 @@ func GetFiles(systemId string, path string) ([]string, error) {
 			}
 		} else {
 			// regular files
-
-			// Edge case hook (e.g. AmigaVision games.txt / demos.txt)
-			if resultsEdge, err, ok := RunEdgeCase(system.Id, path); ok {
-				if err == nil && len(resultsEdge) > 0 {
-					*results = append(*results, resultsEdge...)
-				}
-			} else {
-				// fallback: normal extension matching
-				if MatchSystemFile(*system, path) {
-					*results = append(*results, path)
-				}
+			if MatchSystemFile(*system, path) {
+				*results = append(*results, path)
 			}
 		}
 
