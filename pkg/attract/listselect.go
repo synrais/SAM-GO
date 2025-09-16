@@ -100,7 +100,7 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 		// Build filterlist base path via config helper
 		filterBase := config.FilterlistDir()
 
-		// Whitelist (formerly ratedlist)
+		// Whitelist
 		if cfg.Attract.UseWhitelist && allowedFor(system,
 			cfg.Attract.WhitelistInclude, cfg.Attract.WhitelistExclude) {
 
