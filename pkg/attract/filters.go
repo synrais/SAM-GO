@@ -3,12 +3,14 @@ package attract
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
+// FilterUniqueWithMGL filters out duplicate files based on their name (ignores extension) and prioritizes `.mgl` files.
 func FilterUniqueWithMGL(files []string) []string {
 	chosen := make(map[string]string)
 	for _, f := range files {
@@ -32,6 +34,7 @@ func FilterUniqueWithMGL(files []string) []string {
 	return result
 }
 
+// FilterExtensions filters out files with specific extensions based on configuration.
 func FilterExtensions(files []string, systemId string, cfg *config.UserConfig) []string {
 	rules, ok := cfg.Disable[systemId]
 	if !ok || len(rules.Extensions) == 0 {
@@ -59,26 +62,27 @@ func FilterExtensions(files []string, systemId string, cfg *config.UserConfig) [
 	return filtered
 }
 
+// ApplyFilterlists applies whitelist, blacklist, and staticlist filtering to the gamelist files.
 func ApplyFilterlists(gamelistDir string, systemId string, files []string, cfg *config.UserConfig) []string {
 	filterBase := config.FilterlistDir()
 
-	// Ratedlist (whitelist)
-	if cfg.Attract.UseRatedlist {
-		ratedPath := filepath.Join(filterBase, systemId+"_ratedlist.txt")
-		if f, err := os.Open(ratedPath); err == nil {
+	// Whitelist (formerly ratedlist)
+	if cfg.Attract.UseWhitelist {
+		whitelistPath := filepath.Join(filterBase, systemId+"_whitelist.txt")
+		if f, err := os.Open(whitelistPath); err == nil {
 			defer f.Close()
-			rated := make(map[string]struct{})
+			whitelist := make(map[string]struct{})
 			scanner := bufio.NewScanner(f)
 			for scanner.Scan() {
 				name, _ := utils.NormalizeEntry(scanner.Text())
 				if name != "" {
-					rated[name] = struct{}{}
+					whitelist[name] = struct{}{}
 				}
 			}
 			var kept []string
 			for _, file := range files {
 				name, _ := utils.NormalizeEntry(filepath.Base(file))
-				if _, ok := rated[name]; ok {
+				if _, ok := whitelist[name]; ok {
 					kept = append(kept, file)
 				}
 			}
@@ -88,8 +92,8 @@ func ApplyFilterlists(gamelistDir string, systemId string, files []string, cfg *
 
 	// Blacklist
 	if cfg.Attract.UseBlacklist {
-		blPath := filepath.Join(filterBase, systemId+"_blacklist.txt")
-		if f, err := os.Open(blPath); err == nil {
+		blacklistPath := filepath.Join(filterBase, systemId+"_blacklist.txt")
+		if f, err := os.Open(blacklistPath); err == nil {
 			defer f.Close()
 			blacklist := make(map[string]struct{})
 			scanner := bufio.NewScanner(f)
