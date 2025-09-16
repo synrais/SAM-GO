@@ -55,9 +55,9 @@ type AttractConfig struct {
 	BlacklistExclude   []string `ini:"blacklist_exclude,omitempty" delim:","`
 	SkipafterStatic    int      `ini:"skipafterstatic,omitempty"`
 	UseStaticDetector  bool     `ini:"usestaticdetector,omitempty"`
-	UseRatedlist       bool     `ini:"useratedlist,omitempty"`
-	RatedlistInclude   []string `ini:"ratedlist_include,omitempty" delim:","`
-	RatedlistExclude   []string `ini:"ratedlist_exclude,omitempty" delim:","`
+    UseWhitelist        bool     `json:"useWhitelist"`
+    WhitelistInclude    []string `json:"whitelistInclude"`
+    WhitelistExclude    []string `json:"whitelistExclude"`
 }
 
 type ListConfig struct {
