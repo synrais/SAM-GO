@@ -21,14 +21,14 @@ const socketPath = "/tmp/sam.sock"
 func dumpConfig(cfg *config.UserConfig) {
     fmt.Printf("INI Debug ->\n")
 
-    // Attract
-    fmt.Printf("  Attract:\n")
-    fmt.Printf("    PlayTime=%s | Random=%v | FreshListsEachLoad=%v\n",
-        cfg.Attract.PlayTime, cfg.Attract.Random, cfg.Attract.FreshListsEachLoad)
-    fmt.Printf("    Include=%v | Exclude=%v\n", cfg.Attract.Include, cfg.Attract.Exclude)
-    fmt.Printf("    UseBlacklist=%v | UseStaticlist=%v | UseWhitelist=%v | UseStaticDetector=%v\n",
-        cfg.Attract.UseBlacklist, cfg.List.UseStaticlist,
-        cfg.Attract.UseWhitelist, cfg.Attract.UseStaticDetector)
+	// Attract
+	fmt.Printf("  Attract:\n")
+	fmt.Printf("    PlayTime=%s | Random=%v\n", cfg.Attract.PlayTime, cfg.Attract.Random)
+	fmt.Printf("    Include=%v | Exclude=%v\n", cfg.Attract.Include, cfg.Attract.Exclude)
+	fmt.Printf("    UseBlacklist=%v | UseStaticlist=%v | UseWhitelist=%v | UseStaticDetector=%v\n",
+    	cfg.Attract.UseBlacklist, cfg.List.UseStaticlist,
+    	cfg.Attract.UseWhitelist, cfg.Attract.UseStaticDetector)
+
 
     // List
     fmt.Printf("  List: Exclude=%v\n", cfg.List.Exclude)
