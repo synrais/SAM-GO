@@ -14,11 +14,16 @@ type FolderTimestamps map[string]time.Time
 
 // Function to get the last modified timestamp of a system folder
 func getFolderTimestamp(folderPath string) (time.Time, error) {
-	info, err := os.Stat(folderPath)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("unable to get folder info for %s: %w", folderPath, err)
-	}
-	return info.ModTime(), nil
+    // Check if the folder exists
+    if _, err := os.Stat(folderPath); os.IsNotExist(err) {
+        return time.Time{}, fmt.Errorf("folder %s does not exist: %w", folderPath, err)
+    }
+
+    info, err := os.Stat(folderPath)
+    if err != nil {
+        return time.Time{}, fmt.Errorf("unable to get folder info for %s: %w", folderPath, err)
+    }
+    return info.ModTime(), nil
 }
 
 // Function to load the saved timestamps from the Modtime file
