@@ -9,16 +9,18 @@ import (
 	"io/ioutil"
 )
 
-// Struct for storing system folder modification timestamps
-type FolderTimestamps map[string]time.Time
-
 // Function to get the last modified timestamp of a system folder
 func getFolderTimestamp(folderPath string) (time.Time, error) {
-    // Check if the folder exists
+    // Debugging: Log the folder path being checked
+    fmt.Printf("Checking folder: %s\n", folderPath)
+
     if _, err := os.Stat(folderPath); os.IsNotExist(err) {
+        // Provide detailed debug output if folder doesn't exist
+        fmt.Printf("Debug: Folder %s does not exist. Skipping...\n", folderPath)
         return time.Time{}, fmt.Errorf("folder %s does not exist: %w", folderPath, err)
     }
 
+    // Get the information about the folder
     info, err := os.Stat(folderPath)
     if err != nil {
         return time.Time{}, fmt.Errorf("unable to get folder info for %s: %w", folderPath, err)
@@ -84,44 +86,44 @@ func isFolderModified(systemId, folderPath, gamelistDir string, savedTimestamps 
 
 // Function to handle folder modification checks and timestamp updates during gamelist generation
 func checkAndHandleModifiedFolder(systemId, folderPath, gamelistDir string, savedTimestamps FolderTimestamps) (bool, error) {
-	// Check if the system folder has been modified
-	modified, err := isFolderModified(systemId, folderPath, gamelistDir, savedTimestamps)
-	if err != nil {
-		return false, err
-	}
+    // Debugging: Log the folder being checked
+    fmt.Printf("Checking if folder '%s' has been modified...\n", folderPath)
 
-	// Check for system folder modification and update the timestamp file if modified
-	if modified {
-		// Save the current timestamp for future comparison
-		if savedTimestamps == nil {
-			savedTimestamps = make(FolderTimestamps)
-		}
-		currentTimestamp, err := getFolderTimestamp(folderPath)
-		if err != nil {
-			return false, err
-		}
+    // Check if the system folder has been modified
+    modified, err := isFolderModified(systemId, folderPath, gamelistDir, savedTimestamps)
+    if err != nil {
+        // Debugging: Output error with additional info
+        fmt.Printf("Error: %s\n", err)
+        return false, err
+    }
 
-		// Update the timestamp for the specific system
-		savedTimestamps[systemId] = currentTimestamp
+    // Handle folder modification and timestamp updates if necessary
+    if modified {
+        fmt.Printf("Folder '%s' was modified. Updating timestamp...\n", folderPath)
 
-		// Save the updated timestamps to the Modtime file
-		err = saveTimestamps(gamelistDir, savedTimestamps)
-		if err != nil {
-			return false, err
-		}
+        if savedTimestamps == nil {
+            savedTimestamps = make(FolderTimestamps)
+        }
+        currentTimestamp, err := getFolderTimestamp(folderPath)
+        if err != nil {
+            return false, err
+        }
 
-		// Output to the terminal if the folder was modified
-		fmt.Printf("System '%s' folder modified. New timestamp saved: %s\n", systemId, currentTimestamp.Format(time.RFC3339))
-	} else {
-		// If no modification detected, print a message indicating it
-		if _, exists := savedTimestamps[systemId]; exists {
-			fmt.Printf("System '%s' folder timestamp matched, no modification detected.\n", systemId)
-		} else {
-			// This is the first time checking the folder (timestamp is not yet saved)
-			fmt.Printf("System '%s' folder is being checked for the first time. Timestamp not saved yet.\n", systemId)
-		}
-	}
+        // Save the new timestamp for future comparisons
+        savedTimestamps[systemId] = currentTimestamp
 
-	return modified, nil
+        // Save updated timestamps to Modtime file
+        err = saveTimestamps(gamelistDir, savedTimestamps)
+        if err != nil {
+            return false, err
+        }
+
+        // Debugging: Output confirmation of the update
+        fmt.Printf("Timestamp for folder '%s' updated to: %s\n", folderPath, currentTimestamp.Format(time.RFC3339))
+    } else {
+        // No modification detected, log the current status
+        fmt.Printf("No modification detected for folder '%s'. Timestamp remains the same.\n", folderPath)
+    }
+
+    return modified, nil
 }
-
