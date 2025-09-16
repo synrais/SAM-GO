@@ -399,7 +399,6 @@ func createGamelists(cfg *config.UserConfig,
 		input.GameIndex = idx
 		fmt.Printf("[DEBUG] Indexed %d entries for search\n", len(idx))
 		}
-	}
 
 	// Build Masterlist
 	if overwrite || fresh > 0 || rebuilt > 0 {
