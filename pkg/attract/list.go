@@ -54,8 +54,7 @@ func fileExists(path string) bool {
 func createGamelists(cfg *config.UserConfig,
     gamelistDir string,
     systemPaths map[string][]string,
-    quiet bool,
-    overwrite bool) int {
+    quiet bool) int {
 
     start := time.Now()
     if !quiet {
@@ -97,7 +96,7 @@ func createGamelists(cfg *config.UserConfig,
             }
 
             // If modified, rescan the system folder
-            if modified || !exists || overwrite {
+            if modified || !exists {
                 // Rebuild the gamelist here
                 for _, path := range paths {
                     files, err := games.GetFiles(systemId, path)
@@ -140,7 +139,7 @@ func createGamelists(cfg *config.UserConfig,
                 writeGamelist(gamelistDir, systemId, systemFiles, cfg.List.RamOnly)
 
                 // Cache the gamelist only if it's a new list (not a reuse)
-                if exists && overwrite && !cfg.List.RamOnly {
+                if exists && !cfg.List.RamOnly {
                     rebuilt++
                 } else {
                     fresh++
@@ -173,7 +172,7 @@ func createGamelists(cfg *config.UserConfig,
     }
 
 	// Build Search.txt (if needed) and load search index
-	if overwrite || fresh > 0 || rebuilt > 0 {
+	if fresh > 0 || rebuilt > 0 {
 		sort.Strings(globalSearch)
 		cache.SetList("Search.txt", globalSearch)
 		if !cfg.List.RamOnly {
@@ -220,7 +219,7 @@ func createGamelists(cfg *config.UserConfig,
 	}
 
 	// Build Masterlist
-	if overwrite || fresh > 0 || rebuilt > 0 {
+	if fresh > 0 || rebuilt > 0 {
 		var cacheMaster []string
 		var sb strings.Builder
 		for system, entries := range masterlist {
@@ -278,7 +277,6 @@ func RunList(args []string) error {
 	filter := fs.String("s", "all", "list of systems to index (comma separated)")
 	quiet := fs.Bool("q", false, "suppress all status output")
 	detect := fs.Bool("d", false, "list active system folders")
-	overwrite := fs.Bool("overwrite", false, "overwrite existing gamelists if present")
 	ramOnly := fs.Bool("ramonly", false, "build lists in RAM only (do not write to SD)")
 
 	if err := fs.Parse(args); err != nil {
@@ -326,7 +324,7 @@ func RunList(args []string) error {
 		systemPathsMap[p.System.Id] = append(systemPathsMap[p.System.Id], p.Path)
 	}
 
-	total := createGamelists(cfg, *gamelistDir, systemPathsMap, *quiet, *overwrite)
+	total := createGamelists(cfg, *gamelistDir, systemPathsMap, *quiet)
 
 	if total == 0 {
 		return fmt.Errorf("no games indexed")
