@@ -26,9 +26,9 @@ func dumpConfig(cfg *config.UserConfig) {
     fmt.Printf("    PlayTime=%s | Random=%v | FreshListsEachLoad=%v\n",
         cfg.Attract.PlayTime, cfg.Attract.Random, cfg.Attract.FreshListsEachLoad)
     fmt.Printf("    Include=%v | Exclude=%v\n", cfg.Attract.Include, cfg.Attract.Exclude)
-    fmt.Printf("    UseBlacklist=%v | UseStaticlist=%v | UseRatedlist=%v | UseStaticDetector=%v\n",
+    fmt.Printf("    UseBlacklist=%v | UseStaticlist=%v | UseWhitelist=%v | UseStaticDetector=%v\n",
         cfg.Attract.UseBlacklist, cfg.List.UseStaticlist,
-        cfg.Attract.UseRatedlist, cfg.Attract.UseStaticDetector)
+        cfg.Attract.UseWhitelist, cfg.Attract.UseStaticDetector)
 
     // List
     fmt.Printf("  List: Exclude=%v\n", cfg.List.Exclude)
