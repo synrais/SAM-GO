@@ -21,14 +21,10 @@ func containsInsensitive(list []string, item string) bool {
 	return false
 }
 
-// matchesSystem checks if a system name appears in a list, accounting for
-// AmigaVision aliases.
+// matchesSystem checks if a system name appears in a list.
 func matchesSystem(list []string, system string) bool {
 	if containsInsensitive(list, system) {
 		return true
-	}
-	if strings.HasPrefix(strings.ToLower(system), "amigavision") {
-		return containsInsensitive(list, "AmigaVision")
 	}
 	return false
 }
