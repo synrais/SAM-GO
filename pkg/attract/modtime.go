@@ -9,6 +9,9 @@ import (
 	"io/ioutil"
 )
 
+// Define FolderTimestamps as a map from string to time.Time
+type FolderTimestamps map[string]time.Time
+
 // Function to get the last modified timestamp of a system folder
 func getFolderTimestamp(folderPath string) (time.Time, error) {
     // Debugging: Log the folder path being checked
