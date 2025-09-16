@@ -130,20 +130,33 @@ func Run(args []string) {
 	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
 	attractCfg := cfg.Attract
 
+	// Use global helper for SAM_Gamelists path
+	gamelistDir := config.GamelistDir()
+
+	// Load saved timestamps from the Modtime file
+	savedTimestamps, err := loadSavedTimestamps(gamelistDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading saved timestamps: %v\n", err)
+	}
+
 	// Build gamelists before processing
 	listArgs := []string{}
-	// If FreshListsEachLoad is true, we still want to rebuild the lists from scratch
-	if attractCfg.FreshListsEachLoad {
-		listArgs = append(listArgs, "-overwrite") // Forcing rebuild based on configuration setting
-	} else {
-		// Otherwise, we rely on the timestamp comparison to decide if the gamelist needs to be rebuilt.
+	for systemId, paths := range cfg.Attract.Include {
+		// If FreshListsEachLoad is true or timestamp comparison indicates rebuild, force rebuild
+		modified, err := checkAndHandleModifiedFolder(systemId, paths[0], gamelistDir, savedTimestamps)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error checking folder modification:", err)
+			continue
+		}
+		if modified || !fileExists(filepath.Join(gamelistDir, gamelistFilename(systemId))) {
+			listArgs = append(listArgs, "-overwrite") // Force rebuild based on modification or absence of cached list
+		}
 	}
+
 	if err := RunList(listArgs); err != nil {
 		fmt.Fprintln(os.Stderr, "List build failed:", err)
 	}
 
-	// Use global helper for SAM_Gamelists path
-	gamelistDir := config.GamelistDir()
 	ProcessLists(gamelistDir, cfg)
 
 	// control channels
@@ -204,6 +217,7 @@ func Run(args []string) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	fmt.Println("Attract mode running. Ctrl-C to exit.")
 
+	// Main loop for playing games
 	playGame := func(gamePath, systemID string, ts float64) {
 	Launch:
 		for {
@@ -273,6 +287,7 @@ func Run(args []string) {
 		}
 	}
 
+	// Handle the main attract mode loop
 	for {
 		select {
 		case <-backCh:
