@@ -49,7 +49,6 @@ type AttractConfig struct {
 	Random             bool     `ini:"random,omitempty"`
 	Include            []string `ini:"include,omitempty" delim:","`
 	Exclude            []string `ini:"exclude,omitempty" delim:","`
-	FreshListsEachLoad bool     `ini:"freshlistseachload,omitempty"`
 	UseBlacklist       bool     `ini:"useblacklist,omitempty"`
 	BlacklistInclude   []string `ini:"blacklist_include,omitempty" delim:","`
 	BlacklistExclude   []string `ini:"blacklist_exclude,omitempty" delim:","`
