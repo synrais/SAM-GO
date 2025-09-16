@@ -132,8 +132,11 @@ func Run(args []string) {
 
 	// Build gamelists before processing
 	listArgs := []string{}
+	// If FreshListsEachLoad is true, we still want to rebuild the lists from scratch
 	if attractCfg.FreshListsEachLoad {
-		listArgs = append(listArgs, "-overwrite")
+		listArgs = append(listArgs, "-overwrite") // Forcing rebuild based on configuration setting
+	} else {
+		// Otherwise, we rely on the timestamp comparison to decide if the gamelist needs to be rebuilt.
 	}
 	if err := RunList(listArgs); err != nil {
 		fmt.Fprintln(os.Stderr, "List build failed:", err)
