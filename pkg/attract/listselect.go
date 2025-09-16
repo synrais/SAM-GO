@@ -88,7 +88,7 @@ func readStaticMap(path string) map[string]string {
 	return m
 }
 
-// ProcessLists applies ratedlist, blacklist, and staticlist filtering.
+// ProcessLists applies whitelist, blacklist, and staticlist filtering.
 // Does NOT modify disk gamelists – only updates in-memory cache.
 // Also preloads Search.txt and Masterlist.txt into cache.
 func ProcessLists(fullDir string, cfg *config.UserConfig) {
@@ -104,16 +104,16 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 		// Build filterlist base path via config helper
 		filterBase := config.FilterlistDir()
 
-		// Rated list (whitelist)
-		if cfg.Attract.UseRatedlist && allowedFor(system,
-			cfg.Attract.RatedlistInclude, cfg.Attract.RatedlistExclude) {
+		// Whitelist (formerly ratedlist)
+		if cfg.Attract.UseWhitelist && allowedFor(system,
+			cfg.Attract.WhitelistInclude, cfg.Attract.WhitelistExclude) {
 
-			rated := readNameSet(filepath.Join(filterBase, system+"_ratedlist.txt"))
-			if rated != nil {
+			whitelist := readNameSet(filepath.Join(filterBase, system+"_whitelist.txt"))
+			if whitelist != nil {
 				var kept []string
 				for _, l := range lines {
 					name, _ := utils.NormalizeEntry(l)
-					if _, ok := rated[name]; ok {
+					if _, ok := whitelist[name]; ok {
 						kept = append(kept, l)
 					}
 				}
