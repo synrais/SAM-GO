@@ -140,7 +140,37 @@ func Run(args []string) {
 
 	// Build gamelists before processing
 	listArgs := []string{}
+	// First, validate the system paths
+	systemPaths := make(map[string][]string)
 	for systemId, paths := range cfg.Attract.Include {
+		// Ensure valid paths are being processed
+		if len(paths) == 0 || paths[0] == "" {
+			fmt.Printf("Skipping invalid path for system '%s'\n", systemId)
+			continue
+		}
+
+		// Process only valid paths (ensure directory exists)
+		validPaths := []string{}
+		for _, path := range paths {
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				fmt.Printf("Skipping non-existent folder '%s' for system '%s'\n", path, systemId)
+				continue
+			}
+			validPaths = append(validPaths, path)
+		}
+		if len(validPaths) > 0 {
+			systemPaths[systemId] = validPaths
+		}
+	}
+
+	// Ensure there are valid systems to process
+	if len(systemPaths) == 0 {
+		fmt.Println("No valid systems found. Exiting...")
+		return
+	}
+
+	// After validating system paths, now we check modification times
+	for systemId, paths := range systemPaths {
 		// Ensure systemId is a string (if it's not already a string)
 		systemIdStr := fmt.Sprintf("%v", systemId)
 
