@@ -72,7 +72,7 @@ func MatchSystemFile(system System, path string) bool {
 
 	for _, args := range system.Slots {
 		for _, ext := range args.Exts {
-			if strings.EqualFold(filepath.Ext(path), ext) {
+			if strings.HasSuffix(strings.ToLower(path), ext) {
 				return true
 			}
 		}
