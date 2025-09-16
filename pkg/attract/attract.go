@@ -125,7 +125,6 @@ func filterAllowed(all []string, include, exclude []string) []string {
 	return filtered
 }
 
-// Run is the entry point for the attract tool.
 func Run(args []string) {
 	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
 	attractCfg := cfg.Attract
@@ -142,14 +141,19 @@ func Run(args []string) {
 	// Build gamelists before processing
 	listArgs := []string{}
 	for systemId, paths := range cfg.Attract.Include {
+		// Ensure systemId is a string (if it's not already a string)
+		systemIdStr := fmt.Sprintf("%v", systemId)
+
 		// If FreshListsEachLoad is true or timestamp comparison indicates rebuild, force rebuild
-		modified, err := checkAndHandleModifiedFolder(systemId, paths[0], gamelistDir, savedTimestamps)
+		modified, err := checkAndHandleModifiedFolder(systemIdStr, paths[0], gamelistDir, savedTimestamps)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error checking folder modification:", err)
 			continue
 		}
-		if modified || !fileExists(filepath.Join(gamelistDir, gamelistFilename(systemId))) {
-			listArgs = append(listArgs, "-overwrite") // Force rebuild based on modification or absence of cached list
+
+		// Force rebuild if modified or no cached gamelist exists
+		if modified || !fileExists(filepath.Join(gamelistDir, gamelistFilename(systemIdStr))) {
+			listArgs = append(listArgs, "-overwrite")
 		}
 	}
 
