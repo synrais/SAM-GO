@@ -1290,6 +1290,27 @@ var Systems = map[string]System{
 			},
 		},
 	},
+"AmigaVision": {
+    Id:           "AmigaVision",
+    Name:         "AmigaVision",
+    Category:     CategoryComputer,
+    Manufacturer: ManufacturerCommodore,
+    ReleaseDate:  "1991-01-01",
+    Folder:       []string{"Amiga"},
+    Alias:        []string{"AmigaVision"},
+    Rbf:          "_Computer/Minimig",
+    Slots: []Slot{
+        {
+            Label: "AmigaVisionEntry",
+            Exts:  []string{".txt"},
+            Mgl: &MglParams{
+                Delay:  1,
+                Method: "f",
+                Index:  0,
+            },
+        },
+    },
+},
 	"Amstrad": {
 		Id:           "Amstrad",
 		Name:         "Amstrad CPC",
