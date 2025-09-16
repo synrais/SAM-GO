@@ -1,7 +1,6 @@
 package attract
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"os"
