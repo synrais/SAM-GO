@@ -43,205 +43,6 @@ func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly 
 	}
 }
 
-func filterUniqueWithMGL(files []string) []string {
-	chosen := make(map[string]string)
-	for _, f := range files {
-		base := strings.TrimSuffix(strings.ToLower(filepath.Base(f)), filepath.Ext(f))
-		ext := strings.ToLower(filepath.Ext(f))
-		if prev, ok := chosen[base]; ok {
-			if strings.HasSuffix(prev, ".mgl") {
-				continue
-			}
-			if ext == ".mgl" {
-				chosen[base] = f
-			}
-		} else {
-			chosen[base] = f
-		}
-	}
-	result := []string{}
-	for _, v := range chosen {
-		result = append(result, v)
-	}
-	return result
-}
-
-func filterExtensions(files []string, systemId string, cfg *config.UserConfig) []string {
-	rules, ok := cfg.Disable[systemId]
-	if !ok || len(rules.Extensions) == 0 {
-		return files
-	}
-
-	extMap := make(map[string]struct{})
-	for _, e := range rules.Extensions {
-		e = strings.ToLower(e)
-		if !strings.HasPrefix(e, ".") {
-			e = "." + e
-		}
-		extMap[e] = struct{}{}
-	}
-
-	var filtered []string
-	for _, f := range files {
-		ext := strings.ToLower(filepath.Ext(f))
-		if _, skip := extMap[ext]; skip {
-			continue
-		}
-		filtered = append(filtered, f)
-	}
-
-	return filtered
-}
-
-// ---- Filterlist merge (ratedlist, blacklist, staticlist) ----
-func applyFilterlists(_ string, systemId string, files []string, cfg *config.UserConfig) []string {
-	filterBase := config.FilterlistDir()
-
-	// Ratedlist (whitelist)
-	if cfg.Attract.UseRatedlist {
-		ratedPath := filepath.Join(filterBase, systemId+"_ratedlist.txt")
-		if f, err := os.Open(ratedPath); err == nil {
-			defer f.Close()
-			rated := make(map[string]struct{})
-			scanner := bufio.NewScanner(f)
-			for scanner.Scan() {
-				name, _ := utils.NormalizeEntry(scanner.Text())
-				if name != "" {
-					rated[name] = struct{}{}
-				}
-			}
-			var kept []string
-			for _, file := range files {
-				name, _ := utils.NormalizeEntry(filepath.Base(file))
-				if _, ok := rated[name]; ok {
-					kept = append(kept, file)
-				}
-			}
-			files = kept
-		}
-	}
-
-	// Blacklist
-	if cfg.Attract.UseBlacklist {
-		blPath := filepath.Join(filterBase, systemId+"_blacklist.txt")
-		if f, err := os.Open(blPath); err == nil {
-			defer f.Close()
-			blacklist := make(map[string]struct{})
-			scanner := bufio.NewScanner(f)
-			for scanner.Scan() {
-				name, _ := utils.NormalizeEntry(scanner.Text())
-				if name != "" {
-					blacklist[name] = struct{}{}
-				}
-			}
-			var kept []string
-			for _, file := range files {
-				name, _ := utils.NormalizeEntry(filepath.Base(file))
-				if _, bad := blacklist[name]; !bad {
-					kept = append(kept, file)
-				}
-			}
-			files = kept
-		}
-	}
-
-	// Staticlist (timestamps)
-	if cfg.List.UseStaticlist {
-		staticPath := filepath.Join(filterBase, systemId+"_staticlist.txt")
-		if f, err := os.Open(staticPath); err == nil {
-			defer f.Close()
-			staticMap := make(map[string]string)
-			scanner := bufio.NewScanner(f)
-			for scanner.Scan() {
-				line := strings.TrimSpace(scanner.Text())
-				if line == "" {
-					continue
-				}
-				parts := strings.SplitN(line, " ", 2)
-				if len(parts) != 2 {
-					continue
-				}
-				ts := strings.Trim(parts[0], "<>")
-				name, _ := utils.NormalizeEntry(parts[1])
-				staticMap[name] = ts
-			}
-			for i, f := range files {
-				name, _ := utils.NormalizeEntry(filepath.Base(f))
-				if ts, ok := staticMap[name]; ok {
-					files[i] = "<" + ts + ">" + f
-				}
-			}
-		}
-	}
-
-	return files
-}
-
-// ---- AmigaVision helpers ----
-func parseLines(data string) []string {
-	var out []string
-	lines := strings.Split(strings.ReplaceAll(data, "\r\n", "\n"), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			out = append(out, line)
-		}
-	}
-	return out
-}
-
-func writeCustomList(dir, filename string, entries []string, ramOnly bool) {
-	cache.SetList(filename, entries)
-	if ramOnly {
-		return
-	}
-
-	var sb strings.Builder
-	for _, e := range entries {
-		sb.WriteString(e)
-		sb.WriteByte('\n')
-	}
-	data := []byte(sb.String())
-
-	path := filepath.Join(dir, filename)
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		panic(err)
-	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		panic(err)
-	}
-}
-
-func writeAmigaVisionLists(gamelistDir string, paths []string, ramOnly bool) (int, int) {
-	var gamesList, demosList []string
-
-	for _, path := range paths {
-		filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return nil
-			}
-			switch strings.ToLower(d.Name()) {
-			case "games.txt":
-				data, _ := os.ReadFile(p)
-				gamesList = append(gamesList, parseLines(string(data))...)
-			case "demos.txt":
-				data, _ := os.ReadFile(p)
-				demosList = append(demosList, parseLines(string(data))...)
-			}
-			return nil
-		})
-	}
-
-	if len(gamesList) > 0 {
-		writeCustomList(gamelistDir, "AmigaVisionGames_gamelist.txt", gamesList, ramOnly)
-	}
-	if len(demosList) > 0 {
-		writeCustomList(gamelistDir, "AmigaVisionDemos_gamelist.txt", demosList, ramOnly)
-	}
-
-	return len(gamesList), len(demosList)
-}
-
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
@@ -304,8 +105,9 @@ func createGamelists(cfg *config.UserConfig,
 			systemFiles = append(systemFiles, files...)
 		}
 
-		systemFiles = filterUniqueWithMGL(systemFiles)
-		systemFiles = filterExtensions(systemFiles, systemId, cfg)
+		// Use the filter functions from filters.go
+		systemFiles = FilterUniqueWithMGL(systemFiles)
+		systemFiles = FilterExtensions(systemFiles, systemId, cfg)
 
 		seenSys := make(map[string]struct{})
 		deduped := systemFiles[:0]
@@ -325,7 +127,7 @@ func createGamelists(cfg *config.UserConfig,
 		}
 
 		// Apply filterlists
-		systemFiles = applyFilterlists(gamelistDir, systemId, systemFiles, cfg)
+		systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
 
 		sort.Strings(systemFiles)
 		totalGames += len(systemFiles)
@@ -398,7 +200,7 @@ func createGamelists(cfg *config.UserConfig,
 		}
 		input.GameIndex = idx
 		fmt.Printf("[DEBUG] Indexed %d entries for search\n", len(idx))
-		}
+	}
 
 	// Build Masterlist
 	if overwrite || fresh > 0 || rebuilt > 0 {
