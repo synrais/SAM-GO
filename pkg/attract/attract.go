@@ -147,7 +147,7 @@ func Run(args []string) {
 		// Ensure paths[0] is a string (if it's a byte slice or byte)
 		pathStr := string(paths[0]) // Convert byte to string
 
-		// If FreshListsEachLoad is true or timestamp comparison indicates rebuild, force rebuild
+		// If timestamp comparison indicates rebuild, force rebuild
 		modified, err := checkAndHandleModifiedFolder(systemIdStr, pathStr, gamelistDir, savedTimestamps)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error checking folder modification:", err)
