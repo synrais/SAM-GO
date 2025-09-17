@@ -1,14 +1,109 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-
+	"strings"
 	"gopkg.in/ini.v1"
 )
 
-// UserConfig holds configuration values from the SAM.ini file
+// Define Config Structs
+
+type LaunchSyncConfig struct{}
+
+type PlayLogConfig struct {
+	SaveEvery   int    `ini:"save_every,omitempty"`
+	OnCoreStart string `ini:"on_core_start,omitempty"`
+	OnCoreStop  string `ini:"on_core_stop,omitempty"`
+	OnGameStart string `ini:"on_game_start,omitempty"`
+	OnGameStop  string `ini:"on_game_stop,omitempty"`
+}
+
+type RandomConfig struct{}
+
+type SearchConfig struct {
+	Filter []string `ini:"filter,omitempty" delim:","`
+	Sort   string   `ini:"sort,omitempty"`
+}
+
+type RemoteConfig struct {
+	MdnsService     bool   `ini:"mdns_service,omitempty"`
+	SyncSSHKeys     bool   `ini:"sync_ssh_keys,omitempty"`
+	CustomLogo      string `ini:"custom_logo,omitempty"`
+	AnnounceGameUrl string `ini:"announce_game_url,omitempty"`
+}
+
+type NfcConfig struct {
+	ConnectionString string `ini:"connection_string,omitempty"`
+	AllowCommands    bool   `ini:"allow_commands,omitempty"`
+	DisableSounds    bool   `ini:"disable_sounds,omitempty"`
+	ProbeDevice      bool   `ini:"probe_device,omitempty"`
+}
+
+type SystemsConfig struct {
+	GamesFolder []string `ini:"games_folder,omitempty,allowshadow"`
+	SetCore     []string `ini:"set_core,omitempty,allowshadow"`
+}
+
+type AttractConfig struct {
+	PlayTime          string   `ini:"playtime,omitempty"`
+	Random            bool     `ini:"random,omitempty"`
+	Include           []string `ini:"include,omitempty" delim:","`
+	Exclude           []string `ini:"exclude,omitempty" delim:","`
+	UseBlacklist      bool     `ini:"useblacklist,omitempty"`
+	BlacklistInclude  []string `ini:"blacklist_include,omitempty" delim:","`
+	BlacklistExclude  []string `ini:"blacklist_exclude,omitempty" delim:","`
+	SkipafterStatic   int      `ini:"skipafterstatic,omitempty"`
+	UseStaticDetector bool     `ini:"usestaticdetector,omitempty"`
+	UseWhitelist      bool     `json:"useWhitelist"`
+	WhitelistInclude  []string `json:"whitelistInclude"`
+	WhitelistExclude  []string `json:"whitelistExclude"`
+}
+
+type ListConfig struct {
+	Exclude           []string `ini:"exclude,omitempty" delim:","`
+	UseStaticlist     bool     `ini:"usestaticlist,omitempty"`
+	StaticlistInclude []string `ini:"staticlist_include,omitempty" delim:","`
+	StaticlistExclude []string `ini:"staticlist_exclude,omitempty" delim:","`
+	RamOnly           bool     `ini:"ramonly,omitempty"` // NEW: run in RAM-only mode
+}
+
+type DisableRules struct {
+	Folders    []string `ini:"folders,omitempty" delim:","`
+	Files      []string `ini:"files,omitempty" delim:","`
+	Extensions []string `ini:"extensions,omitempty" delim:","`
+}
+
+type StaticDetectorOverride struct {
+	BlackThreshold  *float64 `ini:"blackthreshold,omitempty"`
+	StaticThreshold *float64 `ini:"staticthreshold,omitempty"`
+	SkipBlack       *bool    `ini:"skipblack,omitempty"`
+	WriteBlackList  *bool    `ini:"writeblacklist,omitempty"`
+	SkipStatic      *bool    `ini:"skipstatic,omitempty"`
+	WriteStaticList *bool    `ini:"writestaticlist,omitempty"`
+	Grace           *float64 `ini:"grace,omitempty"`
+}
+
+type StaticDetectorConfig struct {
+	BlackThreshold  float64                           `ini:"blackthreshold,omitempty"`
+	StaticThreshold float64                           `ini:"staticthreshold,omitempty"`
+	SkipBlack       bool                              `ini:"skipblack,omitempty"`
+	WriteBlackList  bool                              `ini:"writeblacklist,omitempty"`
+	SkipStatic      bool                              `ini:"skipstatic,omitempty"`
+	WriteStaticList bool                              `ini:"writestaticlist,omitempty"`
+	Grace           float64                           `ini:"grace,omitempty"`
+	Systems         map[string]StaticDetectorOverride `ini:"-"`
+}
+
+type InputDetectorConfig struct {
+	Mouse       bool              `ini:"mouse,omitempty"`
+	Keyboard    bool              `ini:"keyboard,omitempty"`
+	Joystick    bool              `ini:"joystick,omitempty"`
+	KeyboardMap map[string]string `ini:"-"`
+	MouseMap    map[string]string `ini:"-"`
+	JoystickMap map[string]string `ini:"-"`
+}
+
 type UserConfig struct {
 	AppPath        string
 	IniPath        string
@@ -23,7 +118,7 @@ type UserConfig struct {
 	StaticDetector StaticDetectorConfig    `ini:"staticdetector,omitempty"`
 	InputDetector  InputDetectorConfig     `ini:"inputdetector,omitempty"`
 	List           ListConfig              `ini:"list,omitempty"`
-	Disable        map[string]DisableRules `ini:"-"` // Disable rules for systems
+	Disable        map[string]DisableRules `ini:"-"`
 }
 
 // LoadUserConfig loads SAM.ini into UserConfig
@@ -210,4 +305,26 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 	}
 
 	return defaultConfig, nil
+}
+
+// ---- Global directory helpers ----
+
+// BaseDir returns the directory where the SAM binary lives.
+func BaseDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		cwd, _ := os.Getwd()
+		return cwd
+	}
+	return filepath.Dir(exe)
+}
+
+// GamelistDir points to SAM_Gamelists inside the binary’s base dir.
+func GamelistDir() string {
+	return filepath.Join(BaseDir(), "SAM_Gamelists")
+}
+
+// FilterlistDir points to SAM_Filterlists inside SAM_Gamelists.
+func FilterlistDir() string {
+	return filepath.Join(GamelistDir(), "SAM_Filterlists")
 }
