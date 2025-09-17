@@ -111,9 +111,8 @@ func filterAllowed(all []string, include, exclude []string) []string {
 	return filtered
 }
 
-func Run(args []string) {
-	// Load config (ensures ini exists automatically)
-	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
+// Run executes attract mode using the provided config and args.
+func Run(cfg *config.UserConfig, args []string) {
 	attractCfg := cfg.Attract
 
 	// Ensure gamelists are built
