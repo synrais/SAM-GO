@@ -319,8 +319,7 @@ func Reverse[S ~[]E, E any](s S) {
 }
 
 func RemoveFileExt(s string) string {
-	ext := filepath.Ext(s)
-	return strings.TrimSuffix(s, ext)
+	return strings.TrimSuffix(s, filepath.Ext(s))
 }
 
 // ReadLines opens a file and returns its non-empty trimmed lines.
