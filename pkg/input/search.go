@@ -38,6 +38,9 @@ func SearchAndPlay() {
 	searching.Store(true)
 	defer searching.Store(false)
 
+	// 🟢 Debug: show how many games are indexed
+	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(GameIndex))
+
 	ch := StreamKeyboards()
 	re := regexp.MustCompile(`<([^>]+)>`)
 
@@ -59,8 +62,12 @@ func SearchAndPlay() {
 
 			case "ENTER":
 				qn, qext := utils.NormalizeEntry(sb.String())
+
+				// 🟢 Debug: show the normalized query
+				fmt.Printf("[SEARCH] Query raw=%q normalized=%q ext=%q\n", sb.String(), qn, qext)
+
 				if qn != "" {
-					fmt.Printf("[SEARCH] Searching... (%d titles for %q)\n", len(GameIndex), sb.String())
+					fmt.Printf("[SEARCH] Searching... (%d titles)\n", len(GameIndex))
 					candidates = findMatches(qn, qext)
 					if len(candidates) > 0 {
 						idx = 0
@@ -121,10 +128,13 @@ func SearchAndPlay() {
 // --- Matching ---
 
 func findMatches(qn, qext string) []string {
-
 	var prefix, substring, fuzzy []string
 
-	for _, e := range GameIndex {
+	// 🟢 Debug: show first few entries from GameIndex
+	for i, e := range GameIndex {
+		if i < 5 { // only dump first few to avoid spam
+			fmt.Printf("[SEARCH] Index[%d]: name=%q ext=%q path=%q\n", i, e.Name, e.Ext, e.Path)
+		}
 		if qext != "" && qext != e.Ext {
 			continue
 		}
@@ -154,6 +164,9 @@ func findMatches(qn, qext string) []string {
 	if len(out) > 200 {
 		out = out[:200]
 	}
+
+	// 🟢 Debug: show result count
+	fmt.Printf("[SEARCH] Matches found: %d\n", len(out))
 
 	return out
 }
