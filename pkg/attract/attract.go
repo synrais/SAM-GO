@@ -80,9 +80,26 @@ func disabled(system string, gamePath string, cfg *config.UserConfig) bool {
 	return false
 }
 
-// expandGroups expands category/group names into real system IDs
-// using the games package functions.
-func expandGroups(list []string) []string {
+// getSystemsByCategory retrieves systems by category (Console, Handheld, Arcade, etc.)
+func getSystemsByCategory(category string) ([]string, error) {
+	var systems []string
+
+	// Fetch all systems by their category
+	for _, sys := range games.AllSystems() {
+		if strings.EqualFold(sys.Category, category) {
+			systems = append(systems, sys.Id)
+		}
+	}
+
+	if len(systems) == 0 {
+		return nil, fmt.Errorf("no systems found in category: %s", category)
+	}
+
+	return systems, nil
+}
+
+// expandGroups expands category/group names (Console, Handheld, Arcade, Computer) into system IDs.
+func expandGroups(list []string) ([]string, error) {
 	var expanded []string
 	for _, item := range list {
 		trimmed := strings.TrimSpace(item)
@@ -90,22 +107,27 @@ func expandGroups(list []string) []string {
 			continue
 		}
 
-		// Try group
-		if sys, err := games.GetGroup(trimmed); err == nil {
-			expanded = append(expanded, sys.Id)
+		// Try group (Console, Handheld, etc.)
+		if trimmed == "Console" || trimmed == "Handheld" || trimmed == "Arcade" || trimmed == "Computer" {
+			// Get all systems in the group
+			groupSystems, err := getSystemsByCategory(trimmed)
+			if err != nil {
+				return nil, fmt.Errorf("group not found: %v", trimmed)
+			}
+			expanded = append(expanded, groupSystems...)
 			continue
 		}
 
-		// Try system (or alias)
+		// Try individual system (or alias)
 		if sys, err := games.LookupSystem(trimmed); err == nil {
 			expanded = append(expanded, sys.Id)
 			continue
 		}
 
-		// Otherwise keep raw (maybe user typo or future system)
+		// Otherwise, keep raw (maybe user typo or future system)
 		expanded = append(expanded, trimmed)
 	}
-	return expanded
+	return expanded, nil
 }
 
 // filterAllowed applies include/exclude restrictions case-insensitively.
