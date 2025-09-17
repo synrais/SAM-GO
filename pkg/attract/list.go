@@ -90,7 +90,6 @@ func createGamelists(cfg *config.UserConfig,
 
 	var globalSearch []string
 	var masterList []string
-	anyRebuilt := false
 
 	// Load saved timestamps
 	savedTimestamps, err := loadSavedTimestamps(gamelistDir)
@@ -181,7 +180,6 @@ func createGamelists(cfg *config.UserConfig,
 
 			if exists && !cfg.List.RamOnly {
 				rebuilt++
-				anyRebuilt = true
 				status = "rebuilt"
 			} else {
 				fresh++
