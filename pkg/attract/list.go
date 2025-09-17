@@ -69,7 +69,7 @@ func createGamelists(cfg *config.UserConfig,
 	var emptySystems []string
 
 	var globalSearch []string
-	masterlist := make(map[string][]string)
+	var masterlist []string
 
 	// Load saved timestamps
 	savedTimestamps, err := loadSavedTimestamps(gamelistDir)
@@ -112,12 +112,11 @@ func createGamelists(cfg *config.UserConfig,
 				systemFiles = append(systemFiles, files...)
 			}
 
-			// Apply filters
+			// Stage 1: core filters
 			systemFiles = FilterUniqueWithMGL(systemFiles)
 			systemFiles = FilterExtensions(systemFiles, systemId, cfg)
-			systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
 
-			// Dedup
+			// Dedup within system
 			seen := make(map[string]struct{})
 			deduped := systemFiles[:0]
 			for _, f := range systemFiles {
@@ -138,7 +137,15 @@ func createGamelists(cfg *config.UserConfig,
 			sort.Strings(systemFiles)
 			totalGames += len(systemFiles)
 
-			writeGamelist(gamelistDir, systemId, systemFiles, cfg.List.RamOnly)
+			// Push clean systemFiles into Masterlist + Search (no timestamps here)
+			masterlist = append(masterlist, systemFiles...)
+			globalSearch = append(globalSearch, systemFiles...)
+
+			// Stage 2: policy filters (applied only to cached/written list)
+			filtered := ApplyFilterlists(gamelistDir, systemId, append([]string{}, systemFiles...), cfg)
+
+			// Write filtered gamelist
+			writeGamelist(gamelistDir, systemId, filtered, cfg.List.RamOnly)
 
 			if exists && !cfg.List.RamOnly {
 				rebuilt++
@@ -158,15 +165,10 @@ func createGamelists(cfg *config.UserConfig,
 			reused++
 			systemFiles = lines
 			status = "reused"
-		}
 
-		// Add to global search + masterlist
-		for _, f := range systemFiles {
-			masterlist[systemId] = append(masterlist[systemId], f)
-			clean := utils.StripTimestamp(f)
-			if clean != "" {
-				globalSearch = append(globalSearch, clean)
-			}
+			// Clean copy into global lists
+			masterlist = append(masterlist, systemFiles...)
+			globalSearch = append(globalSearch, systemFiles...)
 		}
 
 		if !quiet {
@@ -180,13 +182,15 @@ func createGamelists(cfg *config.UserConfig,
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
 
-	// Build Search.txt
+	// Build Search.txt (dedup + flat list)
 	if fresh > 0 || rebuilt > 0 {
 		sort.Strings(globalSearch)
-		cache.SetList("Search.txt", globalSearch)
+		searchUnique := utils.Dedup(globalSearch)
+
+		cache.SetList("Search.txt", searchUnique)
 		if !cfg.List.RamOnly {
 			var sb strings.Builder
-			for _, s := range globalSearch {
+			for _, s := range searchUnique {
 				sb.WriteString(s)
 				sb.WriteByte('\n')
 			}
@@ -199,28 +203,21 @@ func createGamelists(cfg *config.UserConfig,
 			}
 		}
 		if !quiet {
-			fmt.Printf("[List] Built Search list with %d entries\n", len(globalSearch))
+			fmt.Printf("[List] Built Search list with %d entries\n", len(searchUnique))
 		}
 	}
 
-	// Build Masterlist
+	// Build Masterlist (all entries, not deduped across systems)
 	if fresh > 0 || rebuilt > 0 {
-		var cacheMaster []string
-		var sb strings.Builder
-		for system, entries := range masterlist {
-			sort.Strings(entries)
-			header := fmt.Sprintf("### %s (%d)", system, len(entries))
-			cacheMaster = append(cacheMaster, header)
-			sb.WriteString(header + "\n")
-			for _, e := range entries {
-				clean := utils.StripTimestamp(e)
-				cacheMaster = append(cacheMaster, clean)
-				sb.WriteString(clean + "\n")
-			}
-			sb.WriteByte('\n')
-		}
-		cache.SetList("Masterlist.txt", cacheMaster)
+		sort.Strings(masterlist)
+		cache.SetList("Masterlist.txt", masterlist)
+
 		if !cfg.List.RamOnly {
+			var sb strings.Builder
+			for _, s := range masterlist {
+				sb.WriteString(s)
+				sb.WriteByte('\n')
+			}
 			masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
 			if err := os.MkdirAll(filepath.Dir(masterPath), 0755); err != nil {
 				panic(err)
@@ -230,7 +227,7 @@ func createGamelists(cfg *config.UserConfig,
 			}
 		}
 		if !quiet {
-			fmt.Printf("[List] Built Masterlist with %d systems\n", len(masterlist))
+			fmt.Printf("[List] Built Masterlist with %d entries\n", len(masterlist))
 		}
 	}
 
