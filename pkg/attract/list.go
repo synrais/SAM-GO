@@ -190,12 +190,12 @@ func createGamelists(cfg *config.UserConfig,
 
 			if !quiet {
 				if hadLists {
-					fmt.Printf("[List] %-15s %5d/%-5d → %-5d entries (-%d filtered) (%.2fs) [%s]\n",
+					fmt.Printf("[List] %-15s %5d/%-5d → %-5d entries (-%d filtered) (%7.2fs) [%s]\n",
 						systemId, dedupedCount, rawCount, filteredCount, filtersRemoved,
 						time.Since(sysStart).Seconds(), status,
 					)
 				} else {
-					fmt.Printf("[List] %-15s %5d/%-5d → %-5d entries (no filterlists) (%.2fs) [%s]\n",
+					fmt.Printf("[List] %-15s %5d/%-5d → %-5d entries (no filterlists) (%7.2fs) [%s]\n",
 						systemId, dedupedCount, rawCount, filteredCount,
 						time.Since(sysStart).Seconds(), status,
 					)
@@ -226,7 +226,7 @@ func createGamelists(cfg *config.UserConfig,
 			status = "reused"
 
 			if !quiet {
-				fmt.Printf("[List] %-15s %5d/%-5d → %-5d entries (%.2fs) [%s]\n",
+				fmt.Printf("[List] %-15s %5d/%-5d → %-5d entries (%7.2fs) [%s]\n",
 					systemId, len(systemFiles), len(systemFiles), len(systemFiles),
 					time.Since(sysStart).Seconds(), status,
 				)
