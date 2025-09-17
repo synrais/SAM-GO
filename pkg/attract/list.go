@@ -77,10 +77,10 @@ func createGamelists(cfg *config.UserConfig,
 		fmt.Fprintf(os.Stderr, "[List] Error loading saved timestamps: %v\n", err)
 		return 0
 	}
+	updatedTimestamps := savedTimestamps
 
 	// Process systems
 	for systemId, paths := range systemPaths {
-
 		sysStart := time.Now()
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
 		exists := fileExists(gamelistPath)
@@ -89,13 +89,14 @@ func createGamelists(cfg *config.UserConfig,
 		modified := false
 
 		for _, path := range paths {
-			m, err := checkAndHandleModifiedFolder(systemId, path, gamelistDir, savedTimestamps)
+			m, currentMod, err := isFolderModified(systemId, path, savedTimestamps)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "[List] Error checking %s: %v\n", path, err)
 				continue
 			}
 			if m {
 				modified = true
+				updatedTimestamps = updateTimestamp(updatedTimestamps, systemId, path, currentMod)
 			}
 		}
 
@@ -168,6 +169,11 @@ func createGamelists(cfg *config.UserConfig,
 			fmt.Printf("[List] %-12s %5d entries (%.2fs)\n",
 				systemId, len(systemFiles), time.Since(sysStart).Seconds())
 		}
+	}
+
+	// Save updated timestamps once at the end
+	if err := saveTimestamps(gamelistDir, updatedTimestamps); err != nil {
+		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
 
 	// Build Search.txt
