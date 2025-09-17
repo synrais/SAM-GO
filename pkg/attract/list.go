@@ -61,6 +61,12 @@ func writeSimpleList(path string, files []string) {
 	}
 }
 
+// fileExists is a local helper (replacement for utils.FileExists).
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 // removeSystemBlock removes the block for a system (separator + entries)
 func removeSystemBlock(list []string, systemId string) []string {
 	var out []string
