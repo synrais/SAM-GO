@@ -2,6 +2,7 @@ package attract
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +11,8 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// FilterUniqueWithMGL filters out duplicate files based on their name (ignores extension) and prioritizes `.mgl` files.
+// FilterUniqueWithMGL filters out duplicate files based on their base name
+// (ignores extension) and prioritizes `.mgl` files.
 func FilterUniqueWithMGL(files []string) []string {
 	chosen := make(map[string]string)
 	for _, f := range files {
@@ -34,9 +36,9 @@ func FilterUniqueWithMGL(files []string) []string {
 	return result
 }
 
-// FilterExtensions filters out files with specific extensions based on configuration.
-func FilterExtensions(files []string, systemId string, cfg *config.UserConfig) []string {
-	rules, ok := cfg.Disable[systemId]
+// FilterExtensions removes files with specific extensions based on config rules.
+func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) []string {
+	rules, ok := cfg.Disable[systemID]
 	if !ok || len(rules.Extensions) == 0 {
 		return files
 	}
@@ -54,21 +56,21 @@ func FilterExtensions(files []string, systemId string, cfg *config.UserConfig) [
 	for _, f := range files {
 		ext := strings.ToLower(filepath.Ext(f))
 		if _, skip := extMap[ext]; skip {
+			fmt.Printf("[Filters] Skipping %s (extension %s disabled)\n", filepath.Base(f), ext)
 			continue
 		}
 		filtered = append(filtered, f)
 	}
-
 	return filtered
 }
 
-// ApplyFilterlists applies whitelist, blacklist, and staticlist filtering to the gamelist files.
-func ApplyFilterlists(gamelistDir string, systemId string, files []string, cfg *config.UserConfig) []string {
+// ApplyFilterlists applies whitelist, blacklist, and staticlist filtering to gamelist files.
+func ApplyFilterlists(gamelistDir string, systemID string, files []string, cfg *config.UserConfig) []string {
 	filterBase := config.FilterlistDir()
 
 	// Whitelist
 	if cfg.Attract.UseWhitelist {
-		whitelistPath := filepath.Join(filterBase, systemId+"_whitelist.txt")
+		whitelistPath := filepath.Join(filterBase, systemID+"_whitelist.txt")
 		if f, err := os.Open(whitelistPath); err == nil {
 			defer f.Close()
 			whitelist := make(map[string]struct{})
@@ -84,6 +86,8 @@ func ApplyFilterlists(gamelistDir string, systemId string, files []string, cfg *
 				name, _ := utils.NormalizeEntry(filepath.Base(file))
 				if _, ok := whitelist[name]; ok {
 					kept = append(kept, file)
+				} else {
+					fmt.Printf("[Filters] Excluded %s (not in whitelist)\n", filepath.Base(file))
 				}
 			}
 			files = kept
@@ -92,7 +96,7 @@ func ApplyFilterlists(gamelistDir string, systemId string, files []string, cfg *
 
 	// Blacklist
 	if cfg.Attract.UseBlacklist {
-		blacklistPath := filepath.Join(filterBase, systemId+"_blacklist.txt")
+		blacklistPath := filepath.Join(filterBase, systemID+"_blacklist.txt")
 		if f, err := os.Open(blacklistPath); err == nil {
 			defer f.Close()
 			blacklist := make(map[string]struct{})
@@ -106,17 +110,19 @@ func ApplyFilterlists(gamelistDir string, systemId string, files []string, cfg *
 			var kept []string
 			for _, file := range files {
 				name, _ := utils.NormalizeEntry(filepath.Base(file))
-				if _, bad := blacklist[name]; !bad {
-					kept = append(kept, file)
+				if _, bad := blacklist[name]; bad {
+					fmt.Printf("[Filters] Excluded %s (in blacklist)\n", filepath.Base(file))
+					continue
 				}
+				kept = append(kept, file)
 			}
 			files = kept
 		}
 	}
 
-	// Staticlist (timestamps)
+	// Staticlist
 	if cfg.List.UseStaticlist {
-		staticPath := filepath.Join(filterBase, systemId+"_staticlist.txt")
+		staticPath := filepath.Join(filterBase, systemID+"_staticlist.txt")
 		if f, err := os.Open(staticPath); err == nil {
 			defer f.Close()
 			staticMap := make(map[string]string)
@@ -138,6 +144,7 @@ func ApplyFilterlists(gamelistDir string, systemId string, files []string, cfg *
 				name, _ := utils.NormalizeEntry(filepath.Base(f))
 				if ts, ok := staticMap[name]; ok {
 					files[i] = "<" + ts + ">" + f
+					fmt.Printf("[Filters] Tagged %s with static timestamp %s\n", filepath.Base(f), ts)
 				}
 			}
 		}
