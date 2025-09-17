@@ -100,6 +100,7 @@ func createGamelists(cfg *config.UserConfig,
 			}
 		}
 
+		status := ""
 		if modified || !exists {
 			// Rebuild gamelist
 			for _, path := range paths {
@@ -141,8 +142,10 @@ func createGamelists(cfg *config.UserConfig,
 
 			if exists && !cfg.List.RamOnly {
 				rebuilt++
+				status = "rebuilt"
 			} else {
 				fresh++
+				status = "fresh"
 			}
 		} else {
 			// Reuse cached list
@@ -154,6 +157,7 @@ func createGamelists(cfg *config.UserConfig,
 			totalGames += len(lines)
 			reused++
 			systemFiles = lines
+			status = "reused"
 		}
 
 		// Add to global search + masterlist
@@ -166,8 +170,8 @@ func createGamelists(cfg *config.UserConfig,
 		}
 
 		if !quiet {
-			fmt.Printf("[List] %-12s %5d entries (%.2fs)\n",
-				systemId, len(systemFiles), time.Since(sysStart).Seconds())
+			fmt.Printf("[List] %-12s %5d entries (%.2fs) [%s]\n",
+				systemId, len(systemFiles), time.Since(sysStart).Seconds(), status)
 		}
 	}
 
