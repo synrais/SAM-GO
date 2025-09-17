@@ -201,7 +201,7 @@ func Run(cfg *config.UserConfig, args []string) {
 			// adjust if static timestamp found
 			if ts > 0 {
 				skipDuration := time.Duration(ts*float64(time.Second)) +
-					time.Duration(attractCfg.SkipafterStatic)*time.Second
+					time.Duration(cfg.List.SkipafterStatic)*time.Second
 				if skipDuration < wait {
 					wait = skipDuration
 				}
