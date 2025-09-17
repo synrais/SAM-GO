@@ -29,10 +29,8 @@ func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bo
 		return false, nil
 	}
 
-	// Use the same cleaning logic here (local to AmigaVision)
-	base := filepath.Base(path)
-	cleanName := strings.TrimSuffix(base, filepath.Ext(base))
-
+	// use AmigaVision’s cleaner if it exists
+	cleanName := amigaCleanFileName(path)
 	fmt.Printf("[SIDELAUNCHER] %s launching: %s\n", system.Id, cleanName)
 
 	return true, fn(cfg, system, path)
@@ -46,6 +44,12 @@ func init() {
 	registerSideLauncher("AmigaVision", LaunchAmigaVision)
 }
 
+// amigaCleanFileName strips directory + extension, nothing else.
+func amigaCleanFileName(p string) string {
+	base := filepath.Base(p)
+	return strings.TrimSuffix(base, filepath.Ext(base))
+}
+
 func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string) error {
 	// Only handle .ags files
 	if !strings.EqualFold(filepath.Ext(path), ".ags") {
@@ -53,11 +57,6 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 	}
 
 	// --- Local helpers (scoped only to AmigaVision) ---
-	cleanFileName := func(p string) string {
-		base := filepath.Base(p)
-		return strings.TrimSuffix(base, filepath.Ext(base))
-	}
-
 	findAmigaShared := func() string {
 		paths := games.GetSystemPaths(cfg, []games.System{system})
 		for _, p := range paths {
@@ -100,7 +99,7 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 	}
 
 	// Write ags_boot file with the clean name
-	cleanName := cleanFileName(path)
+	cleanName := amigaCleanFileName(path)
 	bootFile := filepath.Join(tmpShared, "ags_boot")
 	content := cleanName + "\n\n"
 	if err := os.WriteFile(bootFile, []byte(content), 0644); err != nil {
