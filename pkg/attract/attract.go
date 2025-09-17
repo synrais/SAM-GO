@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -111,21 +112,13 @@ func filterAllowed(all []string, include, exclude []string) []string {
 }
 
 func Run(args []string) {
-	// Make sure SAM.ini exists and load config
-	_, err := config.EnsureUserConfig("SAM", assets.DefaultSAMIni)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return
-	}
-
-	// Load the user config
+	// Load config (ensures ini exists automatically)
 	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
 	attractCfg := cfg.Attract
 
 	// Ensure gamelists are built
 	if err := RunList([]string{}); err != nil {
 		fmt.Fprintln(os.Stderr, "[Attract] List build failed:", err)
-		return
 	}
 
 	// Load lists into cache
