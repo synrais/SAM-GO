@@ -318,13 +318,12 @@ func Reverse[S ~[]E, E any](s S) {
 	}
 }
 
-func RemoveFileExt(s string) string {
-	parts := strings.Split(s, ".")
-	if len(parts) > 1 {
-		return strings.Join(parts[:len(parts)-1], ".")
-	}
-	return s
+func RemoveFileExtSafe(path string) string {
+	base := filepath.Base(path)              // just the filename
+	ext := filepath.Ext(base)                // extension with dot
+	return strings.TrimSuffix(base, ext)     // remove only the last extension
 }
+
 
 // ReadLines opens a file and returns its non-empty trimmed lines.
 func ReadLines(path string) ([]string, error) {
