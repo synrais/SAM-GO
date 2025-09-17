@@ -9,7 +9,6 @@ import (
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
-	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 // --------------------------------------------------
@@ -30,7 +29,10 @@ func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bo
 		return false, nil
 	}
 
-	cleanName := utils.RemoveFileExt(filepath.Base(path))
+	// Use the same cleaning logic here (local to AmigaVision)
+	base := filepath.Base(path)
+	cleanName := strings.TrimSuffix(base, filepath.Ext(base))
+
 	fmt.Printf("[SIDELAUNCHER] %s launching: %s\n", system.Id, cleanName)
 
 	return true, fn(cfg, system, path)
@@ -51,6 +53,11 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 	}
 
 	// --- Local helpers (scoped only to AmigaVision) ---
+	cleanFileName := func(p string) string {
+		base := filepath.Base(p)
+		return strings.TrimSuffix(base, filepath.Ext(base))
+	}
+
 	findAmigaShared := func() string {
 		paths := games.GetSystemPaths(cfg, []games.System{system})
 		for _, p := range paths {
@@ -93,7 +100,7 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 	}
 
 	// Write ags_boot file with the clean name
-	cleanName := utils.RemoveFileExt(filepath.Base(path))
+	cleanName := cleanFileName(path)
 	bootFile := filepath.Join(tmpShared, "ags_boot")
 	content := cleanName + "\n\n"
 	if err := os.WriteFile(bootFile, []byte(content), 0644); err != nil {
