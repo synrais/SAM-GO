@@ -23,11 +23,17 @@ func registerSideLauncher(id string, fn func(*config.UserConfig, games.System, s
 	sideLauncherRegistry[id] = fn
 }
 
+// SideLaunchers checks if system.Id has a sidelauncher
 func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bool, error) {
-	if fn, ok := sideLauncherRegistry[strings.ToLower(system.Id)]; ok {
-		return true, fn(cfg, system, path)
+	fn, ok := sideLauncherRegistry[strings.ToLower(system.Id)]
+	if !ok {
+		return false, nil
 	}
-	return false, nil
+
+	cleanName := utils.RemoveFileExt(filepath.Base(path))
+	fmt.Printf("[SideLauncher] %s launching: %s\n", system.Id, cleanName)
+
+	return true, fn(cfg, system, path)
 }
 
 // --------------------------------------------------
@@ -43,9 +49,6 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 	if !strings.EqualFold(filepath.Ext(path), ".amiv") {
 		return nil
 	}
-
-	cleanName := utils.RemoveFileExt(filepath.Base(path))
-	fmt.Println("[SideLauncher] AmigaVision launching:", cleanName)
 
 	// --- Local helpers (scoped only to AmigaVision) ---
 	findAmigaShared := func() string {
@@ -90,6 +93,7 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 	}
 
 	// Write ags_boot file with the clean name
+	cleanName := utils.RemoveFileExt(filepath.Base(path))
 	bootFile := filepath.Join(tmpShared, "ags_boot")
 	content := cleanName + "\n\n"
 	if err := os.WriteFile(bootFile, []byte(content), 0644); err != nil {
