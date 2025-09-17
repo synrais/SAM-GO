@@ -192,10 +192,13 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 		defaultConfig.Attract.SkipafterStatic = 10
 	}
 
-	// Return early if INI file doesn’t exist
+	// Check if INI exists
 	if _, err := os.Stat(iniPath); os.IsNotExist(err) {
+		fmt.Println("[CONFIG] Generating default INI - Loading settings")
 		return defaultConfig, nil
 	}
+
+	fmt.Println("[CONFIG] Found INI - Loading settings")
 
 	cfg, err := ini.ShadowLoad(iniPath)
 	if err != nil {
@@ -229,7 +232,6 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 	normalizeList := func(raw []string) []string {
 		var result []string
 		for _, v := range raw {
-			// split in case parser didn't respect delim
 			parts := strings.Split(v, ",")
 			for _, p := range parts {
 				trimmed := strings.TrimSpace(p)
