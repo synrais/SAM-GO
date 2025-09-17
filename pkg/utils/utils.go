@@ -318,7 +318,7 @@ func Reverse[S ~[]E, E any](s S) {
 	}
 }
 
-func RemoveFileExtSafe(path string) string {
+func RemoveFileExt(path string) string {
 	base := filepath.Base(path)              // just the filename
 	ext := filepath.Ext(base)                // extension with dot
 	return strings.TrimSuffix(base, ext)     // remove only the last extension
