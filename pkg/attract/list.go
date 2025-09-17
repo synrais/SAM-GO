@@ -48,6 +48,11 @@ func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly 
 	}
 }
 
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 func writeSimpleList(path string, files []string) {
 	// Always write to cache
 	cache.SetList(filepath.Base(path), files)
