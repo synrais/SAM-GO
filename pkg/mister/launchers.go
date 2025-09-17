@@ -132,8 +132,8 @@ func LaunchShortCore(path string) error {
 }
 
 func LaunchGame(cfg *config.UserConfig, system games.System, path string) error {
-	// 🔹 First check if sidelauncher wants to handle this system specially
-	if handled, err := SideLauncher(cfg, system, path); handled {
+	// 🔹 First check if sidelaunchers wants to handle this system specially
+	if handled, err := SideLaunchers(cfg, system, path); handled {
 		return err
 	}
 
