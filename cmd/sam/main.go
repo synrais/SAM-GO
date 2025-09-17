@@ -141,7 +141,7 @@ func handleCommand(cfg *config.UserConfig, cmd string, args []string, skipCh cha
 			fmt.Fprintln(os.Stderr, "Run failed:", err)
 		}
 	case "-attract":
-		attract.Run(args)
+		attract.Run(cfg, args)
 	case "-back":
 		if _, err := history.PlayBack(); err != nil {
 			fmt.Fprintln(os.Stderr, "Back failed:", err)
