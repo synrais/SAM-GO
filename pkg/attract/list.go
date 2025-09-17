@@ -117,20 +117,18 @@ func createGamelists(cfg *config.UserConfig,
 			systemFiles = FilterExtensions(systemFiles, systemId, cfg)
 			systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
 
-			// Keep raw copy before per-system dedupe
-			rawSystemFiles := append([]string(nil), systemFiles...)
-
-			// Dedup per system
+			// Dedup per system using NormalizeEntry
 			seen := make(map[string]struct{})
-			deduped := systemFiles[:0]
+			deduped := make([]string, 0, len(systemFiles))
 			for _, f := range systemFiles {
-				base := strings.ToLower(filepath.Base(f))
-				if _, ok := seen[base]; ok {
+				name, _ := utils.NormalizeEntry(f)
+				if _, ok := seen[name]; ok {
 					continue
 				}
-				seen[base] = struct{}{}
+				seen[name] = struct{}{}
 				deduped = append(deduped, f)
 			}
+			origCount := len(systemFiles)
 			systemFiles = deduped
 
 			if len(systemFiles) == 0 {
@@ -153,14 +151,8 @@ func createGamelists(cfg *config.UserConfig,
 
 			if !quiet {
 				fmt.Printf("[List] %-12s %5d/%-5d entries (%.2fs) [%s]\n",
-					systemId, len(systemFiles), len(rawSystemFiles),
-					time.Since(sysStart).Seconds(), status)
+					systemId, len(systemFiles), origCount, time.Since(sysStart).Seconds(), status)
 			}
-
-			// Update master + search
-			masterList = append(masterList, rawSystemFiles...)
-			globalSearch = append(globalSearch, systemFiles...)
-
 		} else {
 			// Reuse cached list
 			lines := cache.GetList(gamelistFilename(systemId))
@@ -174,15 +166,20 @@ func createGamelists(cfg *config.UserConfig,
 			status = "reused"
 
 			if !quiet {
-				// Reuse only has deduped files stored
 				fmt.Printf("[List] %-12s %5d/%-5d entries (%.2fs) [%s]\n",
-					systemId, len(systemFiles), len(systemFiles),
-					time.Since(sysStart).Seconds(), status)
+					systemId, len(systemFiles), len(systemFiles), time.Since(sysStart).Seconds(), status)
 			}
+		}
 
-			// Update master + search with reused data
-			masterList = append(masterList, systemFiles...)
-			globalSearch = append(globalSearch, systemFiles...)
+		// Update master + search
+		masterList = append(masterList, systemFiles...)
+		seenSearch := make(map[string]struct{})
+		for _, f := range systemFiles {
+			name, _ := utils.NormalizeEntry(f)
+			if _, ok := seenSearch[name]; !ok {
+				globalSearch = append(globalSearch, f) // keep full entry for Search
+				seenSearch[name] = struct{}{}
+			}
 		}
 	}
 
@@ -191,23 +188,13 @@ func createGamelists(cfg *config.UserConfig,
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
 
-	// Dedup global search
-	seen := make(map[string]struct{})
-	finalSearch := make([]string, 0, len(globalSearch))
-	for _, f := range globalSearch {
-		if _, ok := seen[f]; !ok {
-			seen[f] = struct{}{}
-			finalSearch = append(finalSearch, f)
-		}
-	}
-	sort.Strings(finalSearch)
-
 	// Write Search.txt
 	if fresh > 0 || rebuilt > 0 {
-		cache.SetList("Search.txt", finalSearch)
+		sort.Strings(globalSearch)
+		cache.SetList("Search.txt", globalSearch)
 		if !cfg.List.RamOnly {
 			var sb strings.Builder
-			for _, s := range finalSearch {
+			for _, s := range globalSearch {
 				sb.WriteString(s)
 				sb.WriteByte('\n')
 			}
@@ -224,10 +211,10 @@ func createGamelists(cfg *config.UserConfig,
 			if rebuilt > 0 {
 				state = "rebuilt"
 			}
-			fmt.Printf("[List] %-12s %7d entries [%s]\n", "Search.txt", len(finalSearch), state)
+			fmt.Printf("[List] %-12s %7d entries [%s]\n", "Search.txt", len(globalSearch), state)
 		}
 	} else if !quiet {
-		fmt.Printf("[List] %-12s %7d entries [reused]\n", "Search.txt", len(finalSearch))
+		fmt.Printf("[List] %-12s %7d entries [reused]\n", "Search.txt", len(globalSearch))
 	}
 
 	// Write Masterlist.txt
