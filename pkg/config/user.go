@@ -1,12 +1,16 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/synrais/SAM-GO/pkg/assets"
 	"gopkg.in/ini.v1"
 )
+
+// ---- Config Structs ----
 
 type LaunchSyncConfig struct{}
 
@@ -45,18 +49,18 @@ type SystemsConfig struct {
 }
 
 type AttractConfig struct {
-	PlayTime           string   `ini:"playtime,omitempty"`
-	Random             bool     `ini:"random,omitempty"`
-	Include            []string `ini:"include,omitempty" delim:","`
-	Exclude            []string `ini:"exclude,omitempty" delim:","`
-	UseBlacklist       bool     `ini:"useblacklist,omitempty"`
-	BlacklistInclude   []string `ini:"blacklist_include,omitempty" delim:","`
-	BlacklistExclude   []string `ini:"blacklist_exclude,omitempty" delim:","`
-	SkipafterStatic    int      `ini:"skipafterstatic,omitempty"`
-	UseStaticDetector  bool     `ini:"usestaticdetector,omitempty"`
-    UseWhitelist        bool     `json:"useWhitelist"`
-    WhitelistInclude    []string `json:"whitelistInclude"`
-    WhitelistExclude    []string `json:"whitelistExclude"`
+	PlayTime          string   `ini:"playtime,omitempty"`
+	Random            bool     `ini:"random,omitempty"`
+	Include           []string `ini:"include,omitempty" delim:","`
+	Exclude           []string `ini:"exclude,omitempty" delim:","`
+	UseBlacklist      bool     `ini:"useblacklist,omitempty"`
+	BlacklistInclude  []string `ini:"blacklist_include,omitempty" delim:","`
+	BlacklistExclude  []string `ini:"blacklist_exclude,omitempty" delim:","`
+	SkipafterStatic   int      `ini:"skipafterstatic,omitempty"`
+	UseStaticDetector bool     `ini:"usestaticdetector,omitempty"`
+	UseWhitelist      bool     `ini:"usewhitelist,omitempty"`
+	WhitelistInclude  []string `ini:"whitelistinclude,omitempty" delim:","`
+	WhitelistExclude  []string `ini:"whitelistexclude,omitempty" delim:","`
 }
 
 type ListConfig struct {
@@ -64,7 +68,7 @@ type ListConfig struct {
 	UseStaticlist     bool     `ini:"usestaticlist,omitempty"`
 	StaticlistInclude []string `ini:"staticlist_include,omitempty" delim:","`
 	StaticlistExclude []string `ini:"staticlist_exclude,omitempty" delim:","`
-	RamOnly           bool     `ini:"ramonly,omitempty"` // NEW: run in RAM-only mode
+	RamOnly           bool     `ini:"ramonly,omitempty"`
 }
 
 type DisableRules struct {
@@ -120,196 +124,72 @@ type UserConfig struct {
 	Disable        map[string]DisableRules `ini:"-"`
 }
 
-// LoadUserConfig loads SAM.ini into UserConfig
-func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error) {
-    iniPath := os.Getenv(UserConfigEnv)
+// ---- Ensure SAM.ini exists, load & debug ----
 
-    exePath, err := os.Executable()
-    if err != nil {
-        return defaultConfig, err
-    }
+func EnsureUserConfig(name string) (*UserConfig, error) {
+	exePath, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get exe path: %w", err)
+	}
+	iniPath := filepath.Join(filepath.Dir(exePath), name+".ini")
 
-    appPath := os.Getenv(UserAppPathEnv)
-    if appPath != "" {
-        exePath = appPath
-    }
+	// Ensure ini exists
+	if _, err := os.Stat(iniPath); os.IsNotExist(err) {
+		if err := os.WriteFile(iniPath, []byte(assets.DefaultSAMIni), 0644); err != nil {
+			return nil, fmt.Errorf("failed to write default ini: %w", err)
+		}
+		fmt.Println("[CONFIG] No ini found. Copying default")
+	} else if err == nil {
+		fmt.Println("[CONFIG] Found SAM.ini")
+	} else {
+		return nil, fmt.Errorf("failed to check ini: %w", err)
+	}
 
-    if iniPath == "" {
-        iniPath = filepath.Join(filepath.Dir(exePath), name+".ini")
-    }
+	// Load config
+	cfg, err := LoadUserConfig(name, &UserConfig{})
+	if err != nil {
+		return nil, err
+	}
 
-    // Bake in defaults BEFORE mapping from INI
-    defaultConfig.AppPath = exePath
-    defaultConfig.IniPath = iniPath
-    defaultConfig.Disable = make(map[string]DisableRules)
-    defaultConfig.StaticDetector.Systems = make(map[string]StaticDetectorOverride)
-    defaultConfig.InputDetector.KeyboardMap = map[string]string{
-        "left":  "back",
-        "right": "next",
-        "`":     "search",
-    }
-    defaultConfig.InputDetector.MouseMap = map[string]string{
-        "swipeleft":  "back",
-        "swiperight": "next",
-    }
-    defaultConfig.InputDetector.JoystickMap = map[string]string{
-        "dpleft":  "back",
-        "dpright": "next",
-        "leftx-":  "back",
-        "leftx+":  "next",
-    }
+	// ---- Debug summary ----
+	fmt.Printf("[CONFIG] Loaded config from: %s\n", cfg.IniPath)
+	fmt.Println("[CONFIG] Ini settings:")
+	fmt.Printf("  Attract:\n")
+	fmt.Printf("    PlayTime=%s | Random=%v\n", cfg.Attract.PlayTime, cfg.Attract.Random)
+	fmt.Printf("    Include=%v | Exclude=%v\n", cfg.Attract.Include, cfg.Attract.Exclude)
+	fmt.Printf("    UseBlacklist=%v | UseWhitelist=%v | UseStaticlist=%v | UseStaticDetector=%v\n",
+		cfg.Attract.UseBlacklist, cfg.Attract.UseWhitelist, cfg.List.UseStaticlist, cfg.Attract.UseStaticDetector)
+	fmt.Printf("  List: Exclude=%v | RamOnly=%v\n", cfg.List.Exclude, cfg.List.RamOnly)
+	fmt.Printf("  InputDetector: Mouse=%v | Keyboard=%v | Joystick=%v\n",
+		cfg.InputDetector.Mouse, cfg.InputDetector.Keyboard, cfg.InputDetector.Joystick)
+	fmt.Printf("    KeyboardMap=%v\n", cfg.InputDetector.KeyboardMap)
+	fmt.Printf("    MouseMap=%v\n", cfg.InputDetector.MouseMap)
+	fmt.Printf("    JoystickMap=%v\n", cfg.InputDetector.JoystickMap)
+	fmt.Printf("  StaticDetector:\n")
+	fmt.Printf("    BlackThreshold=%v | StaticThreshold=%v | Grace=%v\n",
+		cfg.StaticDetector.BlackThreshold, cfg.StaticDetector.StaticThreshold, cfg.StaticDetector.Grace)
+	fmt.Printf("    SkipBlack=%v | WriteBlackList=%v | SkipStatic=%v | WriteStaticList=%v\n",
+		cfg.StaticDetector.SkipBlack, cfg.StaticDetector.WriteBlackList, cfg.StaticDetector.SkipStatic, cfg.StaticDetector.WriteStaticList)
 
-    // ---- Default Static Detector settings ----
-    if defaultConfig.StaticDetector.BlackThreshold == 0 {
-        defaultConfig.StaticDetector.BlackThreshold = 30
-    }
-    if defaultConfig.StaticDetector.StaticThreshold == 0 {
-        defaultConfig.StaticDetector.StaticThreshold = 30
-    }
-    if !defaultConfig.StaticDetector.SkipBlack {
-        defaultConfig.StaticDetector.SkipBlack = true
-    }
-    if !defaultConfig.StaticDetector.WriteBlackList {
-        defaultConfig.StaticDetector.WriteBlackList = true
-    }
-    if !defaultConfig.StaticDetector.SkipStatic {
-        defaultConfig.StaticDetector.SkipStatic = true
-    }
-    if !defaultConfig.StaticDetector.WriteStaticList {
-        defaultConfig.StaticDetector.WriteStaticList = true
-    }
-    if defaultConfig.StaticDetector.Grace == 0 {
-        defaultConfig.StaticDetector.Grace = 25
-    }
+	if len(cfg.Disable) > 0 {
+		fmt.Println("  Disable Rules:")
+		for sys, rules := range cfg.Disable {
+			if len(rules.Folders) == 0 && len(rules.Files) == 0 && len(rules.Extensions) == 0 {
+				fmt.Printf("    %s -> (no rules)\n", sys)
+			} else {
+				fmt.Printf("    %s -> Folders=%v | Files=%v | Extensions=%v\n",
+					sys, rules.Folders, rules.Files, rules.Extensions)
+			}
+		}
+	} else {
+		fmt.Println("  Disable Rules: none")
+	}
 
-    // ---- Default Attract settings ----
-    if defaultConfig.Attract.PlayTime == "" {
-        defaultConfig.Attract.PlayTime = "40"
-    }
-    defaultConfig.Attract.Random = true
-    if defaultConfig.Attract.SkipafterStatic == 0 {
-        defaultConfig.Attract.SkipafterStatic = 10
-    }
-
-    // Return early if INI file doesn’t exist
-    if _, err := os.Stat(iniPath); os.IsNotExist(err) {
-        return defaultConfig, nil
-    }
-
-    cfg, err := ini.ShadowLoad(iniPath)
-    if err != nil {
-        return defaultConfig, err
-    }
-
-    // Case-insensitive normalize
-    for _, section := range cfg.Sections() {
-        origName := section.Name()
-        lowerName := strings.ToLower(origName)
-        if lowerName != origName {
-            dest := cfg.Section(lowerName)
-            for _, key := range section.Keys() {
-                dest.NewKey(strings.ToLower(key.Name()), key.Value())
-            }
-        }
-        for _, key := range section.Keys() {
-            lowerKey := strings.ToLower(key.Name())
-            if lowerKey != key.Name() {
-                section.NewKey(lowerKey, key.Value())
-            }
-        }
-    }
-
-    // Map INI → struct
-    if err := cfg.MapTo(defaultConfig); err != nil {
-        return defaultConfig, err
-    }
-
-    // --- FIX: Normalize Include/Exclude ---
-    normalizeList := func(raw []string) []string {
-        var result []string
-        for _, v := range raw {
-            // split in case parser didn't respect delim
-            parts := strings.Split(v, ",")
-            for _, p := range parts {
-                trimmed := strings.TrimSpace(p)
-                if trimmed != "" {
-                    result = append(result, trimmed)
-                }
-            }
-        }
-        return result
-    }
-    defaultConfig.Attract.Include = normalizeList(defaultConfig.Attract.Include)
-    defaultConfig.Attract.Exclude = normalizeList(defaultConfig.Attract.Exclude)
-
-    // Input detector overrides...
-    if sec, err := cfg.GetSection("inputdetector.keyboard"); err == nil {
-        for _, key := range sec.Keys() {
-            defaultConfig.InputDetector.KeyboardMap[strings.ToLower(key.Name())] = key.Value()
-        }
-    }
-    if sec, err := cfg.GetSection("inputdetector.mouse"); err == nil {
-        for _, key := range sec.Keys() {
-            defaultConfig.InputDetector.MouseMap[strings.ToLower(key.Name())] = key.Value()
-        }
-    }
-    if sec, err := cfg.GetSection("inputdetector.joystick"); err == nil {
-        for _, key := range sec.Keys() {
-            defaultConfig.InputDetector.JoystickMap[strings.ToLower(key.Name())] = key.Value()
-        }
-    }
-
-    // Parse disable.* and staticdetector.* rules
-    for _, section := range cfg.Sections() {
-        secName := strings.ToLower(section.Name())
-        switch {
-        case strings.HasPrefix(secName, "disable."):
-            sys := strings.TrimPrefix(secName, "disable.")
-            var rules DisableRules
-            _ = section.MapTo(&rules)
-            defaultConfig.Disable[sys] = rules
-        case strings.HasPrefix(secName, "staticdetector."):
-            sys := strings.TrimPrefix(secName, "staticdetector.")
-            var sc StaticDetectorOverride
-            if section.HasKey("blackthreshold") {
-                v, _ := section.Key("blackthreshold").Float64()
-                sc.BlackThreshold = &v
-            }
-            if section.HasKey("staticthreshold") {
-                v, _ := section.Key("staticthreshold").Float64()
-                sc.StaticThreshold = &v
-            }
-            if section.HasKey("skipblack") {
-                v, _ := section.Key("skipblack").Bool()
-                sc.SkipBlack = &v
-            }
-            if section.HasKey("writeblacklist") {
-                v, _ := section.Key("writeblacklist").Bool()
-                sc.WriteBlackList = &v
-            }
-            if section.HasKey("skipstatic") {
-                v, _ := section.Key("skipstatic").Bool()
-                sc.SkipStatic = &v
-            }
-            if section.HasKey("writestaticlist") {
-                v, _ := section.Key("writestaticlist").Bool()
-                sc.WriteStaticList = &v
-            }
-            if section.HasKey("grace") {
-                v, _ := section.Key("grace").Float64()
-                sc.Grace = &v
-            }
-            defaultConfig.StaticDetector.Systems[sys] = sc
-        }
-    }
-
-    return defaultConfig, nil
+	return cfg, nil
 }
 
+// ---- Global helpers ----
 
-// ---- Global directory helpers ----
-
-// BaseDir returns the directory where the SAM binary lives.
 func BaseDir() string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -319,12 +199,10 @@ func BaseDir() string {
 	return filepath.Dir(exe)
 }
 
-// GamelistDir points to SAM_Gamelists inside the binary’s base dir.
 func GamelistDir() string {
 	return filepath.Join(BaseDir(), "SAM_Gamelists")
 }
 
-// FilterlistDir points to SAM_Filterlists inside SAM_Gamelists.
 func FilterlistDir() string {
 	return filepath.Join(GamelistDir(), "SAM_Filterlists")
 }
