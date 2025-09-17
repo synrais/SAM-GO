@@ -45,36 +45,25 @@ func loadSavedTimestamps(gamelistDir string) ([]SavedTimestamp, error) {
 }
 
 // Check if folder was modified compared to saved timestamps
-func checkAndHandleModifiedFolder(systemID, path, gamelistDir string, saved []SavedTimestamp) (bool, error) {
+// NOTE: does NOT write; caller should update and save once after all systems.
+func isFolderModified(systemID, path string, saved []SavedTimestamp) (bool, time.Time, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, nil
+			return false, time.Time{}, nil
 		}
-		return false, fmt.Errorf("[Modtime] Failed to stat %s: %w", path, err)
+		return false, time.Time{}, fmt.Errorf("[Modtime] Failed to stat %s: %w", path, err)
 	}
 	currentMod := info.ModTime()
 
 	for _, ts := range saved {
 		if ts.SystemID == systemID && ts.Path == path {
-			if currentMod.After(ts.ModTime) {
-				// Folder modified → update timestamp
-				newList := updateTimestamp(saved, systemID, path, currentMod)
-				_ = saveTimestamps(gamelistDir, newList)
-				return true, nil
-			}
-			return false, nil
+			return currentMod.After(ts.ModTime), currentMod, nil
 		}
 	}
 
-	// No record → new entry
-	newList := append(saved, SavedTimestamp{
-		SystemID: systemID,
-		Path:     path,
-		ModTime:  currentMod,
-	})
-	_ = saveTimestamps(gamelistDir, newList)
-	return true, nil
+	// no record yet → treat as modified
+	return true, currentMod, nil
 }
 
 // Update or insert timestamp
