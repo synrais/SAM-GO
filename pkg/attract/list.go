@@ -20,6 +20,35 @@ func gamelistFilename(systemId string) string {
 	return systemId + "_gamelist.txt"
 }
 
+// Write the gamelist to disk and cache it
+func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly bool) {
+	cache.SetList(gamelistFilename(systemId), files)
+	if ramOnly {
+		return
+	}
+
+	var sb strings.Builder
+	for _, file := range files {
+		sb.WriteString(file)
+		sb.WriteByte('\n')
+	}
+	data := []byte(sb.String())
+
+	gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
+	if err := os.MkdirAll(filepath.Dir(gamelistPath), 0755); err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(gamelistPath, data, 0644); err != nil {
+		panic(err)
+	}
+}
+
+// Check if a file exists
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 // Create gamelists, checking for modifications and handling caching
 func createGamelists(cfg *config.UserConfig,
 	gamelistDir string,
