@@ -131,6 +131,11 @@ func findMatches(qn, qext string) []string {
 	var prefix, substring, fuzzy []string
 
 	for _, e := range GameIndex {
+		// Skip entries that are separators (e.g., # SYSTEM: systemId #)
+		if strings.HasPrefix(e.Name, "# SYSTEM:") {
+			continue
+		}
+
 		if qext != "" && qext != e.Ext {
 			continue
 		}
