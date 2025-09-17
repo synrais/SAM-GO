@@ -240,38 +240,10 @@ func createGamelists(cfg *config.UserConfig,
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
 
-	// --- Write/Search.txt and build GameIndex ---
-	var searchLines []string
+	// --- Build and save GameIndex ---
 	if fresh > 0 || rebuilt > 0 {
-		sort.Strings(globalSearch)
-		cache.SetList("Search.txt", globalSearch)
-		if !cfg.List.RamOnly {
-			writeSimpleList(filepath.Join(gamelistDir, "Search.txt"), globalSearch)
-		}
-		searchLines = globalSearch
-		if !quiet {
-			state := "fresh"
-			if anyRebuilt {
-				state = "rebuilt"
-			}
-			fmt.Printf("[List] %-12s %7d entries [%s]\n", "Search.txt", len(globalSearch), state)
-		}
-	} else {
-		lines := cache.GetList("Search.txt")
-		if len(lines) == 0 {
-			lines, _ = utils.ReadLines(filepath.Join(gamelistDir, "Search.txt"))
-			cache.SetList("Search.txt", lines)
-		}
-		searchLines = cache.GetList("Search.txt")
-		if !quiet {
-			fmt.Printf("[List] %-12s %7d entries [reused]\n", "Search.txt", len(searchLines))
-		}
-	}
-
-	// Build GameIndex from Search.txt
-	if len(searchLines) > 0 {
-		input.GameIndex = make([]input.GameEntry, 0, len(searchLines))
-		for _, f := range searchLines {
+		input.GameIndex = make([]input.GameEntry, 0, len(globalSearch))
+		for _, f := range globalSearch {
 			name, ext := utils.NormalizeEntry(f)
 			if name == "" {
 				continue
@@ -282,9 +254,35 @@ func createGamelists(cfg *config.UserConfig,
 				Path: f,
 			})
 		}
-		fmt.Printf("[SEARCH] GameIndex populated: %d entries\n", len(input.GameIndex))
-		// Drop Search.txt from cache to avoid duplication
-		cache.DeleteKey("Search.txt")
+		if !quiet {
+			fmt.Printf("[List] GameIndex built: %d entries\n", len(input.GameIndex))
+		}
+
+		// Save to disk if not RAM-only
+		if !cfg.List.RamOnly {
+			indexPath := filepath.Join(gamelistDir, "GameIndex")
+			data, err := json.MarshalIndent(input.GameIndex, "", "  ")
+			if err == nil {
+				if err := os.WriteFile(indexPath, data, 0644); err == nil && !quiet {
+					fmt.Printf("[List] GameIndex saved (%d entries)\n", len(input.GameIndex))
+				}
+			}
+		}
+	} else {
+		// Reuse GameIndex from disk if it exists
+		indexPath := filepath.Join(gamelistDir, "GameIndex")
+		if fileExists(indexPath) {
+			data, err := os.ReadFile(indexPath)
+			if err == nil {
+				var loaded []input.GameEntry
+				if err := json.Unmarshal(data, &loaded); err == nil {
+					input.GameIndex = loaded
+					if !quiet {
+						fmt.Printf("[List] GameIndex loaded (%d entries) [reused]\n", len(input.GameIndex))
+					}
+				}
+			}
+		}
 	}
 
 	// Write Masterlist.txt
