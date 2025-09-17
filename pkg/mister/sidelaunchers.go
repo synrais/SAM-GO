@@ -31,7 +31,7 @@ func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bo
 	}
 
 	cleanName := utils.RemoveFileExt(filepath.Base(path))
-	fmt.Printf("[SideLauncher] %s launching: %s\n", system.Id, cleanName)
+	fmt.Printf("[SIDELAUNCHER] %s launching: %s\n", system.Id, cleanName)
 
 	return true, fn(cfg, system, path)
 }
@@ -119,7 +119,7 @@ func init() {
 }
 
 func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error {
-	fmt.Println("[SideLauncher] CD32 placeholder launch:", path)
+	fmt.Println("[SIDELAUNCHER] CD32 placeholder launch:", path)
 	// TODO: implement CD32 rules
 	return LaunchCore(cfg, system)
 }
