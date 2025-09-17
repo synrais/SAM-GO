@@ -152,17 +152,6 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 		// Update only cache (runtime view)
 		cache.SetList(filepath.Base(f), lines)
 	}
-
-	// Always load Search.txt and Masterlist.txt into cache
-	for _, name := range []string{"Search.txt", "Masterlist.txt"} {
-		path := filepath.Join(fullDir, name)
-		if _, err := os.Stat(path); err == nil {
-			lines, err := utils.ReadLines(path)
-			if err == nil {
-				cache.SetList(name, lines)
-			}
-		}
-	}
 }
 
 // ParseLine separates an optional <timestamp> prefix from a gamelist line.
