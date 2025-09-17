@@ -126,57 +126,52 @@ func filterAllowed(all []string, include, exclude []string) []string {
 }
 
 func Run(args []string) {
-	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
-	attractCfg := cfg.Attract
+    cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
+    attractCfg := cfg.Attract
 
-	// Use global helper for SAM_Gamelists path
-	gamelistDir := config.GamelistDir()
+    gamelistDir := config.GamelistDir()
 
-	// Load saved timestamps from the Modtime file
-	savedTimestamps, err := loadSavedTimestamps(gamelistDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading saved timestamps: %v\n", err)
-	}
+    savedTimestamps, err := loadSavedTimestamps(gamelistDir)
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Error loading saved timestamps: %v\n", err)
+    }
 
-	// Build gamelists before processing
-	listArgs := []string{}
-	for systemId, paths := range cfg.Attract.Include {
-		// Ensure systemId is a string (if it's not already a string)
-		systemIdStr := fmt.Sprintf("%v", systemId)
+    // Build gamelists before processing
+    listArgs := []string{}
 
-		// Ensure paths[0] is a string (if it's a byte slice or byte)
-		pathStr := string(paths[0]) // Convert byte to string
+    // Correct iteration: Include is []string
+    fmt.Println("Finding system folders...")
+    for _, pathStr := range attractCfg.Include {
+        if pathStr == "" {
+            fmt.Println("Skipping invalid path (empty entry)")
+            continue
+        }
 
-		// Skip invalid paths first
-		if pathStr == "" {
-			fmt.Printf("Skipping invalid path for system '%s'\n", systemIdStr)
-			continue
-		}
+        // Ensure the path exists before proceeding
+        if _, err := os.Stat(pathStr); os.IsNotExist(err) {
+            fmt.Printf("Skipping non-existent folder '%s'\n", pathStr)
+            continue
+        }
 
-		// Ensure the path exists before proceeding
-		if _, err := os.Stat(pathStr); os.IsNotExist(err) {
-			fmt.Printf("Skipping non-existent folder '%s' for system '%s'\n", pathStr, systemIdStr)
-			continue
-		}
+        // Now check if folder is modified AFTER system validation
+        modified, err := checkAndHandleModifiedFolder(pathStr, pathStr, gamelistDir, savedTimestamps)
+        if err != nil {
+            fmt.Fprintln(os.Stderr, "Error checking folder modification:", err)
+            continue
+        }
 
-		// Now check if folder is modified AFTER system validation
-		modified, err := checkAndHandleModifiedFolder(systemIdStr, pathStr, gamelistDir, savedTimestamps)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Error checking folder modification:", err)
-			continue
-		}
+        // Force rebuild if modified or no cached gamelist exists
+        gamelistFile := filepath.Join(gamelistDir, gamelistFilename(filepath.Base(pathStr)))
+        if modified || !fileExists(gamelistFile) {
+            listArgs = append(listArgs, "-overwrite")
+        }
+    }
 
-		// Force rebuild if modified or no cached gamelist exists
-		if modified || !fileExists(filepath.Join(gamelistDir, gamelistFilename(systemIdStr))) {
-			listArgs = append(listArgs, "-overwrite")
-		}
-	}
+    if err := RunList(listArgs); err != nil {
+        fmt.Fprintln(os.Stderr, "List build failed:", err)
+    }
 
-	if err := RunList(listArgs); err != nil {
-		fmt.Fprintln(os.Stderr, "List build failed:", err)
-	}
-
-	ProcessLists(gamelistDir, cfg)
+    ProcessLists(gamelistDir, cfg)
 
 	// control channels
 	skipCh := make(chan struct{}, 1)
