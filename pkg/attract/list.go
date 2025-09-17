@@ -68,8 +68,8 @@ func createGamelists(cfg *config.UserConfig,
 	fresh, rebuilt, reused := 0, 0, 0
 	var emptySystems []string
 
-	var searchList []string   // flat list of deduped entries per system
-	var masterList []string   // flat list of all entries across all systems
+	var globalSearch []string
+	var masterList []string
 
 	// Load saved timestamps
 	savedTimestamps, err := loadSavedTimestamps(gamelistDir)
@@ -88,7 +88,6 @@ func createGamelists(cfg *config.UserConfig,
 		var systemFiles []string
 		modified := false
 
-		// Check modification timestamps
 		for _, path := range paths {
 			m, currentMod, err := isFolderModified(systemId, path, savedTimestamps)
 			if err != nil {
@@ -113,9 +112,23 @@ func createGamelists(cfg *config.UserConfig,
 				systemFiles = append(systemFiles, files...)
 			}
 
-			// Apply baseline filters (MGL + extensions)
+			// Apply filters in order
 			systemFiles = FilterUniqueWithMGL(systemFiles)
 			systemFiles = FilterExtensions(systemFiles, systemId, cfg)
+			systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
+
+			// Dedup per system
+			seen := make(map[string]struct{})
+			deduped := systemFiles[:0]
+			for _, f := range systemFiles {
+				base := strings.ToLower(filepath.Base(f))
+				if _, ok := seen[base]; ok {
+					continue
+				}
+				seen[base] = struct{}{}
+				deduped = append(deduped, f)
+			}
+			systemFiles = deduped
 
 			if len(systemFiles) == 0 {
 				emptySystems = append(emptySystems, systemId)
@@ -125,27 +138,7 @@ func createGamelists(cfg *config.UserConfig,
 			sort.Strings(systemFiles)
 			totalGames += len(systemFiles)
 
-			// --- Add to Masterlist + Search ---
-			// Masterlist gets everything (raw, not deduped across systems)
-			masterList = append(masterList, systemFiles...)
-
-			// Dedup *within this system only* for Search
-			seen := make(map[string]struct{})
-			for _, f := range systemFiles {
-				base := strings.ToLower(filepath.Base(f))
-				if _, ok := seen[base]; ok {
-					continue
-				}
-				seen[base] = struct{}{}
-				searchList = append(searchList, f)
-			}
-
-			// Write gamelist file (deduped systemFiles)
 			writeGamelist(gamelistDir, systemId, systemFiles, cfg.List.RamOnly)
-
-			// Apply filterlists to the cached copy only (after writing)
-			systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
-			cache.SetList(gamelistFilename(systemId), systemFiles)
 
 			if exists && !cfg.List.RamOnly {
 				rebuilt++
@@ -161,23 +154,24 @@ func createGamelists(cfg *config.UserConfig,
 				lines, _ = utils.ReadLines(gamelistPath)
 				cache.SetList(gamelistFilename(systemId), lines)
 			}
-			totalGames += len(lines)
-
-			// Masterlist + Search still need to be updated from existing list
-			masterList = append(masterList, lines...)
-
-			seen := make(map[string]struct{})
-			for _, f := range lines {
-				base := strings.ToLower(filepath.Base(f))
-				if _, ok := seen[base]; ok {
-					continue
-				}
-				seen[base] = struct{}{}
-				searchList = append(searchList, f)
-			}
-
+			systemFiles = lines // ✅ fix: ensure systemFiles is set
+			totalGames += len(systemFiles)
 			reused++
 			status = "reused"
+		}
+
+		// Update master + search
+		masterList = append(masterList, systemFiles...)
+		seenSearch := make(map[string]struct{})
+		for _, f := range systemFiles {
+			clean := utils.StripTimestamp(f)
+			if clean == "" {
+				continue
+			}
+			if _, ok := seenSearch[clean]; !ok {
+				globalSearch = append(globalSearch, clean)
+				seenSearch[clean] = struct{}{}
+			}
 		}
 
 		if !quiet {
@@ -191,13 +185,13 @@ func createGamelists(cfg *config.UserConfig,
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
 
-	// --- Build Search.txt ---
+	// Write Search.txt
 	if fresh > 0 || rebuilt > 0 {
-		sort.Strings(searchList)
-		cache.SetList("Search.txt", searchList)
+		sort.Strings(globalSearch)
+		cache.SetList("Search.txt", globalSearch)
 		if !cfg.List.RamOnly {
 			var sb strings.Builder
-			for _, s := range searchList {
+			for _, s := range globalSearch {
 				sb.WriteString(s)
 				sb.WriteByte('\n')
 			}
@@ -210,18 +204,17 @@ func createGamelists(cfg *config.UserConfig,
 			}
 		}
 		if !quiet {
-			fmt.Printf("[List] Built Search list with %d entries\n", len(searchList))
+			fmt.Printf("[List] Built Search list with %d entries\n", len(globalSearch))
 		}
 	}
 
-	// --- Build Masterlist.txt ---
+	// Write Masterlist.txt
 	if fresh > 0 || rebuilt > 0 {
-		sort.Strings(masterList)
 		cache.SetList("Masterlist.txt", masterList)
 		if !cfg.List.RamOnly {
 			var sb strings.Builder
-			for _, m := range masterList {
-				sb.WriteString(m)
+			for _, e := range masterList {
+				sb.WriteString(e)
 				sb.WriteByte('\n')
 			}
 			masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
