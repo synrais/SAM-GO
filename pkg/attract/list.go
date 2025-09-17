@@ -285,7 +285,7 @@ func createGamelists(cfg *config.UserConfig,
 
 	if !quiet {
 		taken := time.Since(start).Seconds()
-		fmt.Printf("[List] Done: %d games in %.1fs (%d fresh, %d rebuilt, %d reused)\n",
+		fmt.Printf("[List] Done: %d games in %.1fs (%d fresh, %d rebuilt, %d reused systems)\n",
 			totalGames, taken, fresh, rebuilt, reused)
 		if len(emptySystems) > 0 {
 			fmt.Printf("[List] Empty systems: %s\n", strings.Join(emptySystems, ", "))
