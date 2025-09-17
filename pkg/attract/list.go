@@ -66,6 +66,17 @@ func writeSimpleList(path string, files []string) {
 	}
 }
 
+// removeSystemEntries removes a system's entries from the list
+func removeSystemEntries(list []string, systemId string) []string {
+	var newList []string
+	for _, entry := range list {
+		if !strings.Contains(entry, systemId) {
+			newList = append(newList, entry)
+		}
+	}
+	return newList
+}
+
 // ---------------------------
 // Main createGamelists logic
 // ---------------------------
@@ -202,7 +213,11 @@ func createGamelists(cfg *config.UserConfig,
 				}
 			}
 
-			// Master = raw, Search = deduped
+			// ** Remove old system entries from Masterlist and GameIndex**
+			masterList = removeSystemEntries(masterList, systemId)
+			globalSearch = removeSystemEntries(globalSearch, systemId)
+
+			// ** Add newly rebuilt system entries**
 			masterList = append(masterList, rawFiles...)
 			seenSearch := make(map[string]struct{})
 			for _, f := range deduped {
