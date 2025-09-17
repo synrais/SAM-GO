@@ -20,35 +20,6 @@ func gamelistFilename(systemId string) string {
 	return systemId + "_gamelist.txt"
 }
 
-// Write the gamelist to disk and cache it
-func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly bool) {
-	cache.SetList(gamelistFilename(systemId), files)
-	if ramOnly {
-		return
-	}
-
-	var sb strings.Builder
-	for _, file := range files {
-		sb.WriteString(file)
-		sb.WriteByte('\n')
-	}
-	data := []byte(sb.String())
-
-	gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
-	if err := os.MkdirAll(filepath.Dir(gamelistPath), 0755); err != nil {
-		panic(err)
-	}
-	if err := os.WriteFile(gamelistPath, data, 0644); err != nil {
-		panic(err)
-	}
-}
-
-// Check if a file exists
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
 // Create gamelists, checking for modifications and handling caching
 func createGamelists(cfg *config.UserConfig,
 	gamelistDir string,
@@ -112,12 +83,16 @@ func createGamelists(cfg *config.UserConfig,
 				systemFiles = append(systemFiles, files...)
 			}
 
+			// Save raw entries for masterlist (before deduplication)
+			rawSystemFiles := append([]string(nil), systemFiles...)
+			masterList = append(masterList, rawSystemFiles...)
+
 			// Apply filters
 			systemFiles = FilterUniqueWithMGL(systemFiles)
 			systemFiles = FilterExtensions(systemFiles, systemId, cfg)
 			systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
 
-			// Dedup per system
+			// Dedup per system (for gamelist + search)
 			seen := make(map[string]struct{})
 			deduped := systemFiles[:0]
 			for _, f := range systemFiles {
@@ -158,10 +133,12 @@ func createGamelists(cfg *config.UserConfig,
 			totalGames += len(systemFiles)
 			reused++
 			status = "reused"
+
+			// Add reused list to master (raw)
+			masterList = append(masterList, systemFiles...)
 		}
 
-		// Update master + search
-		masterList = append(masterList, systemFiles...)
+		// Update search (deduped + cleaned)
 		seenSearch := make(map[string]struct{})
 		for _, f := range systemFiles {
 			clean := utils.StripTimestamp(f)
