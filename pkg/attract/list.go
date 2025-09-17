@@ -154,7 +154,7 @@ func createGamelists(cfg *config.UserConfig,
 				lines, _ = utils.ReadLines(gamelistPath)
 				cache.SetList(gamelistFilename(systemId), lines)
 			}
-			systemFiles = lines // ✅ fix: ensure systemFiles is set
+			systemFiles = lines
 			totalGames += len(systemFiles)
 			reused++
 			status = "reused"
