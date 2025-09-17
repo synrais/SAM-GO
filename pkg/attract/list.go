@@ -112,7 +112,7 @@ func createGamelists(cfg *config.UserConfig,
 				systemFiles = append(systemFiles, files...)
 			}
 
-			// Apply filters in order
+			// Apply filters
 			systemFiles = FilterUniqueWithMGL(systemFiles)
 			systemFiles = FilterExtensions(systemFiles, systemId, cfg)
 			systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
@@ -185,48 +185,63 @@ func createGamelists(cfg *config.UserConfig,
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
 
-	// --- Build Search.txt ---
-	sort.Strings(globalSearch)
-	cache.SetList("Search.txt", globalSearch)
-	if !cfg.List.RamOnly && (fresh > 0 || rebuilt > 0) {
-		var sb strings.Builder
-		for _, s := range globalSearch {
-			sb.WriteString(s)
-			sb.WriteByte('\n')
+	// Write Search.txt
+	if fresh > 0 || rebuilt > 0 {
+		sort.Strings(globalSearch)
+		cache.SetList("Search.txt", globalSearch)
+		if !cfg.List.RamOnly {
+			var sb strings.Builder
+			for _, s := range globalSearch {
+				sb.WriteString(s)
+				sb.WriteByte('\n')
+			}
+			searchPath := filepath.Join(gamelistDir, "Search.txt")
+			if err := os.MkdirAll(filepath.Dir(searchPath), 0755); err != nil {
+				panic(err)
+			}
+			if err := os.WriteFile(searchPath, []byte(sb.String()), 0644); err != nil {
+				panic(err)
+			}
 		}
-		searchPath := filepath.Join(gamelistDir, "Search.txt")
-		if err := os.MkdirAll(filepath.Dir(searchPath), 0755); err != nil {
-			panic(err)
+		if !quiet {
+			state := "fresh"
+			if rebuilt > 0 {
+				state = "rebuilt"
+			}
+			fmt.Printf("[List] %-12s %7d entries [%s]\n", "Search.txt", len(globalSearch), state)
 		}
-		if err := os.WriteFile(searchPath, []byte(sb.String()), 0644); err != nil {
-			panic(err)
-		}
-	}
-	if !quiet {
-		fmt.Printf("[List] Built Search list with %d entries\n", len(globalSearch))
-	}
-
-	// --- Build Masterlist.txt ---
-	cache.SetList("Masterlist.txt", masterList)
-	if !cfg.List.RamOnly && (fresh > 0 || rebuilt > 0) {
-		var sb strings.Builder
-		for _, e := range masterList {
-			sb.WriteString(e)
-			sb.WriteByte('\n')
-		}
-		masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
-		if err := os.MkdirAll(filepath.Dir(masterPath), 0755); err != nil {
-			panic(err)
-		}
-		if err := os.WriteFile(masterPath, []byte(sb.String()), 0644); err != nil {
-			panic(err)
-		}
-	}
-	if !quiet {
-		fmt.Printf("[List] Built Masterlist with %d entries\n", len(masterList))
+	} else if !quiet {
+		fmt.Printf("[List] %-12s %7d entries [reused]\n", "Search.txt", len(globalSearch))
 	}
 
-	// --- Final summary ---
+	// Write Masterlist.txt
+	if fresh > 0 || rebuilt > 0 {
+		cache.SetList("Masterlist.txt", masterList)
+		if !cfg.List.RamOnly {
+			var sb strings.Builder
+			for _, e := range masterList {
+				sb.WriteString(e)
+				sb.WriteByte('\n')
+			}
+			masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
+			if err := os.MkdirAll(filepath.Dir(masterPath), 0755); err != nil {
+				panic(err)
+			}
+			if err := os.WriteFile(masterPath, []byte(sb.String()), 0644); err != nil {
+				panic(err)
+			}
+		}
+		if !quiet {
+			state := "fresh"
+			if rebuilt > 0 {
+				state = "rebuilt"
+			}
+			fmt.Printf("[List] %-12s %7d entries [%s]\n", "Masterlist.txt", len(masterList), state)
+		}
+	} else if !quiet {
+		fmt.Printf("[List] %-12s %7d entries [reused]\n", "Masterlist.txt", len(masterList))
+	}
+
 	if !quiet {
 		taken := time.Since(start).Seconds()
 		fmt.Printf("[List] Done: %d games in %.1fs (%d fresh, %d rebuilt, %d reused)\n",
