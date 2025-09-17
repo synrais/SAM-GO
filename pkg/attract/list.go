@@ -25,6 +25,11 @@ func gamelistFilename(systemId string) string {
 	return systemId + "_gamelist.txt"
 }
 
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly bool) {
 	// Always write to cache
 	cache.SetList(gamelistFilename(systemId), files)
