@@ -8,7 +8,7 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-// --- Config Structs (unchanged) ---
+// --- Config Structs ---
 type LaunchSyncConfig struct{}
 type PlayLogConfig struct {
 	SaveEvery   int    `ini:"save_every,omitempty"`
@@ -38,27 +38,35 @@ type SystemsConfig struct {
 	GamesFolder []string `ini:"games_folder,omitempty,allowshadow"`
 	SetCore     []string `ini:"set_core,omitempty,allowshadow"`
 }
+
+// Attract: runtime-only settings
 type AttractConfig struct {
 	PlayTime          string   `ini:"playtime,omitempty"`
 	Random            bool     `ini:"random,omitempty"`
 	Include           []string `ini:"include,omitempty" delim:","`
 	Exclude           []string `ini:"exclude,omitempty" delim:","`
+	UseStaticDetector bool     `ini:"usestaticdetector,omitempty"`
+}
+
+// List: list-building & filtering
+type ListConfig struct {
+	RamOnly           bool     `ini:"ramonly,omitempty"`
+	Exclude           []string `ini:"exclude,omitempty" delim:","`
+
 	UseBlacklist      bool     `ini:"useblacklist,omitempty"`
 	BlacklistInclude  []string `ini:"blacklist_include,omitempty" delim:","`
 	BlacklistExclude  []string `ini:"blacklist_exclude,omitempty" delim:","`
-	SkipafterStatic   int      `ini:"skipafterstatic,omitempty"`
-	UseStaticDetector bool     `ini:"usestaticdetector,omitempty"`
-	UseWhitelist      bool     `json:"useWhitelist"`
-	WhitelistInclude  []string `json:"whitelistInclude"`
-	WhitelistExclude  []string `json:"whitelistExclude"`
-}
-type ListConfig struct {
-	Exclude           []string `ini:"exclude,omitempty" delim:","`
+
 	UseStaticlist     bool     `ini:"usestaticlist,omitempty"`
 	StaticlistInclude []string `ini:"staticlist_include,omitempty" delim:","`
 	StaticlistExclude []string `ini:"staticlist_exclude,omitempty" delim:","`
-	RamOnly           bool     `ini:"ramonly,omitempty"`
+	SkipafterStatic   int      `ini:"skipafterstatic,omitempty"`
+
+	UseWhitelist      bool     `ini:"usewhitelist,omitempty"`
+	WhitelistInclude  []string `ini:"whitelist_include,omitempty" delim:","`
+	WhitelistExclude  []string `ini:"whitelist_exclude,omitempty" delim:","`
 }
+
 type DisableRules struct {
 	Folders    []string `ini:"folders,omitempty" delim:","`
 	Files      []string `ini:"files,omitempty" delim:","`
@@ -91,6 +99,7 @@ type InputDetectorConfig struct {
 	MouseMap    map[string]string `ini:"-"`
 	JoystickMap map[string]string `ini:"-"`
 }
+
 type UserConfig struct {
 	AppPath        string
 	IniPath        string
@@ -124,7 +133,7 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 		iniPath = filepath.Join(filepath.Dir(exePath), name+".ini")
 	}
 
-	// Bake defaults
+	// Defaults
 	defaultConfig.AppPath = exePath
 	defaultConfig.IniPath = iniPath
 	defaultConfig.Disable = make(map[string]DisableRules)
@@ -150,11 +159,11 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 		defaultConfig.Attract.PlayTime = "40"
 	}
 	defaultConfig.Attract.Random = true
-	if defaultConfig.Attract.SkipafterStatic == 0 {
-		defaultConfig.Attract.SkipafterStatic = 10
+	if defaultConfig.List.SkipafterStatic == 0 {
+		defaultConfig.List.SkipafterStatic = 10
 	}
 
-	// Parse INI file
+	// Parse INI
 	cfg, err := ini.ShadowLoad(iniPath)
 	if err != nil {
 		return defaultConfig, err
@@ -196,8 +205,15 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 	}
 	defaultConfig.Attract.Include = normalizeList(defaultConfig.Attract.Include)
 	defaultConfig.Attract.Exclude = normalizeList(defaultConfig.Attract.Exclude)
+	defaultConfig.List.Exclude = normalizeList(defaultConfig.List.Exclude)
+	defaultConfig.List.BlacklistInclude = normalizeList(defaultConfig.List.BlacklistInclude)
+	defaultConfig.List.BlacklistExclude = normalizeList(defaultConfig.List.BlacklistExclude)
+	defaultConfig.List.StaticlistInclude = normalizeList(defaultConfig.List.StaticlistInclude)
+	defaultConfig.List.StaticlistExclude = normalizeList(defaultConfig.List.StaticlistExclude)
+	defaultConfig.List.WhitelistInclude = normalizeList(defaultConfig.List.WhitelistInclude)
+	defaultConfig.List.WhitelistExclude = normalizeList(defaultConfig.List.WhitelistExclude)
 
-	// Parse per-device overrides
+	// Per-device overrides
 	if sec, err := cfg.GetSection("inputdetector.keyboard"); err == nil {
 		for _, key := range sec.Keys() {
 			defaultConfig.InputDetector.KeyboardMap[strings.ToLower(key.Name())] = key.Value()
@@ -214,7 +230,7 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 		}
 	}
 
-	// Parse disable.* and staticdetector.* rules
+	// Parse disable.* and staticdetector.* overrides
 	for _, section := range cfg.Sections() {
 		secName := strings.ToLower(section.Name())
 		switch {
