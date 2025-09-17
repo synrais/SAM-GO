@@ -2,6 +2,7 @@ package attract
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -101,8 +102,8 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 		filterBase := config.FilterlistDir()
 
 		// Whitelist
-		if cfg.Attract.UseWhitelist && allowedFor(system,
-			cfg.Attract.WhitelistInclude, cfg.Attract.WhitelistExclude) {
+		if cfg.List.UseWhitelist && allowedFor(system,
+			cfg.List.WhitelistInclude, cfg.List.WhitelistExclude) {
 
 			whitelist := readNameSet(filepath.Join(filterBase, system+"_whitelist.txt"))
 			if whitelist != nil {
@@ -118,15 +119,15 @@ func ProcessLists(fullDir string, cfg *config.UserConfig) {
 		}
 
 		// Blacklist
-		if cfg.Attract.UseBlacklist && allowedFor(system,
-			cfg.Attract.BlacklistInclude, cfg.Attract.BlacklistExclude) {
+		if cfg.List.UseBlacklist && allowedFor(system,
+			cfg.List.BlacklistInclude, cfg.List.BlacklistExclude) {
 
 			bl := readNameSet(filepath.Join(filterBase, system+"_blacklist.txt"))
 			if bl != nil {
 				var kept []string
 				for _, l := range lines {
 					name, _ := utils.NormalizeEntry(l)
-					if _, ok := bl[name]; !ok {
+					if _, bad := bl[name]; !bad {
 						kept = append(kept, l)
 					}
 				}
