@@ -137,10 +137,10 @@ func createGamelists(cfg *config.UserConfig,
 	masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
 	indexPath := filepath.Join(gamelistDir, "GameIndex")
 	var masterList []string
-	if utils.FileExists(masterPath) {
+	if fileExists(masterPath) {
 		masterList, _ = utils.ReadLines(masterPath)
 	}
-	if utils.FileExists(indexPath) {
+	if fileExists(indexPath) 
 		data, _ := os.ReadFile(indexPath)
 		_ = json.Unmarshal(data, &input.GameIndex)
 	}
@@ -151,7 +151,7 @@ func createGamelists(cfg *config.UserConfig,
 
 		sysStart := time.Now()
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
-		exists := utils.FileExists(gamelistPath)
+		exists := fileExists(gamelistPath)
 
 		var rawFiles []string
 		var systemFiles []string
