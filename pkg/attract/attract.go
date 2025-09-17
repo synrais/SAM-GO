@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -80,17 +79,14 @@ func disabled(system string, gamePath string, cfg *config.UserConfig) bool {
 	return false
 }
 
-// rebuildLists calls SAM -list to regenerate gamelists.
-func rebuildLists() {
-	fmt.Println("All gamelists empty. Rebuilding with SAM -list...")
-
-	exe, _ := os.Executable()
-	cmd := exec.Command(exe, "-list", "-overwrite")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	_ = cmd.Run()
-
-	fmt.Println("Rebuilt gamelists, cache refreshed.")
+// rebuildLists regenerates gamelists according to [List] rules.
+func rebuildLists(cfg *config.UserConfig) {
+	fmt.Println("[Attract] All gamelists empty → rebuilding with RunList...")
+	if err := RunList(nil); err != nil {
+		fmt.Fprintf(os.Stderr, "[Attract] ERROR: list rebuild failed: %v\n", err)
+	} else {
+		fmt.Println("[Attract] Rebuilt gamelists, cache refreshed.")
+	}
 }
 
 // filterAllowed applies include/exclude restrictions case-insensitively.
@@ -131,13 +127,6 @@ func Run(args []string) {
 
 	gamelistDir := config.GamelistDir()
 
-	// Always refresh lists if required
-	if err := RunList([]string{}); err != nil {
-		fmt.Fprintln(os.Stderr, "List build failed:", err)
-	}
-
-	ProcessLists(gamelistDir, cfg)
-
 	// control channels
 	skipCh := make(chan struct{}, 1)
 	backCh := make(chan struct{}, 1)
@@ -155,7 +144,7 @@ func Run(args []string) {
 		go func() {
 			for ev := range staticdetector.Stream(cfg, skipCh) {
 				if !silent {
-					fmt.Println(ev)
+					fmt.Printf("[Attract] %s\n", ev)
 				}
 			}
 		}()
@@ -189,12 +178,25 @@ func Run(args []string) {
 	}
 	files := filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
 	if len(files) == 0 {
-		fmt.Println("No gamelists found in cache")
-		os.Exit(1)
+		fmt.Println("[Attract] No gamelists found in cache")
+		rebuildLists(cfg)
+
+		allKeys = cache.ListKeys()
+		allFiles = nil
+		for _, k := range allKeys {
+			if strings.HasSuffix(k, "_gamelist.txt") {
+				allFiles = append(allFiles, k)
+			}
+		}
+		files = filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
+		if len(files) == 0 {
+			fmt.Println("[Attract] No gamelists even after rebuild, exiting.")
+			os.Exit(1)
+		}
 	}
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	fmt.Println("Attract mode running. Ctrl-C to exit.")
+	fmt.Println("[Attract] Mode running. Press Ctrl-C to exit.")
 
 	// Main loop for playing games
 	playGame := func(gamePath, systemID string, ts float64) {
@@ -202,7 +204,7 @@ func Run(args []string) {
 		for {
 			name := filepath.Base(gamePath)
 			name = strings.TrimSuffix(name, filepath.Ext(name))
-			fmt.Printf("%s - %s <%s>\n", time.Now().Format("15:04:05"), name, gamePath)
+			fmt.Printf("[Attract] Playing: %s (%s)\n", name, systemID)
 			run.Run([]string{gamePath})
 
 			// base playtime
@@ -229,7 +231,7 @@ func Run(args []string) {
 				select {
 				case <-time.After(remaining):
 					if next, err := history.PlayNext(); err == nil && next != "" {
-						_ = history.SetNowPlaying(next)
+						_ = history.SetNowPlaying(next) // browsing only
 						gamePath = next
 						systemID = ""
 						ts = 0
@@ -238,7 +240,7 @@ func Run(args []string) {
 					return
 				case <-skipCh:
 					if next, err := history.PlayNext(); err == nil && next != "" {
-						_ = history.SetNowPlaying(next)
+						_ = history.SetNowPlaying(next) // browsing only
 						gamePath = next
 						systemID = ""
 						ts = 0
@@ -247,7 +249,7 @@ func Run(args []string) {
 					return
 				case <-backCh:
 					if prev, err := history.PlayBack(); err == nil && prev != "" {
-						_ = history.SetNowPlaying(prev)
+						_ = history.SetNowPlaying(prev) // browsing only
 						gamePath = prev
 						systemID = ""
 						ts = 0
@@ -256,7 +258,7 @@ func Run(args []string) {
 				}
 			}
 			if next, err := history.PlayNext(); err == nil && next != "" {
-				_ = history.SetNowPlaying(next)
+				_ = history.SetNowPlaying(next) // browsing only
 				gamePath = next
 				systemID = ""
 				ts = 0
@@ -271,13 +273,13 @@ func Run(args []string) {
 		select {
 		case <-backCh:
 			if prev, err := history.PlayBack(); err == nil && prev != "" {
-				_ = history.SetNowPlaying(prev)
+				_ = history.SetNowPlaying(prev) // browsing only
 				playGame(prev, "", 0)
 				continue
 			}
 		case <-skipCh:
 			if next, err := history.PlayNext(); err == nil && next != "" {
-				_ = history.SetNowPlaying(next)
+				_ = history.SetNowPlaying(next) // browsing only
 				playGame(next, "", 0)
 				continue
 			}
@@ -285,7 +287,7 @@ func Run(args []string) {
 		}
 
 		if len(files) == 0 {
-			fmt.Println("All systems exhausted — refreshing from cache masters")
+			fmt.Println("[Attract] All systems exhausted → refreshing from master cache")
 			cache.ResetAll()
 
 			allKeys = cache.ListKeys()
@@ -298,7 +300,7 @@ func Run(args []string) {
 			files = filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
 
 			if len(files) == 0 {
-				fmt.Println("No gamelists even after reset, exiting.")
+				fmt.Println("[Attract] No gamelists even after reset, exiting.")
 				return
 			}
 		}
