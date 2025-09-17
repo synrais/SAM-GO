@@ -202,11 +202,11 @@ func createGamelists(cfg *config.UserConfig,
 			}
 			dedupedCount := len(deduped)
 
-			// Apply filters
+			// ✅ Apply filters in correct order
 			beforeFilter := dedupedCount
-			systemFiles = FilterFoldersAndFiles(systemFiles, systemId, cfg)
+			systemFiles = FilterFoldersAndFiles(deduped, systemId, cfg)
 			systemFiles = FilterExtensions(systemFiles, systemId, cfg)
-			systemFiles = FilterUniqueWithMGL(deduped)
+			systemFiles = FilterUniqueWithMGL(systemFiles)
 			systemFiles, hadLists := ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
 			filteredCount := len(systemFiles)
 			filtersRemoved := beforeFilter - filteredCount
