@@ -324,7 +324,6 @@ func RemoveFileExtSafe(path string) string {
 	return strings.TrimSuffix(base, ext)     // remove only the last extension
 }
 
-
 // ReadLines opens a file and returns its non-empty trimmed lines.
 func ReadLines(path string) ([]string, error) {
 	f, err := os.Open(path)
