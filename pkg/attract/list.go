@@ -66,10 +66,11 @@ func writeSimpleList(path string, files []string) {
 	}
 }
 
-// removeSystemEntries removes a system's entries from the list
+// Removes all entries of a specific system from the list.
 func removeSystemEntries(list []string, systemId string) []string {
 	var newList []string
 	for _, entry := range list {
+		// Skip entries belonging to the system we want to remove
 		if !strings.Contains(entry, systemId) {
 			newList = append(newList, entry)
 		}
@@ -121,6 +122,9 @@ func createGamelists(cfg *config.UserConfig,
 		systemPathMap[p.System.Id] = append(systemPathMap[p.System.Id], p.Path)
 	}
 
+	// Track systems that are rebuilt or fresh
+	var modifiedSystems []string
+
 	// Process systems in stable order
 	for _, systemId := range systemOrder {
 		paths := systemPathMap[systemId]
@@ -147,7 +151,9 @@ func createGamelists(cfg *config.UserConfig,
 
 		status := ""
 		if modified || !exists {
-			// Rebuild gamelist
+			// Rebuild gamelist for this system
+			modifiedSystems = append(modifiedSystems, systemId)  // Track system for rebuild
+			// Rebuild logic remains the same
 			for _, path := range paths {
 				files, err := games.GetFiles(systemId, path)
 				if err != nil {
@@ -213,7 +219,7 @@ func createGamelists(cfg *config.UserConfig,
 				}
 			}
 
-			// ** Remove old system entries and add new data for this system**
+			// Remove old system entries and add new data for this system
 			masterList = removeSystemEntries(masterList, systemId)
 			globalSearch = removeSystemEntries(globalSearch, systemId)
 
@@ -255,20 +261,13 @@ func createGamelists(cfg *config.UserConfig,
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
 
-	// --- Masterlist & GameIndex piggyback ---
-	indexPath := filepath.Join(gamelistDir, "GameIndex")
-	if fresh > 0 || rebuilt > 0 || reused == 0 {
-		// Fully rebuild both GameIndex and Masterlist when any system is fresh/rebuilt or if all systems are reused
-		fmt.Println("[List] Rebuilding Masterlist and GameIndex from scratch...")
-
+	// Rebuild Masterlist and GameIndex for modified systems only
+	if len(modifiedSystems) > 0 {
 		// Rebuild Masterlist
 		cache.SetList("Masterlist.txt", masterList)
 		if !cfg.List.RamOnly {
 			writeSimpleList(filepath.Join(gamelistDir, "Masterlist.txt"), masterList)
 		}
-
-		// Log the count of titles in the Masterlist
-		fmt.Printf("[List] Masterlist contains %d titles\n", len(masterList))
 
 		// Rebuild GameIndex
 		input.GameIndex = make([]input.GameEntry, 0, len(globalSearch))
@@ -284,40 +283,14 @@ func createGamelists(cfg *config.UserConfig,
 			})
 		}
 
-		// Log the count of titles in the GameIndex
-		fmt.Printf("[List] GameIndex contains %d titles\n", len(input.GameIndex))
-
 		// Save GameIndex as JSON
 		if !cfg.List.RamOnly {
+			indexPath := filepath.Join(gamelistDir, "GameIndex")
 			if data, err := json.MarshalIndent(input.GameIndex, "", "  "); err == nil {
 				_ = os.WriteFile(indexPath, data, 0644)
 			} else {
 				fmt.Fprintf(os.Stderr, "[List] Failed to write GameIndex: %v\n", err)
 			}
-		}
-
-		if !quiet {
-			state := "fresh"
-			if anyRebuilt {
-				state = "rebuilt"
-			}
-			fmt.Printf("[List] %-12s %7d entries [%s]\n", "Masterlist.txt", len(masterList), state)
-			fmt.Printf("[List] %-12s %7d entries [%s]\n", "GameIndex", len(input.GameIndex), state)
-		}
-	} else {
-		// reuse
-		lines := cache.GetList("Masterlist.txt")
-		if len(lines) == 0 {
-			lines, _ = utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt"))
-			cache.SetList("Masterlist.txt", lines)
-		}
-		// load JSON index
-		if data, err := os.ReadFile(indexPath); err == nil {
-			_ = json.Unmarshal(data, &input.GameIndex)
-		}
-		if !quiet {
-			fmt.Printf("[List] %-12s %7d entries [reused]\n", "Masterlist.txt", len(lines))
-			fmt.Printf("[List] %-12s %7d entries [reused]\n", "GameIndex", len(input.GameIndex))
 		}
 	}
 
