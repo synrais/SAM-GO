@@ -20,35 +20,6 @@ func gamelistFilename(systemId string) string {
 	return systemId + "_gamelist.txt"
 }
 
-// Write the gamelist to disk and cache it
-func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly bool) {
-	cache.SetList(gamelistFilename(systemId), files)
-	if ramOnly {
-		return
-	}
-
-	var sb strings.Builder
-	for _, file := range files {
-		sb.WriteString(file)
-		sb.WriteByte('\n')
-	}
-	data := []byte(sb.String())
-
-	gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
-	if err := os.MkdirAll(filepath.Dir(gamelistPath), 0755); err != nil {
-		panic(err)
-	}
-	if err := os.WriteFile(gamelistPath, data, 0644); err != nil {
-		panic(err)
-	}
-}
-
-// Check if a file exists
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
 // Create gamelists, checking for modifications and handling caching
 func createGamelists(cfg *config.UserConfig,
 	gamelistDir string,
@@ -79,13 +50,13 @@ func createGamelists(cfg *config.UserConfig,
 	}
 	updatedTimestamps := savedTimestamps
 
-	// Process systems
+	// Process each system
 	for systemId, paths := range systemPaths {
 		sysStart := time.Now()
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
 		exists := fileExists(gamelistPath)
 
-		var systemFiles []string
+		var rawFiles []string
 		modified := false
 
 		for _, path := range paths {
@@ -102,23 +73,24 @@ func createGamelists(cfg *config.UserConfig,
 
 		status := ""
 		if modified || !exists {
-			// Rebuild gamelist
+			// Step 1: Scan system → raw files
 			for _, path := range paths {
 				files, err := games.GetFiles(systemId, path)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "[List] %s\n", err.Error())
 					continue
 				}
-				systemFiles = append(systemFiles, files...)
+				rawFiles = append(rawFiles, files...)
 			}
+			rawCount := len(rawFiles)
 
-			// Count before dedupe
-			rawCount := len(systemFiles)
+			// Step 2: Masterlist = raw
+			masterList = append(masterList, rawFiles...)
 
-			// Dedup per system using NormalizeEntry
+			// Step 3: Dedup per system
 			seen := make(map[string]struct{})
 			deduped := make([]string, 0, rawCount)
-			for _, f := range systemFiles {
+			for _, f := range rawFiles {
 				name, _ := utils.NormalizeEntry(f)
 				if _, ok := seen[name]; ok {
 					continue
@@ -128,23 +100,19 @@ func createGamelists(cfg *config.UserConfig,
 			}
 			dedupedCount := len(deduped)
 
-			// Apply filters after dedupe
-			beforeFilter := dedupedCount
-			systemFiles = FilterUniqueWithMGL(deduped)
-			systemFiles = FilterExtensions(systemFiles, systemId, cfg)
-			systemFiles, hadLists := ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
-			filteredCount := len(systemFiles)
-			filtersRemoved := beforeFilter - filteredCount
+			// Write per-system gamelist file (deduped, unfiltered)
+			sort.Strings(deduped)
+			totalGames += dedupedCount
+			writeGamelist(gamelistDir, systemId, deduped, cfg.List.RamOnly)
 
-			if len(systemFiles) == 0 {
-				emptySystems = append(emptySystems, systemId)
-				continue
-			}
+			// Step 4: Add to search (deduped contribution)
+			globalSearch = append(globalSearch, deduped...)
 
-			sort.Strings(systemFiles)
-			totalGames += len(systemFiles)
-
-			writeGamelist(gamelistDir, systemId, systemFiles, cfg.List.RamOnly)
+			// Step 5: Apply filters only for cache copy
+			filtered := FilterUniqueWithMGL(deduped)
+			filtered = FilterExtensions(filtered, systemId, cfg)
+			filtered, hadLists := ApplyFilterlists(gamelistDir, systemId, filtered, cfg)
+			cache.SetList(gamelistFilename(systemId), filtered)
 
 			if exists && !cfg.List.RamOnly {
 				rebuilt++
@@ -156,112 +124,75 @@ func createGamelists(cfg *config.UserConfig,
 
 			if !quiet {
 				if hadLists {
-					fmt.Printf("[List] %-12s %5d/%-5d → %-5d entries (-%d filtered) (%.2fs) [%s]\n",
-						systemId, dedupedCount, rawCount, filteredCount, filtersRemoved,
+					fmt.Printf("[List] %-12s %5d/%-5d → %-5d entries (filters applied in cache) (%.2fs) [%s]\n",
+						systemId, dedupedCount, rawCount, len(filtered),
 						time.Since(sysStart).Seconds(), status,
 					)
 				} else {
 					fmt.Printf("[List] %-12s %5d/%-5d → %-5d entries (no filterlists) (%.2fs) [%s]\n",
-						systemId, dedupedCount, rawCount, filteredCount,
+						systemId, dedupedCount, rawCount, len(filtered),
 						time.Since(sysStart).Seconds(), status,
 					)
 				}
 			}
 
 		} else {
-			// Reuse cached list
+			// Reuse cached list (final filtered)
 			lines := cache.GetList(gamelistFilename(systemId))
 			if len(lines) == 0 {
 				lines, _ = utils.ReadLines(gamelistPath)
 				cache.SetList(gamelistFilename(systemId), lines)
 			}
-			systemFiles = lines
-			totalGames += len(systemFiles)
+			totalGames += len(lines)
 			reused++
 			status = "reused"
 
+			// Masterlist += raw (but here we only have deduped, so append anyway)
+			masterList = append(masterList, lines...)
+			globalSearch = append(globalSearch, lines...)
+
 			if !quiet {
-				fmt.Printf("[List] %-12s %5d/%-5d → %-5d entries (%.2fs) [%s]\n",
-					systemId, len(systemFiles), len(systemFiles), len(systemFiles),
+				fmt.Printf("[List] %-12s %5d/%-5d → %-5d entries (cache reused) (%.2fs) [%s]\n",
+					systemId, len(lines), len(lines), len(lines),
 					time.Since(sysStart).Seconds(), status,
 				)
 			}
 		}
-
-		// Update master + search
-		masterList = append(masterList, systemFiles...)
-		seenSearch := make(map[string]struct{})
-		for _, f := range systemFiles {
-			name, _ := utils.NormalizeEntry(f)
-			if _, ok := seenSearch[name]; !ok {
-				globalSearch = append(globalSearch, f) // keep full entry for Search
-				seenSearch[name] = struct{}{}
-			}
-		}
 	}
 
-	// Save updated timestamps once at the end
+	// Save updated timestamps
 	if err := saveTimestamps(gamelistDir, updatedTimestamps); err != nil {
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
 
-	// Write Search.txt
+	// Write Search.txt (deduped per system, collected globally)
 	if fresh > 0 || rebuilt > 0 {
 		sort.Strings(globalSearch)
 		cache.SetList("Search.txt", globalSearch)
 		if !cfg.List.RamOnly {
-			var sb strings.Builder
-			for _, s := range globalSearch {
-				sb.WriteString(s)
-				sb.WriteByte('\n')
-			}
-			searchPath := filepath.Join(gamelistDir, "Search.txt")
-			if err := os.MkdirAll(filepath.Dir(searchPath), 0755); err != nil {
-				panic(err)
-			}
-			if err := os.WriteFile(searchPath, []byte(sb.String()), 0644); err != nil {
-				panic(err)
-			}
+			writeSimpleList(filepath.Join(gamelistDir, "Search.txt"), globalSearch)
 		}
 		if !quiet {
-			state := "fresh"
-			if rebuilt > 0 {
-				state = "rebuilt"
-			}
-			fmt.Printf("[List] %-12s %7d entries [%s]\n", "Search.txt", len(globalSearch), state)
+			fmt.Printf("[List] %-12s %7d entries [fresh]\n", "Search.txt", len(globalSearch))
 		}
 	} else if !quiet {
 		fmt.Printf("[List] %-12s %7d entries [reused]\n", "Search.txt", len(globalSearch))
 	}
 
-	// Write Masterlist.txt
+	// Write Masterlist.txt (raw, never deduped, never filtered)
 	if fresh > 0 || rebuilt > 0 {
 		cache.SetList("Masterlist.txt", masterList)
 		if !cfg.List.RamOnly {
-			var sb strings.Builder
-			for _, e := range masterList {
-				sb.WriteString(e)
-				sb.WriteByte('\n')
-			}
-			masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
-			if err := os.MkdirAll(filepath.Dir(masterPath), 0755); err != nil {
-				panic(err)
-			}
-			if err := os.WriteFile(masterPath, []byte(sb.String()), 0644); err != nil {
-				panic(err)
-			}
+			writeSimpleList(filepath.Join(gamelistDir, "Masterlist.txt"), masterList)
 		}
 		if !quiet {
-			state := "fresh"
-			if rebuilt > 0 {
-				state = "rebuilt"
-			}
-			fmt.Printf("[List] %-12s %7d entries [%s]\n", "Masterlist.txt", len(masterList), state)
+			fmt.Printf("[List] %-12s %7d entries [fresh]\n", "Masterlist.txt", len(masterList))
 		}
 	} else if !quiet {
 		fmt.Printf("[List] %-12s %7d entries [reused]\n", "Masterlist.txt", len(masterList))
 	}
 
+	// Summary
 	if !quiet {
 		taken := time.Since(start).Seconds()
 		fmt.Printf("[List] Done: %d games in %.1fs (%d fresh, %d rebuilt, %d reused)\n",
@@ -272,6 +203,21 @@ func createGamelists(cfg *config.UserConfig,
 	}
 
 	return totalGames
+}
+
+// helper for writing plain lists
+func writeSimpleList(path string, lines []string) {
+	var sb strings.Builder
+	for _, line := range lines {
+		sb.WriteString(line)
+		sb.WriteByte('\n')
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(path, []byte(sb.String()), 0644); err != nil {
+		panic(err)
+	}
 }
 
 // Entry point for this tool when called from SAM
