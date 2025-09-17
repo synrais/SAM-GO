@@ -2,57 +2,79 @@ package mister
 
 import (
 	"fmt"
-	"strings"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"time"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
 )
 
-// SideLaunchers lets you plug in system-specific launch rules.
-// Returns (handled, err):
-//   - handled = true → we launched the game, don't fall back.
-//   - handled = false → fall back to standard LaunchGame flow.
-func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bool, error) {
-	switch strings.ToLower(system.Id) {
+// sidelauncherRegistry maps systemId → special launcher
+var sidelauncherRegistry = map[string]func(cfg *config.UserConfig, system games.System, path string) error{}
 
-	// Example: Amiga special handling
-	case "amiga":
-		fmt.Printf("[SideLaunchers] Custom Amiga handling for %s\n", path)
-		err := launchTempMgl(cfg, &system, path)
-		return true, err
-
-	// Example: NeoGeo special handling
-	case "neogeo":
-		fmt.Printf("[SideLaunchers] Custom NeoGeo handling for %s\n", path)
-		err := launchTempMgl(cfg, &system, path)
-		return true, err
-
-	// Add more system IDs here as needed.
-	// case "saturn":
-	//     return true, customSaturnLaunch(cfg, &system, path)
-
-	default:
-		// no special handling → let LaunchGame do its normal thing
-		return false, nil
-	}
+// registerSidelauncher adds a new special handler.
+func registerSidelauncher(systemID string, fn func(cfg *config.UserConfig, system games.System, path string) error) {
+	sidelauncherRegistry[systemID] = fn
 }
 
-// helper: build temporary MGL and launch it
-func launchTempMgl(cfg *config.UserConfig, system *games.System, path string) error {
-	override, err := games.RunSystemHook(cfg, *system, path)
-	if err != nil {
-		return err
+// SideLaunchers checks the registry for a matching handler.
+func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bool, error) {
+	if fn, ok := sidelauncherRegistry[system.Id]; ok {
+		return true, fn(cfg, system, path)
+	}
+	return false, nil
+}
+
+//
+// --- AmigaVision Loader ---
+//
+func amigaVisionLoader(cfg *config.UserConfig, system games.System, path string) error {
+	amigaShared := findAmigaShared()
+	if amigaShared == "" {
+		return fmt.Errorf("AmigaVision: shared folder not found")
 	}
 
-	mgl, err := GenerateMgl(cfg, system, path, override)
-	if err != nil {
-		return err
+	tmpShared := "/tmp/.SAM_tmp/Amiga_shared"
+	_ = os.RemoveAll(tmpShared)
+	_ = os.MkdirAll(tmpShared, 0755)
+
+	// copy real shared into tmp
+	if out, err := exec.Command("/bin/cp", "-a", amigaShared+"/.", tmpShared).CombinedOutput(); err != nil {
+		fmt.Printf("[WARN] AmigaVision copy shared failed: %v (output: %s)\n", err, string(out))
 	}
 
-	tmpFile, err := writeTempFile(mgl)
-	if err != nil {
-		return err
+	// write ags_boot file with the .amiv filename (basename only)
+	bootFile := filepath.Join(tmpShared, "ags_boot")
+	content := filepath.Base(path) + "\n\n"
+	if err := os.WriteFile(bootFile, []byte(content), 0644); err != nil {
+		return fmt.Errorf("AmigaVision: failed to write ags_boot: %v", err)
 	}
 
-	return launchFile(tmpFile)
+	// bind mount over real shared
+	unmount(amigaShared)
+	if err := bindMount(tmpShared, amigaShared); err != nil {
+		return fmt.Errorf("AmigaVision: bind mount failed: %v", err)
+	}
+
+	// launch Amiga core normally
+	return LaunchCore(cfg, system)
+}
+
+//
+// --- CD32 Placeholder ---
+//
+func cd32Loader(cfg *config.UserConfig, system games.System, path string) error {
+	fmt.Printf("[CD32] Placeholder loader for: %s\n", path)
+	time.Sleep(1 * time.Second)
+	return LaunchGame(cfg, system, path)
+}
+
+//
+// --- Init registry ---
+//
+func init() {
+	registerSidelauncher("Amiga", amigaVisionLoader)
+	registerSidelauncher("CD32", cd32Loader)
 }
