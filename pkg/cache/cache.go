@@ -46,7 +46,7 @@ func ReloadAll(dir string) error {
 	return nil
 }
 
-// GetList returns the cached working copy for a filename (e.g. "Search.txt").
+// GetList returns the cached working copy for a filename
 func GetList(name string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
