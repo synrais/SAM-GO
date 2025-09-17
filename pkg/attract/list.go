@@ -140,7 +140,7 @@ func createGamelists(cfg *config.UserConfig,
 	if fileExists(masterPath) {
 		masterList, _ = utils.ReadLines(masterPath)
 	}
-	if fileExists(indexPath) 
+	if fileExists(indexPath) {
 		data, _ := os.ReadFile(indexPath)
 		_ = json.Unmarshal(data, &input.GameIndex)
 	}
