@@ -38,7 +38,7 @@ func SearchAndPlay() {
 	searching.Store(true)
 	defer searching.Store(false)
 
-	// 🟢 Debug: show how many games are indexed
+	// Debug: show how many games are indexed
 	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(GameIndex))
 
 	ch := StreamKeyboards()
@@ -58,32 +58,35 @@ func SearchAndPlay() {
 			switch key {
 			case "SPACE":
 				sb.WriteRune(' ')
-				fmt.Printf("[SPACE] Search: %q\n", sb.String())
+				fmt.Printf("[SEARCH] Current: %q\n", sb.String())
 
 			case "ENTER":
 				qn, qext := utils.NormalizeEntry(sb.String())
 
-				// 🟢 Debug: show the normalized query
-				fmt.Printf("[SEARCH] Query raw=%q normalized=%q ext=%q\n", sb.String(), qn, qext)
+				// Friendlier search log
+				if qext != "" {
+					fmt.Printf("[SEARCH] Looking for: %q (.%s)\n", sb.String(), qext)
+				} else {
+					fmt.Printf("[SEARCH] Looking for: %q\n", sb.String())
+				}
 
 				if qn != "" {
 					fmt.Printf("[SEARCH] Searching... (%d titles)\n", len(GameIndex))
 					candidates = findMatches(qn, qext)
 					if len(candidates) > 0 {
 						idx = 0
-						fmt.Printf("[ENTER] Launching: %s\n", candidates[idx])
+						fmt.Printf("[SEARCH] Launching: %s\n", candidates[idx])
 						launchGame(candidates[idx])
 					} else {
-						fmt.Println("[NO MATCH] No match found")
+						fmt.Println("[SEARCH] No match found")
 					}
 				}
 				// Reset buffer after enter
 				sb.Reset()
-				fmt.Println("Search complete. Left Right keys to browse results.")
-				fmt.Println("Search again or ESC to resume attract")
+				fmt.Println("[SEARCH] Complete. Use Left/Right to browse, ESC to resume.")
 
 			case "ESC":
-				fmt.Println("[ESC] Exiting search mode")
+				fmt.Println("[SEARCH] Exiting search mode")
 				searching.Store(false)
 				fmt.Println("Attract mode resumed")
 				return
@@ -94,19 +97,19 @@ func SearchAndPlay() {
 					sb.Reset()
 					sb.WriteString(s[:len(s)-1])
 				}
-				fmt.Printf("[BACKSPACE] Search: %q\n", sb.String())
+				fmt.Printf("[SEARCH] Current: %q\n", sb.String())
 
 			case "LEFT":
 				if len(candidates) > 0 && idx > 0 {
 					idx--
-					fmt.Printf("[LEFT] Launching: %s\n", candidates[idx])
+					fmt.Printf("[SEARCH] Launching (prev): %s\n", candidates[idx])
 					launchGame(candidates[idx])
 				}
 
 			case "RIGHT":
 				if len(candidates) > 0 && idx < len(candidates)-1 {
 					idx++
-					fmt.Printf("[RIGHT] Launching: %s\n", candidates[idx])
+					fmt.Printf("[SEARCH] Launching (next): %s\n", candidates[idx])
 					launchGame(candidates[idx])
 				}
 			}
@@ -118,9 +121,8 @@ func SearchAndPlay() {
 			if r == '\n' || r == '\r' {
 				continue
 			}
-			// allow spaces into buffer
 			sb.WriteRune(r)
-			fmt.Printf("[CHAR] Search: %q\n", sb.String())
+			fmt.Printf("[SEARCH] Current: %q\n", sb.String())
 		}
 	}
 }
@@ -146,7 +148,7 @@ func findMatches(qn, qext string) []string {
 			substring = append(substring, e.Path)
 		} else {
 			dist := levenshtein(qn, e.Name)
-			if dist <= 3 { // only allow close fuzzy matches
+			if dist <= 3 {
 				fuzzy = append(fuzzy, e.Path)
 			}
 		}
@@ -177,10 +179,10 @@ func findMatches(qn, qext string) []string {
 func launchGame(path string) {
 	exe, err := os.Executable()
 	if err != nil {
-		fmt.Println("[ERROR] Could not resolve executable for launch")
+		fmt.Println("[SEARCH] ERROR: could not resolve executable for launch")
 		return
 	}
-	fmt.Printf("[EXEC] %s -run %q\n", exe, path)
+	fmt.Printf("[SEARCH] Exec: %s -run %q\n", exe, path)
 	cmd := exec.Command(exe, "-run", path)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
