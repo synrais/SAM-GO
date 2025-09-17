@@ -102,7 +102,6 @@ func createGamelists(cfg *config.UserConfig,
 
 	var globalSearch []string
 	var masterList []string
-	anyRebuilt := false
 
 	// Load saved timestamps
 	savedTimestamps, err := loadSavedTimestamps(gamelistDir)
@@ -198,7 +197,6 @@ func createGamelists(cfg *config.UserConfig,
 
 			if exists && !cfg.List.RamOnly {
 				rebuilt++
-				anyRebuilt = true
 				status = "rebuilt"
 			} else {
 				fresh++
@@ -300,7 +298,7 @@ func createGamelists(cfg *config.UserConfig,
 			totalGames, taken, fresh, rebuilt, reused)
 		if len(emptySystems) > 0 {
 			fmt.Printf("[List] Empty systems: %s\n", strings.Join(emptySystems, ", "))
-		}
+		 }
 	}
 
 	return totalGames
