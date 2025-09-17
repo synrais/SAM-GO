@@ -117,7 +117,7 @@ func filterAllowed(all []string, include, exclude []string) []string {
 func ensureSAMIniExists() error {
 	exePath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("[Attract] Failed to get executable path: %w", err)
+		return fmt.Errorf("[Attract] Failed to get executable path: %v", err)
 	}
 	dir := filepath.Dir(exePath)
 	iniPath := filepath.Join(dir, "SAM.ini")
@@ -125,14 +125,14 @@ func ensureSAMIniExists() error {
 	if _, err := os.Stat(iniPath); err == nil {
 		fmt.Println("[Attract] Found SAM.ini")
 		return nil
-	}
-	if !os.IsNotExist(err) {
-		return fmt.Errorf("[Attract] Failed to check SAM.ini: %w", err)
+	} else if !os.IsNotExist(err) {
+		// error but not "file missing"
+		return fmt.Errorf("[Attract] Failed to check SAM.ini: %v", err)
 	}
 
 	// write embedded default
 	if err := os.WriteFile(iniPath, []byte(assets.DefaultSAMIni), 0644); err != nil {
-		return fmt.Errorf("[Attract] Failed to write default SAM.ini: %w", err)
+		return fmt.Errorf("[Attract] Failed to write default SAM.ini: %v", err)
 	}
 
 	fmt.Println("[Attract] SAM.ini not found — created default from embedded copy")
