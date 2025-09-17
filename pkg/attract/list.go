@@ -52,153 +52,123 @@ func fileExists(path string) bool {
 
 // Create gamelists, checking for modifications and handling caching
 func createGamelists(cfg *config.UserConfig,
-    gamelistDir string,
-    systemPaths map[string][]string,
-    quiet bool) int {
+	gamelistDir string,
+	systemPaths map[string][]string,
+	quiet bool) int {
 
-    start := time.Now()
-    if !quiet {
-        if cfg.List.RamOnly {
-            fmt.Println("Building lists in RAM-only mode (no SD writes)...")
-        } else {
-            fmt.Println("Finding system folders...")
-        }
-    }
+	start := time.Now()
+	if !quiet {
+		if cfg.List.RamOnly {
+			fmt.Println("[List] Building lists in RAM-only mode (no SD writes)")
+		} else {
+			fmt.Println("[List] Scanning system folders...")
+		}
+	}
 
-    totalGames := 0
-    fresh, rebuilt, reused := 0, 0, 0
-    var emptySystems []string
+	totalGames := 0
+	fresh, rebuilt, reused := 0, 0, 0
+	var emptySystems []string
 
-    var globalSearch []string
-    masterlist := make(map[string][]string)
+	var globalSearch []string
+	masterlist := make(map[string][]string)
 
-    // Load saved timestamps from the Modtime file
-    savedTimestamps, err := loadSavedTimestamps(gamelistDir)
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "Error loading saved timestamps: %v\n", err)
-        return 0
-    }
+	// Load saved timestamps from the Modtime file
+	savedTimestamps, err := loadSavedTimestamps(gamelistDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[List] ERROR loading saved timestamps: %v\n", err)
+		return 0
+	}
 
-    // Iterate over each system and process it
-    for systemId, paths := range systemPaths {
+	// Iterate over each system and process it
+	for systemId, paths := range systemPaths {
+		sysStart := time.Now()
+		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
+		exists := fileExists(gamelistPath)
 
-        // 🔹 NEW: Apply Attract Include/Exclude filters before scanning folders
-        if len(cfg.Attract.Include) > 0 {
-            allowed := false
-            for _, inc := range cfg.Attract.Include {
-                if strings.EqualFold(systemId, inc) {
-                    allowed = true
-                    break
-                }
-            }
-            if !allowed {
-                if !quiet {
-                    fmt.Printf("Skipping %s (not in Attract Include list)\n", systemId)
-                }
-                continue
-            }
-        }
-        for _, exc := range cfg.Attract.Exclude {
-            if strings.EqualFold(systemId, exc) {
-                if !quiet {
-                    fmt.Printf("Skipping %s (in Attract Exclude list)\n", systemId)
-                }
-                continue
-            }
-        }
-        // 🔹 END NEW
+		var systemFiles []string
 
-        sysStart := time.Now()
-        gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
-        exists := fileExists(gamelistPath)
+		for _, path := range paths {
+			modified, err := checkAndHandleModifiedFolder(systemId, path, gamelistDir, savedTimestamps)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[List] ERROR checking folder modification: %v\n", err)
+				continue
+			}
 
-        var systemFiles []string // Declare systemFiles inside the loop
+			if modified || !exists {
+				// Rebuild gamelist
+				for _, path := range paths {
+					files, err := games.GetFiles(systemId, path)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "[List] ERROR reading files for %s: %v\n", systemId, err)
+						continue
+					}
+					systemFiles = append(systemFiles, files...)
+				}
 
-        // Check if the system folder has been modified (timestamp check)
-        for _, path := range paths {
-            modified, err := checkAndHandleModifiedFolder(systemId, path, gamelistDir, savedTimestamps)
-            if err != nil {
-                fmt.Fprintf(os.Stderr, "Error checking folder modification: %v\n", err)
-                continue
-            }
+				// Filters
+				systemFiles = FilterUniqueWithMGL(systemFiles)
+				systemFiles = FilterExtensions(systemFiles, systemId, cfg)
 
-            // If modified, rescan the system folder
-            if modified || !exists {
-                // Rebuild the gamelist here
-                for _, path := range paths {
-                    files, err := games.GetFiles(systemId, path)
-                    if err != nil {
-                        fmt.Fprintln(os.Stderr, err)
-                        continue
-                    }
-                    systemFiles = append(systemFiles, files...)
-                }
+				// Deduplicate
+				seenSys := make(map[string]struct{})
+				deduped := systemFiles[:0]
+				for _, f := range systemFiles {
+					base := strings.ToLower(filepath.Base(f))
+					if _, ok := seenSys[base]; ok {
+						continue
+					}
+					seenSys[base] = struct{}{}
+					deduped = append(deduped, f)
+				}
+				systemFiles = deduped
 
-                // Use the filter functions from filters.go
-                systemFiles = FilterUniqueWithMGL(systemFiles)
-                systemFiles = FilterExtensions(systemFiles, systemId, cfg)
+				if len(systemFiles) == 0 {
+					emptySystems = append(emptySystems, systemId)
+					continue
+				}
 
-                // Deduplicate files based on the base name (case insensitive)
-                seenSys := make(map[string]struct{})
-                deduped := systemFiles[:0]
-                for _, f := range systemFiles {
-                    base := strings.ToLower(filepath.Base(f))
-                    if _, ok := seenSys[base]; ok {
-                        continue
-                    }
-                    seenSys[base] = struct{}{}
-                    deduped = append(deduped, f)
-                }
-                systemFiles = deduped
+				// Apply filterlists
+				systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
 
-                if len(systemFiles) == 0 {
-                    emptySystems = append(emptySystems, systemId)
-                    continue
-                }
+				sort.Strings(systemFiles)
+				totalGames += len(systemFiles)
 
-                // Apply filterlists to the files (e.g., blacklist, whitelist, staticlist)
-                systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
+				// Write gamelist
+				writeGamelist(gamelistDir, systemId, systemFiles, cfg.List.RamOnly)
 
-                sort.Strings(systemFiles)
-                totalGames += len(systemFiles)
+				if exists && !cfg.List.RamOnly {
+					rebuilt++
+				} else {
+					fresh++
+				}
+			} else {
+				// Reuse cached gamelist
+				lines := cache.GetList(gamelistFilename(systemId))
+				if len(lines) == 0 {
+					lines, _ = utils.ReadLines(gamelistPath)
+					cache.SetList(gamelistFilename(systemId), lines)
+				}
+				totalGames += len(lines)
+				reused++
+			}
+		}
 
-                // Write the gamelist to disk (and cache it)
-                writeGamelist(gamelistDir, systemId, systemFiles, cfg.List.RamOnly)
+		// Add to global search + masterlist
+		for _, f := range systemFiles {
+			masterlist[systemId] = append(masterlist[systemId], f)
+			clean := utils.StripTimestamp(f)
+			if clean != "" {
+				globalSearch = append(globalSearch, strings.TrimSpace(clean))
+			}
+		}
 
-                // Cache the gamelist only if it's a new list (not a reuse)
-                if exists && !cfg.List.RamOnly {
-                    rebuilt++
-                } else {
-                    fresh++
-                }
-            } else {
-                // Reuse the cached gamelist
-                lines := cache.GetList(gamelistFilename(systemId))
-                if len(lines) == 0 {
-                    lines, _ = utils.ReadLines(gamelistPath)
-                    cache.SetList(gamelistFilename(systemId), lines)
-                }
-                totalGames += len(lines)
-            }
-        }
+		if !quiet {
+			fmt.Printf("[List] %s done in %.2fs (%d entries)\n",
+				systemId, time.Since(sysStart).Seconds(), len(systemFiles))
+		}
+	}
 
-        // Add files to the global search and masterlist
-        for _, f := range systemFiles {
-            masterlist[systemId] = append(masterlist[systemId], f)
-            clean := utils.StripTimestamp(f)
-            base := strings.TrimSpace(clean)
-            if base != "" {
-                globalSearch = append(globalSearch, base)
-            }
-        }
-
-        if !quiet {
-            fmt.Printf("Finished %s in %.2fs (%d entries)\n",
-                systemId, time.Since(sysStart).Seconds(), len(systemFiles))
-        }
-    }
-
-	// Build Search.txt (if needed) and load search index
+	// Build Search.txt
 	if fresh > 0 || rebuilt > 0 {
 		sort.Strings(globalSearch)
 		cache.SetList("Search.txt", globalSearch)
@@ -208,21 +178,20 @@ func createGamelists(cfg *config.UserConfig,
 				sb.WriteString(s)
 				sb.WriteByte('\n')
 			}
-			data := []byte(sb.String())
 			searchPath := filepath.Join(gamelistDir, "Search.txt")
 			if err := os.MkdirAll(filepath.Dir(searchPath), 0755); err != nil {
 				panic(err)
 			}
-			if err := os.WriteFile(searchPath, data, 0644); err != nil {
+			if err := os.WriteFile(searchPath, []byte(sb.String()), 0644); err != nil {
 				panic(err)
 			}
 		}
 		if !quiet {
-			fmt.Printf("Built Search list with %d entries\n", len(globalSearch))
+			fmt.Printf("[List] Built Search list with %d entries\n", len(globalSearch))
 		}
 	}
 
-	// Build in-memory search index for search.go if Search.txt is loaded
+	// Build in-memory search index
 	lines := cache.GetList("Search.txt")
 	if len(lines) == 0 && !cfg.List.RamOnly {
 		searchPath := filepath.Join(gamelistDir, "Search.txt")
@@ -242,7 +211,9 @@ func createGamelists(cfg *config.UserConfig,
 			})
 		}
 		input.GameIndex = idx
-		fmt.Printf("[DEBUG] Indexed %d entries for search\n", len(idx))
+		if !quiet {
+			fmt.Printf("[List] Indexed %d entries for search\n", len(idx))
+		}
 	}
 
 	// Build Masterlist
@@ -272,16 +243,16 @@ func createGamelists(cfg *config.UserConfig,
 			}
 		}
 		if !quiet {
-			fmt.Printf("Built Masterlist with %d systems\n", len(masterlist))
+			fmt.Printf("[List] Built Masterlist with %d systems\n", len(masterlist))
 		}
 	}
 
 	if !quiet {
 		taken := time.Since(start).Seconds()
-		fmt.Printf("Indexing complete: %d games in %.1fs (%d fresh, %d rebuilt, %d reused)\n",
+		fmt.Printf("[List] Done: %d games in %.1fs (%d fresh, %d rebuilt, %d reused)\n",
 			totalGames, taken, fresh, rebuilt, reused)
 		if len(emptySystems) > 0 {
-			fmt.Printf("No games found for: %s\n", strings.Join(emptySystems, ", "))
+			fmt.Printf("[List] Empty systems: %s\n", strings.Join(emptySystems, ", "))
 		}
 	}
 
@@ -294,7 +265,7 @@ func RunList(args []string) error {
 
 	exePath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("failed to detect SAM install path: %w", err)
+		return fmt.Errorf("[List] Failed to detect SAM install path: %w", err)
 	}
 	baseDir := filepath.Dir(exePath)
 
@@ -315,7 +286,7 @@ func RunList(args []string) error {
 	if *ramOnly {
 		cfg.List.RamOnly = true
 		if !*quiet {
-			fmt.Println("[LIST] RamOnly mode enabled via CLI")
+			fmt.Println("[List] RamOnly mode enabled via CLI")
 		}
 	}
 
@@ -354,7 +325,7 @@ func RunList(args []string) error {
 	total := createGamelists(cfg, *gamelistDir, systemPathsMap, *quiet)
 
 	if total == 0 {
-		return fmt.Errorf("no games indexed")
+		return fmt.Errorf("[List] No games indexed")
 	}
 	return nil
 }
