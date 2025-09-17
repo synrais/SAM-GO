@@ -126,52 +126,17 @@ func filterAllowed(all []string, include, exclude []string) []string {
 }
 
 func Run(args []string) {
-    cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
-    attractCfg := cfg.Attract
+	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
+	attractCfg := cfg.Attract
 
-    gamelistDir := config.GamelistDir()
+	gamelistDir := config.GamelistDir()
 
-    savedTimestamps, err := loadSavedTimestamps(gamelistDir)
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "Error loading saved timestamps: %v\n", err)
-    }
+	// Always refresh lists if required
+	if err := RunList([]string{}); err != nil {
+		fmt.Fprintln(os.Stderr, "List build failed:", err)
+	}
 
-    // Build gamelists before processing
-    listArgs := []string{}
-
-    // Correct iteration: Include is []string
-    fmt.Println("Finding system folders...")
-    for _, pathStr := range attractCfg.Include {
-        if pathStr == "" {
-            fmt.Println("Skipping invalid path (empty entry)")
-            continue
-        }
-
-        // Ensure the path exists before proceeding
-        if _, err := os.Stat(pathStr); os.IsNotExist(err) {
-            fmt.Printf("Skipping non-existent folder '%s'\n", pathStr)
-            continue
-        }
-
-        // Now check if folder is modified AFTER system validation
-        modified, err := checkAndHandleModifiedFolder(pathStr, pathStr, gamelistDir, savedTimestamps)
-        if err != nil {
-            fmt.Fprintln(os.Stderr, "Error checking folder modification:", err)
-            continue
-        }
-
-        // Force rebuild if modified or no cached gamelist exists
-        gamelistFile := filepath.Join(gamelistDir, gamelistFilename(filepath.Base(pathStr)))
-        if modified || !fileExists(gamelistFile) {
-            listArgs = append(listArgs, "-overwrite")
-        }
-    }
-
-    if err := RunList(listArgs); err != nil {
-        fmt.Fprintln(os.Stderr, "List build failed:", err)
-    }
-
-    ProcessLists(gamelistDir, cfg)
+	ProcessLists(gamelistDir, cfg)
 
 	// control channels
 	skipCh := make(chan struct{}, 1)
@@ -264,7 +229,7 @@ func Run(args []string) {
 				select {
 				case <-time.After(remaining):
 					if next, err := history.PlayNext(); err == nil && next != "" {
-						_ = history.SetNowPlaying(next) // browsing only
+						_ = history.SetNowPlaying(next)
 						gamePath = next
 						systemID = ""
 						ts = 0
@@ -273,7 +238,7 @@ func Run(args []string) {
 					return
 				case <-skipCh:
 					if next, err := history.PlayNext(); err == nil && next != "" {
-						_ = history.SetNowPlaying(next) // browsing only
+						_ = history.SetNowPlaying(next)
 						gamePath = next
 						systemID = ""
 						ts = 0
@@ -282,7 +247,7 @@ func Run(args []string) {
 					return
 				case <-backCh:
 					if prev, err := history.PlayBack(); err == nil && prev != "" {
-						_ = history.SetNowPlaying(prev) // browsing only
+						_ = history.SetNowPlaying(prev)
 						gamePath = prev
 						systemID = ""
 						ts = 0
@@ -291,7 +256,7 @@ func Run(args []string) {
 				}
 			}
 			if next, err := history.PlayNext(); err == nil && next != "" {
-				_ = history.SetNowPlaying(next) // browsing only
+				_ = history.SetNowPlaying(next)
 				gamePath = next
 				systemID = ""
 				ts = 0
@@ -306,13 +271,13 @@ func Run(args []string) {
 		select {
 		case <-backCh:
 			if prev, err := history.PlayBack(); err == nil && prev != "" {
-				_ = history.SetNowPlaying(prev) // browsing only
+				_ = history.SetNowPlaying(prev)
 				playGame(prev, "", 0)
 				continue
 			}
 		case <-skipCh:
 			if next, err := history.PlayNext(); err == nil && next != "" {
-				_ = history.SetNowPlaying(next) // browsing only
+				_ = history.SetNowPlaying(next)
 				playGame(next, "", 0)
 				continue
 			}
