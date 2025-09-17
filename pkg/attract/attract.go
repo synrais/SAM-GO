@@ -135,7 +135,7 @@ func ensureSAMIniExists() error {
 		return fmt.Errorf("[Attract] Failed to write default SAM.ini: %v", err)
 	}
 
-	fmt.Println("[Attract] SAM.ini not found — created default from embedded copy")
+	fmt.Println("[Attract] SAM.ini not found — created default copy")
 	return nil
 }
 
