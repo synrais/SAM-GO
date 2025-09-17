@@ -1302,7 +1302,7 @@ var Systems = map[string]System{
     Slots: []Slot{
         {
             Label: "AmigaVisionEntry",
-            Exts:  []string{".txt"},
+            Exts:  []string{".txt", ".ags"},
             Mgl: &MglParams{
                 Delay:  1,
                 Method: "f",
