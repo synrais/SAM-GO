@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/synrais/SAM-GO/pkg/assets"
 	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/history"
@@ -111,7 +112,40 @@ func filterAllowed(all []string, include, exclude []string) []string {
 	return filtered
 }
 
+// ensureSAMIniExists checks for SAM.ini next to the binary.
+// If it doesn’t exist, writes the embedded default copy.
+func ensureSAMIniExists() error {
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("[Attract] Failed to get executable path: %w", err)
+	}
+	dir := filepath.Dir(exePath)
+	iniPath := filepath.Join(dir, "SAM.ini")
+
+	if _, err := os.Stat(iniPath); err == nil {
+		// already exists
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		// some other error
+		return fmt.Errorf("[Attract] Failed to check SAM.ini: %w", err)
+	}
+
+	// write embedded default
+	if err := os.WriteFile(iniPath, []byte(assets.DefaultSAMIni), 0644); err != nil {
+		return fmt.Errorf("[Attract] Failed to write default SAM.ini: %w", err)
+	}
+
+	fmt.Println("[Attract] Created default SAM.ini from embedded copy")
+	return nil
+}
+
 func Run(args []string) {
+	// Make sure SAM.ini exists
+	if err := ensureSAMIniExists(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+
 	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
 	attractCfg := cfg.Attract
 
