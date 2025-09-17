@@ -36,15 +36,79 @@ func FilterUniqueWithMGL(files []string) []string {
 	return result
 }
 
-// FilterExtensions removes files with specific extensions based on config rules.
+// FilterFoldersAndFiles applies Disable.Folders and Disable.Files rules (per-system + global).
+func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConfig) []string {
+	var folders, patterns []string
+
+	// Global rules [Disable.ALL]
+	if global, ok := cfg.Disable["ALL"]; ok {
+		folders = append(folders, global.Folders...)
+		patterns = append(patterns, global.Files...)
+	}
+	// System-specific rules
+	if sys, ok := cfg.Disable[systemID]; ok {
+		folders = append(folders, sys.Folders...)
+		patterns = append(patterns, sys.Files...)
+	}
+
+	if len(folders) == 0 && len(patterns) == 0 {
+		return files
+	}
+
+	var filtered []string
+	for _, f := range files {
+		base := filepath.Base(f)
+		dir := filepath.Dir(f)
+		skip := false
+
+		// Folder filter
+		for _, folder := range folders {
+			if folder != "" && strings.Contains(strings.ToLower(dir), strings.ToLower(folder)) {
+				fmt.Printf("[Filters] Skipping %s (folder %s disabled)\n", base, folder)
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+
+		// File pattern filter
+		for _, pat := range patterns {
+			if pat != "" {
+				if ok, _ := filepath.Match(pat, base); ok {
+					fmt.Printf("[Filters] Skipping %s (pattern %s disabled)\n", base, pat)
+					skip = true
+					break
+				}
+			}
+		}
+		if !skip {
+			filtered = append(filtered, f)
+		}
+	}
+	return filtered
+}
+
+// FilterExtensions removes files with specific extensions (per-system + global).
 func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) []string {
-	rules, ok := cfg.Disable[systemID]
-	if !ok || len(rules.Extensions) == 0 {
+	var rules []string
+
+	// Global rules [Disable.ALL]
+	if global, ok := cfg.Disable["ALL"]; ok {
+		rules = append(rules, global.Extensions...)
+	}
+	// System-specific rules
+	if sys, ok := cfg.Disable[systemID]; ok {
+		rules = append(rules, sys.Extensions...)
+	}
+
+	if len(rules) == 0 {
 		return files
 	}
 
 	extMap := make(map[string]struct{})
-	for _, e := range rules.Extensions {
+	for _, e := range rules {
 		e = strings.ToLower(e)
 		if !strings.HasPrefix(e, ".") {
 			e = "." + e
