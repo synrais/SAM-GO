@@ -9,6 +9,7 @@ import (
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
+	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 // --------------------------------------------------
@@ -29,8 +30,7 @@ func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bo
 		return false, nil
 	}
 
-	// use AmigaVision’s cleaner if it exists
-	cleanName := amigaCleanFileName(path)
+	cleanName := utils.RemoveFileExt(filepath.Base(path))
 	fmt.Printf("[SIDELAUNCHER] %s launching: %s\n", system.Id, cleanName)
 
 	return true, fn(cfg, system, path)
@@ -42,12 +42,6 @@ func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bo
 
 func init() {
 	registerSideLauncher("AmigaVision", LaunchAmigaVision)
-}
-
-// amigaCleanFileName strips directory + extension, nothing else.
-func amigaCleanFileName(p string) string {
-	base := filepath.Base(p)
-	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
 func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string) error {
@@ -99,7 +93,7 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 	}
 
 	// Write ags_boot file with the clean name
-	cleanName := amigaCleanFileName(path)
+	cleanName := utils.RemoveFileExt(filepath.Base(path))
 	bootFile := filepath.Join(tmpShared, "ags_boot")
 	content := cleanName + "\n\n"
 	if err := os.WriteFile(bootFile, []byte(content), 0644); err != nil {
