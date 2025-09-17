@@ -41,7 +41,7 @@ func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConf
 	var folders, patterns []string
 
 	// Global rules [Disable.ALL]
-	if global, ok := cfg.Disable["ALL"]; ok {
+	if global, ok := cfg.Disable["all"]; ok {
 		folders = append(folders, global.Folders...)
 		patterns = append(patterns, global.Files...)
 	}
@@ -95,7 +95,7 @@ func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) [
 	var rules []string
 
 	// Global rules [Disable.ALL]
-	if global, ok := cfg.Disable["ALL"]; ok {
+	if global, ok := cfg.Disable["all"]; ok {
 		rules = append(rules, global.Extensions...)
 	}
 	// System-specific rules
