@@ -1,12 +1,10 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/synrais/SAM-GO/pkg/assets"
 	"gopkg.in/ini.v1"
 )
 
@@ -110,7 +108,7 @@ type UserConfig struct {
 	Disable        map[string]DisableRules `ini:"-"`
 }
 
-// LoadUserConfig loads (or generates) SAM.ini
+// LoadUserConfig loads SAM.ini into a UserConfig
 func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error) {
 	iniPath := os.Getenv(UserConfigEnv)
 
@@ -156,16 +154,7 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 		defaultConfig.Attract.SkipafterStatic = 10
 	}
 
-	// If missing, create from embedded default
-	if _, err := os.Stat(iniPath); os.IsNotExist(err) {
-		if err := os.WriteFile(iniPath, []byte(assets.DefaultSAMIni), 0644); err != nil {
-			return defaultConfig, fmt.Errorf("[CONFIG] Failed to create default INI: %v", err)
-		}
-		fmt.Println("[CONFIG] Generating default INI - Loading settings")
-	} else {
-		fmt.Println("[CONFIG] Found INI - Loading settings")
-	}
-
+	// Parse INI file
 	cfg, err := ini.ShadowLoad(iniPath)
 	if err != nil {
 		return defaultConfig, err
@@ -268,17 +257,6 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 			defaultConfig.StaticDetector.Systems[sys] = sc
 		}
 	}
-
-	// Final debug info
-	fmt.Printf("[CONFIG] Loaded config from: %s\n", iniPath)
-	fmt.Println("[CONFIG] INI Debug ->")
-	fmt.Printf("  Attract:\n    PlayTime=%s | Random=%t\n    Include=%v | Exclude=%v\n    UseBlacklist=%t | UseStaticlist=%t | UseWhitelist=%t | UseStaticDetector=%t\n",
-		defaultConfig.Attract.PlayTime, defaultConfig.Attract.Random,
-		defaultConfig.Attract.Include, defaultConfig.Attract.Exclude,
-		defaultConfig.Attract.UseBlacklist, defaultConfig.List.UseStaticlist,
-		defaultConfig.Attract.UseWhitelist, defaultConfig.Attract.UseStaticDetector,
-	)
-	// (you can extend to dump List, InputDetector, StaticDetector as before)
 
 	return defaultConfig, nil
 }
