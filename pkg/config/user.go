@@ -6,10 +6,13 @@ import (
 	"strings"
 
 	"gopkg.in/ini.v1"
+
+	"github.com/synrais/SAM-GO/pkg/systems"
 )
 
 // --- Config Structs ---
 type LaunchSyncConfig struct{}
+
 type PlayLogConfig struct {
 	SaveEvery   int    `ini:"save_every,omitempty"`
 	OnCoreStart string `ini:"on_core_start,omitempty"`
@@ -17,23 +20,28 @@ type PlayLogConfig struct {
 	OnGameStart string `ini:"on_game_start,omitempty"`
 	OnGameStop  string `ini:"on_game_stop,omitempty"`
 }
+
 type RandomConfig struct{}
+
 type SearchConfig struct {
 	Filter []string `ini:"filter,omitempty" delim:","`
 	Sort   string   `ini:"sort,omitempty"`
 }
+
 type RemoteConfig struct {
 	MdnsService     bool   `ini:"mdns_service,omitempty"`
 	SyncSSHKeys     bool   `ini:"sync_ssh_keys,omitempty"`
 	CustomLogo      string `ini:"custom_logo,omitempty"`
 	AnnounceGameUrl string `ini:"announce_game_url,omitempty"`
 }
+
 type NfcConfig struct {
 	ConnectionString string `ini:"connection_string,omitempty"`
 	AllowCommands    bool   `ini:"allow_commands,omitempty"`
 	DisableSounds    bool   `ini:"disable_sounds,omitempty"`
 	ProbeDevice      bool   `ini:"probe_device,omitempty"`
 }
+
 type SystemsConfig struct {
 	GamesFolder []string `ini:"games_folder,omitempty,allowshadow"`
 	SetCore     []string `ini:"set_core,omitempty,allowshadow"`
@@ -72,6 +80,7 @@ type DisableRules struct {
 	Files      []string `ini:"files,omitempty" delim:","`
 	Extensions []string `ini:"extensions,omitempty" delim:","`
 }
+
 type StaticDetectorOverride struct {
 	BlackThreshold  *float64 `ini:"blackthreshold,omitempty"`
 	StaticThreshold *float64 `ini:"staticthreshold,omitempty"`
@@ -81,6 +90,7 @@ type StaticDetectorOverride struct {
 	WriteStaticList *bool    `ini:"writestaticlist,omitempty"`
 	Grace           *float64 `ini:"grace,omitempty"`
 }
+
 type StaticDetectorConfig struct {
 	BlackThreshold  float64                           `ini:"blackthreshold,omitempty"`
 	StaticThreshold float64                           `ini:"staticthreshold,omitempty"`
@@ -91,6 +101,7 @@ type StaticDetectorConfig struct {
 	Grace           float64                           `ini:"grace,omitempty"`
 	Systems         map[string]StaticDetectorOverride `ini:"-"`
 }
+
 type InputDetectorConfig struct {
 	Mouse       bool              `ini:"mouse,omitempty"`
 	Keyboard    bool              `ini:"keyboard,omitempty"`
@@ -191,7 +202,44 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 		return defaultConfig, err
 	}
 
-	// Normalize include/exclude lists
+	// Expand categories in Include/Exclude lists
+	expandGroups := func(raw []string) []string {
+		var result []string
+		for _, v := range raw {
+			low := strings.ToLower(strings.TrimSpace(v))
+			switch low {
+			case "console":
+				for id, sys := range systems.Systems {
+					if sys.Category == systems.CategoryConsole {
+						result = append(result, id)
+					}
+				}
+			case "handheld":
+				for id, sys := range systems.Systems {
+					if sys.Category == systems.CategoryHandheld {
+						result = append(result, id)
+					}
+				}
+			case "computer":
+				for id, sys := range systems.Systems {
+					if sys.Category == systems.CategoryComputer {
+						result = append(result, id)
+					}
+				}
+			case "arcade":
+				for id, sys := range systems.Systems {
+					if sys.Category == systems.CategoryArcade {
+						result = append(result, id)
+					}
+				}
+			default:
+				result = append(result, v)
+			}
+		}
+		return result
+	}
+
+	// Normalize and expand Include/Exclude
 	normalizeList := func(raw []string) []string {
 		var result []string
 		for _, v := range raw {
@@ -203,8 +251,9 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 		}
 		return result
 	}
-	defaultConfig.Attract.Include = normalizeList(defaultConfig.Attract.Include)
-	defaultConfig.Attract.Exclude = normalizeList(defaultConfig.Attract.Exclude)
+
+	defaultConfig.Attract.Include = expandGroups(normalizeList(defaultConfig.Attract.Include))
+	defaultConfig.Attract.Exclude = expandGroups(normalizeList(defaultConfig.Attract.Exclude))
 	defaultConfig.List.Exclude = normalizeList(defaultConfig.List.Exclude)
 	defaultConfig.List.BlacklistInclude = normalizeList(defaultConfig.List.BlacklistInclude)
 	defaultConfig.List.BlacklistExclude = normalizeList(defaultConfig.List.BlacklistExclude)
