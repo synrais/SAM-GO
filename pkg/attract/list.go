@@ -112,16 +112,12 @@ func createGamelists(cfg *config.UserConfig,
 				systemFiles = append(systemFiles, files...)
 			}
 
-			// Save raw entries for masterlist (before deduplication)
-			rawSystemFiles := append([]string(nil), systemFiles...)
-			masterList = append(masterList, rawSystemFiles...)
-
 			// Apply filters
 			systemFiles = FilterUniqueWithMGL(systemFiles)
 			systemFiles = FilterExtensions(systemFiles, systemId, cfg)
 			systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
 
-			// Dedup per system (for gamelist + search)
+			// Dedup per system
 			seen := make(map[string]struct{})
 			deduped := systemFiles[:0]
 			for _, f := range systemFiles {
@@ -162,12 +158,10 @@ func createGamelists(cfg *config.UserConfig,
 			totalGames += len(systemFiles)
 			reused++
 			status = "reused"
-
-			// Add reused list to master (raw)
-			masterList = append(masterList, systemFiles...)
 		}
 
-		// Update search (deduped + cleaned)
+		// Update master + search
+		masterList = append(masterList, systemFiles...)
 		seenSearch := make(map[string]struct{})
 		for _, f := range systemFiles {
 			clean := utils.StripTimestamp(f)
