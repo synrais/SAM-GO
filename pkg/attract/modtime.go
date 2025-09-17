@@ -54,18 +54,21 @@ func loadSavedTimestamps(gamelistDir string) (FolderTimestamps, error) {
 
 // Function to save the current timestamps to the Modtime file
 func saveTimestamps(gamelistDir string, timestamps FolderTimestamps) error {
-	modtimeFilePath := filepath.Join(gamelistDir, "Modtime")
-	data, err := json.MarshalIndent(timestamps, "", "  ")
-	if err != nil {
-		return fmt.Errorf("unable to marshal timestamps: %w", err)
-	}
+    // Ensure directory exists
+    if err := os.MkdirAll(gamelistDir, 0755); err != nil {
+        return fmt.Errorf("unable to create gamelist dir: %w", err)
+    }
 
-	// Save the serialized timestamps to the Modtime file
-	err = ioutil.WriteFile(modtimeFilePath, data, 0644)
-	if err != nil {
-		return fmt.Errorf("unable to save Modtime file: %w", err)
-	}
-	return nil
+    modtimeFilePath := filepath.Join(gamelistDir, "Modtime")
+    data, err := json.MarshalIndent(timestamps, "", "  ")
+    if err != nil {
+        return fmt.Errorf("unable to marshal timestamps: %w", err)
+    }
+
+    if err := ioutil.WriteFile(modtimeFilePath, data, 0644); err != nil {
+        return fmt.Errorf("unable to save Modtime file: %w", err)
+    }
+    return nil
 }
 
 // Function to check if the system folder has changed since the last scan
