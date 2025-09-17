@@ -130,11 +130,7 @@ func SearchAndPlay() {
 func findMatches(qn, qext string) []string {
 	var prefix, substring, fuzzy []string
 
-	// 🟢 Debug: show first few entries from GameIndex
-	for i, e := range GameIndex {
-		if i < 5 { // only dump first few to avoid spam
-			fmt.Printf("[SEARCH] Index[%d]: name=%q ext=%q path=%q\n", i, e.Name, e.Ext, e.Path)
-		}
+	for _, e := range GameIndex {
 		if qext != "" && qext != e.Ext {
 			continue
 		}
@@ -165,7 +161,7 @@ func findMatches(qn, qext string) []string {
 		out = out[:200]
 	}
 
-	// 🟢 Debug: show result count
+	// Show just summary info
 	fmt.Printf("[SEARCH] Matches found: %d\n", len(out))
 
 	return out
