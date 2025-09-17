@@ -1,8 +1,8 @@
 package attract
 
 import (
-	"fmt"
 	"math/rand"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,7 +11,6 @@ import (
 
 	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
-	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/history"
 	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/run"
@@ -78,43 +77,6 @@ func disabled(system string, gamePath string, cfg *config.UserConfig) bool {
 		}
 	}
 	return false
-}
-
-// expandGroups expands category names (Console, Handheld, Arcade, Computer)
-// into real system IDs. Unknown names are passed through unchanged.
-func expandGroups(list []string) []string {
-	var expanded []string
-	for _, item := range list {
-		switch strings.ToLower(strings.TrimSpace(item)) {
-		case "console":
-			for id, sys := range games.SystemDB {
-				if sys.Category == games.CategoryConsole {
-					expanded = append(expanded, id)
-				}
-			}
-		case "handheld":
-			for id, sys := range games.SystemDB {
-				if sys.Category == games.CategoryHandheld {
-					expanded = append(expanded, id)
-				}
-			}
-		case "arcade":
-			for id, sys := range games.SystemDB {
-				if sys.Category == games.CategoryArcade {
-					expanded = append(expanded, id)
-				}
-			}
-		case "computer":
-			for id, sys := range games.SystemDB {
-				if sys.Category == games.CategoryComputer {
-					expanded = append(expanded, id)
-				}
-			}
-		default:
-			expanded = append(expanded, item)
-		}
-	}
-	return expanded
 }
 
 // filterAllowed applies include/exclude restrictions case-insensitively.
@@ -210,12 +172,7 @@ func Run(cfg *config.UserConfig, args []string) {
 			allFiles = append(allFiles, k)
 		}
 	}
-
-	// Expand groups before filtering
-	includes := expandGroups(attractCfg.Include)
-	excludes := expandGroups(attractCfg.Exclude)
-	files := filterAllowed(allFiles, includes, excludes)
-
+	files := filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
 	if len(files) == 0 {
 		fmt.Println("[Attract] No gamelists found in cache")
 		os.Exit(1)
@@ -333,9 +290,7 @@ func Run(cfg *config.UserConfig, args []string) {
 					allFiles = append(allFiles, k)
 				}
 			}
-			includes = expandGroups(attractCfg.Include)
-			excludes = expandGroups(attractCfg.Exclude)
-			files = filterAllowed(allFiles, includes, excludes)
+			files = filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
 
 			if len(files) == 0 {
 				fmt.Println("[Attract] No gamelists even after reset, exiting.")
