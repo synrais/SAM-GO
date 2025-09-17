@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -111,19 +110,22 @@ func filterAllowed(all []string, include, exclude []string) []string {
 	return filtered
 }
 
-// Run handles the main attract mode loop.
 func Run(args []string) {
-	// Load config (auto-creates SAM.ini if missing)
-	cfg, err := config.EnsureUserConfig("SAM")
+	// Make sure SAM.ini exists and load config
+	_, err := config.EnsureUserConfig("SAM", assets.DefaultSAMIni)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "[Attract] Failed to load config:", err)
-		os.Exit(1)
+		fmt.Fprintln(os.Stderr, err)
+		return
 	}
+
+	// Load the user config
+	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
 	attractCfg := cfg.Attract
 
 	// Ensure gamelists are built
 	if err := RunList([]string{}); err != nil {
 		fmt.Fprintln(os.Stderr, "[Attract] List build failed:", err)
+		return
 	}
 
 	// Load lists into cache
@@ -304,7 +306,7 @@ func Run(args []string) {
 			}
 		}
 
-		listKey := files[r.Intn(len(files))] // pick random list
+		listKey := files[r.Intn(len(files))]
 		lines := cache.GetList(listKey)
 		if len(lines) == 0 {
 			var newFiles []string
