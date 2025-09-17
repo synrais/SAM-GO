@@ -1,6 +1,7 @@
 package attract
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -20,12 +21,10 @@ import (
 // Helpers
 // ---------------------------
 
-// Gamelist filename for a given system
 func gamelistFilename(systemId string) string {
 	return systemId + "_gamelist.txt"
 }
 
-// Cache the gamelist, then write it to disk (unless ramOnly is true).
 func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly bool) {
 	cache.SetList(gamelistFilename(systemId), files)
 	if ramOnly {
@@ -240,8 +239,16 @@ func createGamelists(cfg *config.UserConfig,
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
 
-	// --- Build and save GameIndex ---
+	// --- Masterlist & GameIndex piggyback ---
+	indexPath := filepath.Join(gamelistDir, "GameIndex")
 	if fresh > 0 || rebuilt > 0 {
+		// rebuild masterlist + index
+		cache.SetList("Masterlist.txt", masterList)
+		if !cfg.List.RamOnly {
+			writeSimpleList(filepath.Join(gamelistDir, "Masterlist.txt"), masterList)
+		}
+
+		// build GameIndex from deduped globalSearch
 		input.GameIndex = make([]input.GameEntry, 0, len(globalSearch))
 		for _, f := range globalSearch {
 			name, ext := utils.NormalizeEntry(f)
@@ -254,57 +261,39 @@ func createGamelists(cfg *config.UserConfig,
 				Path: f,
 			})
 		}
-		if !quiet {
-			fmt.Printf("[List] GameIndex built: %d entries\n", len(input.GameIndex))
-		}
 
-		// Save to disk if not RAM-only
+		// save JSON index
 		if !cfg.List.RamOnly {
-			indexPath := filepath.Join(gamelistDir, "GameIndex")
-			data, err := json.MarshalIndent(input.GameIndex, "", "  ")
-			if err == nil {
-				if err := os.WriteFile(indexPath, data, 0644); err == nil && !quiet {
-					fmt.Printf("[List] GameIndex saved (%d entries)\n", len(input.GameIndex))
-				}
+			if data, err := json.MarshalIndent(input.GameIndex, "", "  "); err == nil {
+				_ = os.WriteFile(indexPath, data, 0644)
+			} else {
+				fmt.Fprintf(os.Stderr, "[List] Failed to write GameIndex: %v\n", err)
 			}
 		}
-	} else {
-		// Reuse GameIndex from disk if it exists
-		indexPath := filepath.Join(gamelistDir, "GameIndex")
-		if fileExists(indexPath) {
-			data, err := os.ReadFile(indexPath)
-			if err == nil {
-				var loaded []input.GameEntry
-				if err := json.Unmarshal(data, &loaded); err == nil {
-					input.GameIndex = loaded
-					if !quiet {
-						fmt.Printf("[List] GameIndex loaded (%d entries) [reused]\n", len(input.GameIndex))
-					}
-				}
-			}
-		}
-	}
 
-	// Write Masterlist.txt
-	if fresh > 0 || rebuilt > 0 {
-		cache.SetList("Masterlist.txt", masterList)
-		if !cfg.List.RamOnly {
-			writeSimpleList(filepath.Join(gamelistDir, "Masterlist.txt"), masterList)
-		}
 		if !quiet {
 			state := "fresh"
 			if anyRebuilt {
 				state = "rebuilt"
 			}
 			fmt.Printf("[List] %-12s %7d entries [%s]\n", "Masterlist.txt", len(masterList), state)
+			fmt.Printf("[List] %-12s %7d entries [%s]\n", "GameIndex", len(input.GameIndex), state)
 		}
-	} else if !quiet {
+	} else {
+		// reuse
 		lines := cache.GetList("Masterlist.txt")
 		if len(lines) == 0 {
 			lines, _ = utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt"))
 			cache.SetList("Masterlist.txt", lines)
 		}
-		fmt.Printf("[List] %-12s %7d entries [reused]\n", "Masterlist.txt", len(lines))
+		// load JSON index
+		if data, err := os.ReadFile(indexPath); err == nil {
+			_ = json.Unmarshal(data, &input.GameIndex)
+		}
+		if !quiet {
+			fmt.Printf("[List] %-12s %7d entries [reused]\n", "Masterlist.txt", len(lines))
+			fmt.Printf("[List] %-12s %7d entries [reused]\n", "GameIndex", len(input.GameIndex))
+		}
 	}
 
 	if !quiet {
