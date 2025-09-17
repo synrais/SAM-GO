@@ -20,7 +20,7 @@ func saveTimestamps(gamelistDir string, timestamps []SavedTimestamp) error {
 	if err != nil {
 		return fmt.Errorf("[Modtime] Failed to encode timestamps: %w", err)
 	}
-	path := gamelistDir + "/modtime.json"
+	path := gamelistDir + "/Modtime"
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("[Modtime] Failed to save timestamps: %w", err)
 	}
@@ -29,7 +29,7 @@ func saveTimestamps(gamelistDir string, timestamps []SavedTimestamp) error {
 
 // Load timestamps from file
 func loadSavedTimestamps(gamelistDir string) ([]SavedTimestamp, error) {
-	path := gamelistDir + "/modtime.json"
+	path := gamelistDir + "/Modtime"
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
