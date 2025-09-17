@@ -114,6 +114,7 @@ func createGamelists(cfg *config.UserConfig,
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
 		exists := fileExists(gamelistPath)
 
+		var rawFiles []string
 		var systemFiles []string
 		modified := false
 
@@ -138,16 +139,16 @@ func createGamelists(cfg *config.UserConfig,
 					fmt.Fprintf(os.Stderr, "[List] %s\n", err.Error())
 					continue
 				}
-				systemFiles = append(systemFiles, files...)
+				rawFiles = append(rawFiles, files...)
 			}
 
 			// Count before dedupe
-			rawCount := len(systemFiles)
+			rawCount := len(rawFiles)
 
 			// Dedup per system using NormalizeEntry
 			seen := make(map[string]struct{})
 			deduped := make([]string, 0, rawCount)
-			for _, f := range systemFiles {
+			for _, f := range rawFiles {
 				name, _ := utils.NormalizeEntry(f)
 				if _, ok := seen[name]; ok {
 					continue
@@ -198,10 +199,12 @@ func createGamelists(cfg *config.UserConfig,
 				}
 			}
 
-			// Update master + search (only for fresh/rebuilt systems)
-			masterList = append(masterList, systemFiles...)
+			// Update master with RAW
+			masterList = append(masterList, rawFiles...)
+
+			// Update search with DEDUPED
 			seenSearch := make(map[string]struct{})
-			for _, f := range systemFiles {
+			for _, f := range deduped {
 				name, _ := utils.NormalizeEntry(f)
 				if _, ok := seenSearch[name]; !ok {
 					globalSearch = append(globalSearch, f)
@@ -227,7 +230,7 @@ func createGamelists(cfg *config.UserConfig,
 					time.Since(sysStart).Seconds(), status,
 				)
 			}
-			// ⚠️ Important: do NOT append reused systems to master/search here
+			// Master + Search are not touched on reuse
 		}
 	}
 
@@ -262,7 +265,6 @@ func createGamelists(cfg *config.UserConfig,
 			fmt.Printf("[List] %-12s %7d entries [%s]\n", "Search.txt", len(globalSearch), state)
 		}
 	} else if !quiet {
-		// All reused: just report existing count
 		lines := cache.GetList("Search.txt")
 		if len(lines) == 0 {
 			lines, _ = utils.ReadLines(filepath.Join(gamelistDir, "Search.txt"))
@@ -296,7 +298,6 @@ func createGamelists(cfg *config.UserConfig,
 			fmt.Printf("[List] %-12s %7d entries [%s]\n", "Masterlist.txt", len(masterList), state)
 		}
 	} else if !quiet {
-		// All reused: just report existing count
 		lines := cache.GetList("Masterlist.txt")
 		if len(lines) == 0 {
 			lines, _ = utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt"))
