@@ -90,6 +90,7 @@ func createGamelists(cfg *config.UserConfig,
 
 	var globalSearch []string
 	var masterList []string
+	anyRebuilt := false
 
 	// Load saved timestamps
 	savedTimestamps, err := loadSavedTimestamps(gamelistDir)
@@ -180,6 +181,7 @@ func createGamelists(cfg *config.UserConfig,
 
 			if exists && !cfg.List.RamOnly {
 				rebuilt++
+				anyRebuilt = true
 				status = "rebuilt"
 			} else {
 				fresh++
@@ -237,7 +239,8 @@ func createGamelists(cfg *config.UserConfig,
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
 
-	// --- Full Rebuild of Masterlist and GameIndex ---
+	// --- Masterlist & GameIndex piggyback ---
+	indexPath := filepath.Join(gamelistDir, "GameIndex")
 	if fresh > 0 || rebuilt > 0 || reused == 0 {
 		// Fully rebuild both GameIndex and Masterlist when any system is fresh/rebuilt or if all systems are reused
 		fmt.Println("[List] Rebuilding Masterlist and GameIndex from scratch...")
@@ -247,6 +250,9 @@ func createGamelists(cfg *config.UserConfig,
 		if !cfg.List.RamOnly {
 			writeSimpleList(filepath.Join(gamelistDir, "Masterlist.txt"), masterList)
 		}
+
+		// Log the count of titles in the Masterlist
+		fmt.Printf("[List] Masterlist contains %d titles\n", len(masterList))
 
 		// Rebuild GameIndex
 		input.GameIndex = make([]input.GameEntry, 0, len(globalSearch))
@@ -262,14 +268,40 @@ func createGamelists(cfg *config.UserConfig,
 			})
 		}
 
+		// Log the count of titles in the GameIndex
+		fmt.Printf("[List] GameIndex contains %d titles\n", len(input.GameIndex))
+
 		// Save GameIndex as JSON
-		indexPath := filepath.Join(gamelistDir, "GameIndex")
 		if !cfg.List.RamOnly {
 			if data, err := json.MarshalIndent(input.GameIndex, "", "  "); err == nil {
 				_ = os.WriteFile(indexPath, data, 0644)
 			} else {
 				fmt.Fprintf(os.Stderr, "[List] Failed to write GameIndex: %v\n", err)
 			}
+		}
+
+		if !quiet {
+			state := "fresh"
+			if anyRebuilt {
+				state = "rebuilt"
+			}
+			fmt.Printf("[List] %-12s %7d entries [%s]\n", "Masterlist.txt", len(masterList), state)
+			fmt.Printf("[List] %-12s %7d entries [%s]\n", "GameIndex", len(input.GameIndex), state)
+		}
+	} else {
+		// reuse
+		lines := cache.GetList("Masterlist.txt")
+		if len(lines) == 0 {
+			lines, _ = utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt"))
+			cache.SetList("Masterlist.txt", lines)
+		}
+		// load JSON index
+		if data, err := os.ReadFile(indexPath); err == nil {
+			_ = json.Unmarshal(data, &input.GameIndex)
+		}
+		if !quiet {
+			fmt.Printf("[List] %-12s %7d entries [reused]\n", "Masterlist.txt", len(lines))
+			fmt.Printf("[List] %-12s %7d entries [reused]\n", "GameIndex", len(input.GameIndex))
 		}
 	}
 
