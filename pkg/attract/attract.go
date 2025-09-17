@@ -123,11 +123,10 @@ func ensureSAMIniExists() error {
 	iniPath := filepath.Join(dir, "SAM.ini")
 
 	if _, err := os.Stat(iniPath); err == nil {
-		// already exists
+		fmt.Println("[Attract] Found SAM.ini")
 		return nil
 	}
 	if !os.IsNotExist(err) {
-		// some other error
 		return fmt.Errorf("[Attract] Failed to check SAM.ini: %w", err)
 	}
 
@@ -136,7 +135,7 @@ func ensureSAMIniExists() error {
 		return fmt.Errorf("[Attract] Failed to write default SAM.ini: %w", err)
 	}
 
-	fmt.Println("[Attract] Created default SAM.ini from embedded copy")
+	fmt.Println("[Attract] SAM.ini not found — created default from embedded copy")
 	return nil
 }
 
