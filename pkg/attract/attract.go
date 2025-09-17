@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/synrais/SAM-GO/pkg/assets"
 	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/history"
@@ -112,40 +111,14 @@ func filterAllowed(all []string, include, exclude []string) []string {
 	return filtered
 }
 
-// ensureSAMIniExists checks for SAM.ini next to the binary.
-// If it doesn’t exist, writes the embedded default copy.
-func ensureSAMIniExists() error {
-	exePath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("[Attract] Failed to get executable path: %v", err)
-	}
-	dir := filepath.Dir(exePath)
-	iniPath := filepath.Join(dir, "SAM.ini")
-
-	if _, err := os.Stat(iniPath); err == nil {
-		fmt.Println("[Attract] Found SAM.ini")
-		return nil
-	} else if !os.IsNotExist(err) {
-		// error but not "file missing"
-		return fmt.Errorf("[Attract] Failed to check SAM.ini: %v", err)
-	}
-
-	// write embedded default
-	if err := os.WriteFile(iniPath, []byte(assets.DefaultSAMIni), 0644); err != nil {
-		return fmt.Errorf("[Attract] Failed to write default SAM.ini: %v", err)
-	}
-
-	fmt.Println("[Attract] SAM.ini not found — created default copy")
-	return nil
-}
-
+// Run handles the main attract mode loop.
 func Run(args []string) {
-	// Make sure SAM.ini exists
-	if err := ensureSAMIniExists(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	// Load config (auto-creates SAM.ini if missing)
+	cfg, err := config.EnsureUserConfig("SAM")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "[Attract] Failed to load config:", err)
+		os.Exit(1)
 	}
-
-	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
 	attractCfg := cfg.Attract
 
 	// Ensure gamelists are built
@@ -331,7 +304,7 @@ func Run(args []string) {
 			}
 		}
 
-		listKey := files[r.Intn(len(files))]
+		listKey := files[r.Intn(len(files))] // pick random list
 		lines := cache.GetList(listKey)
 		if len(lines) == 0 {
 			var newFiles []string
