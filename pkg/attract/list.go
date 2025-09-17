@@ -112,14 +112,12 @@ func createGamelists(cfg *config.UserConfig,
 				systemFiles = append(systemFiles, files...)
 			}
 
-			// Apply filters
-			systemFiles = FilterUniqueWithMGL(systemFiles)
-			systemFiles = FilterExtensions(systemFiles, systemId, cfg)
-			systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
+			// Count before dedupe
+			rawCount := len(systemFiles)
 
 			// Dedup per system using NormalizeEntry
 			seen := make(map[string]struct{})
-			deduped := make([]string, 0, len(systemFiles))
+			deduped := make([]string, 0, rawCount)
 			for _, f := range systemFiles {
 				name, _ := utils.NormalizeEntry(f)
 				if _, ok := seen[name]; ok {
@@ -128,8 +126,15 @@ func createGamelists(cfg *config.UserConfig,
 				seen[name] = struct{}{}
 				deduped = append(deduped, f)
 			}
-			origCount := len(systemFiles)
-			systemFiles = deduped
+			dedupedCount := len(deduped)
+
+			// Apply filters after dedupe
+			beforeFilter := dedupedCount
+			systemFiles = FilterUniqueWithMGL(deduped)
+			systemFiles = FilterExtensions(systemFiles, systemId, cfg)
+			systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
+			filteredCount := len(systemFiles)
+			filtersRemoved := beforeFilter - filteredCount
 
 			if len(systemFiles) == 0 {
 				emptySystems = append(emptySystems, systemId)
@@ -150,9 +155,19 @@ func createGamelists(cfg *config.UserConfig,
 			}
 
 			if !quiet {
-				fmt.Printf("[List] %-12s %5d/%-5d entries (%.2fs) [%s]\n",
-					systemId, len(systemFiles), origCount, time.Since(sysStart).Seconds(), status)
+				if filtersRemoved > 0 {
+					fmt.Printf("[List] %-12s %5d/%-5d → %-5d entries (-%d filtered) (%.2fs) [%s]\n",
+						systemId, dedupedCount, rawCount, filteredCount, filtersRemoved,
+						time.Since(sysStart).Seconds(), status,
+					)
+				} else {
+					fmt.Printf("[List] %-12s %5d/%-5d → %-5d entries (%.2fs) [%s]\n",
+						systemId, dedupedCount, rawCount, filteredCount,
+						time.Since(sysStart).Seconds(), status,
+					)
+				}
 			}
+
 		} else {
 			// Reuse cached list
 			lines := cache.GetList(gamelistFilename(systemId))
@@ -166,8 +181,10 @@ func createGamelists(cfg *config.UserConfig,
 			status = "reused"
 
 			if !quiet {
-				fmt.Printf("[List] %-12s %5d/%-5d entries (%.2fs) [%s]\n",
-					systemId, len(systemFiles), len(systemFiles), time.Since(sysStart).Seconds(), status)
+				fmt.Printf("[List] %-12s %5d/%-5d → %-5d entries (%.2fs) [%s]\n",
+					systemId, len(systemFiles), len(systemFiles), len(systemFiles),
+					time.Since(sysStart).Seconds(), status,
+				)
 			}
 		}
 
