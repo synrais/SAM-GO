@@ -267,6 +267,9 @@ func createGamelists(cfg *config.UserConfig,
 			writeSimpleList(filepath.Join(gamelistDir, "Masterlist.txt"), masterList)
 		}
 
+		// Print Masterlist total entries
+		fmt.Printf("[List] Masterlist contains %d entries\n", len(masterList))
+
 		// Rebuild GameIndex
 		input.GameIndex = make([]input.GameEntry, 0, len(globalSearch))
 		for _, f := range globalSearch {
@@ -280,6 +283,9 @@ func createGamelists(cfg *config.UserConfig,
 				Path: f,
 			})
 		}
+
+		// Print GameIndex total entries
+		fmt.Printf("[List] GameIndex contains %d entries\n", len(input.GameIndex))
 
 		// Save GameIndex as JSON
 		if !cfg.List.RamOnly {
@@ -298,7 +304,7 @@ func createGamelists(cfg *config.UserConfig,
 			totalGames, taken, fresh, rebuilt, reused)
 		if len(emptySystems) > 0 {
 			fmt.Printf("[List] Empty systems: %s\n", strings.Join(emptySystems, ", "))
-		 }
+		}
 	}
 
 	return totalGames
