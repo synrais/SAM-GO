@@ -102,6 +102,7 @@ func createGamelists(cfg *config.UserConfig,
 
 	var globalSearch []string
 	var masterList []string
+	anyRebuilt := false
 
 	// Load saved timestamps
 	savedTimestamps, err := loadSavedTimestamps(gamelistDir)
@@ -121,9 +122,6 @@ func createGamelists(cfg *config.UserConfig,
 		systemPathMap[p.System.Id] = append(systemPathMap[p.System.Id], p.Path)
 	}
 
-	// Track systems that are rebuilt or fresh
-	var modifiedSystems []string
-
 	// Process systems in stable order
 	for _, systemId := range systemOrder {
 		paths := systemPathMap[systemId]
@@ -136,7 +134,6 @@ func createGamelists(cfg *config.UserConfig,
 		var systemFiles []string
 		modified := false
 
-		// Check if the system folder is modified
 		for _, path := range paths {
 			m, currentMod, err := isFolderModified(systemId, path, savedTimestamps)
 			if err != nil {
@@ -149,56 +146,134 @@ func createGamelists(cfg *config.UserConfig,
 			}
 		}
 
-		// Check if gamelist exists
-		if exists && !modified {
-			// Copy the list from FAT to cache
-			lines, _ := utils.ReadLines(gamelistPath)
-			cache.SetList(gamelistFilename(systemId), lines)
+		status := ""
+		if modified || !exists {
+			// If folder is modified or gamelist is missing, proceed with rescan and regenerate
+			for _, path := range paths {
+				files, err := games.GetFiles(systemId, path)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "[List] %s\n", err.Error())
+					continue
+				}
+				rawFiles = append(rawFiles, files...)
+			}
 
-			// Apply filters to cached list
-			filtered := FilterExtensions(lines, systemId, cfg)
-			filtered, _ = ApplyFilterlists(gamelistDir, systemId, filtered, cfg)
-			totalGames += len(filtered)
+			rawCount := len(rawFiles)
+
+			// Dedup per system
+			seen := make(map[string]struct{})
+			deduped := make([]string, 0, rawCount)
+			for _, f := range rawFiles {
+				name, _ := utils.NormalizeEntry(f)
+				if _, ok := seen[name]; ok {
+					continue
+				}
+				seen[name] = struct{}{}
+				deduped = append(deduped, f)
+			}
+			dedupedCount := len(deduped)
+
+			// Apply filters
+			beforeFilter := dedupedCount
+			systemFiles = FilterUniqueWithMGL(deduped)
+			systemFiles = FilterExtensions(systemFiles, systemId, cfg)
+			systemFiles, hadLists := ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
+			filteredCount := len(systemFiles)
+			filtersRemoved := beforeFilter - filteredCount
+
+			if len(systemFiles) == 0 {
+				emptySystems = append(emptySystems, systemId)
+				continue
+			}
+
+			sort.Strings(systemFiles)
+			totalGames += len(systemFiles)
+
+			writeGamelist(gamelistDir, systemId, systemFiles, cfg.List.RamOnly)
+
+			if exists && !cfg.List.RamOnly {
+				rebuilt++
+				anyRebuilt = true
+				status = "rebuilt"
+			} else {
+				fresh++
+				status = "fresh"
+			}
 
 			if !quiet {
-				fmt.Printf("[List] %-15s %d entries (cached)\n", systemId, len(filtered))
+				if hadLists {
+					fmt.Printf("[List] %-15s %5d/%-5d → %-5d entries (-%d filtered) (%7.2fs) [%s]\n",
+						systemId, dedupedCount, rawCount, filteredCount, filtersRemoved,
+						time.Since(sysStart).Seconds(), status,
+					)
+				} else {
+					fmt.Printf("[List] %-15s %5d/%-5d → %-5d entries (no filterlists) (%7.2fs) [%s]\n",
+						systemId, dedupedCount, rawCount, filteredCount,
+						time.Since(sysStart).Seconds(), status,
+					)
+				}
 			}
-			continue
-		}
 
-		// If the gamelist is missing or the folder was modified, rescan the system
-		for _, path := range paths {
-			files, err := games.GetFiles(systemId, path)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[List] %s\n", err.Error())
-				continue
+			// ** Remove old system entries and add new data for this system**
+			masterList = removeSystemEntries(masterList, systemId)
+			globalSearch = removeSystemEntries(globalSearch, systemId)
+
+			// Add new system entries
+			masterList = append(masterList, "# SYSTEM: "+systemId+" #")
+			masterList = append(masterList, rawFiles...)
+			seenSearch := make(map[string]struct{})
+			for _, f := range deduped {
+				name, _ := utils.NormalizeEntry(f)
+				if _, ok := seenSearch[name]; !ok {
+					globalSearch = append(globalSearch, f)
+					seenSearch[name] = struct{}{}
+				}
 			}
-			rawFiles = append(rawFiles, files...)
-		}
 
-		if len(rawFiles) == 0 {
-			emptySystems = append(emptySystems, systemId)
-			continue
-		}
-
-		// Deduplicate per system
-		seen := make(map[string]struct{})
-		deduped := make([]string, 0, len(rawFiles))
-		for _, f := range rawFiles {
-			name, _ := utils.NormalizeEntry(f)
-			if _, ok := seen[name]; ok {
-				continue
+		} else {
+			// If the gamelist exists and folder is not modified, just copy from FAT to cache
+			lines := cache.GetList(gamelistFilename(systemId))
+			if len(lines) == 0 {
+				lines, _ = utils.ReadLines(gamelistPath)
+				cache.SetList(gamelistFilename(systemId), lines)
 			}
-			seen[name] = struct{}{}
-			deduped = append(deduped, f)
+			systemFiles = lines
+			totalGames += len(systemFiles)
+			reused++
+			status = "reused"
+
+			if !quiet {
+				fmt.Printf("[List] %-15s %5d/%-5d → %-5d entries (%7.2fs) [%s]\n",
+					systemId, len(systemFiles), len(systemFiles), len(systemFiles),
+					time.Since(sysStart).Seconds(), status,
+				)
+			}
+		}
+	}
+
+	// Save timestamps once at the end
+	if err := saveTimestamps(gamelistDir, updatedTimestamps); err != nil {
+		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
+	}
+
+	// --- Masterlist & GameIndex piggyback ---
+	indexPath := filepath.Join(gamelistDir, "GameIndex")
+	if fresh > 0 || rebuilt > 0 || reused == 0 {
+		// Fully rebuild both GameIndex and Masterlist when any system is fresh/rebuilt or if all systems are reused
+		fmt.Println("[List] Rebuilding Masterlist and GameIndex from scratch...")
+
+		// Rebuild Masterlist
+		cache.SetList("Masterlist.txt", masterList)
+		if !cfg.List.RamOnly {
+			writeSimpleList(filepath.Join(gamelistDir, "Masterlist.txt"), masterList)
 		}
 
-		// Update Masterlist with raw (uncached, unfiltered) list
-		masterList = append(masterList, "# SYSTEM: "+systemId+" #")
-		masterList = append(masterList, rawFiles...)
+		// Log the count of titles in the Masterlist
+		fmt.Printf("[List] Masterlist contains %d titles\n", len(masterList))
 
-		// Update GameIndex from deduped list
-		for _, f := range deduped {
+		// Rebuild GameIndex
+		input.GameIndex = make([]input.GameEntry, 0, len(globalSearch))
+		for _, f := range globalSearch {
 			name, ext := utils.NormalizeEntry(f)
 			if name == "" {
 				continue
@@ -210,33 +285,41 @@ func createGamelists(cfg *config.UserConfig,
 			})
 		}
 
-		// Apply filters to deduped
-		filtered := FilterExtensions(deduped, systemId, cfg)
-		filtered, _ = ApplyFilterlists(gamelistDir, systemId, filtered, cfg)
-		sort.Strings(filtered)
+		// Log the count of titles in the GameIndex
+		fmt.Printf("[List] GameIndex contains %d titles\n", len(input.GameIndex))
 
-		// Cache + update FAT
-		cache.SetList(gamelistFilename(systemId), filtered)
-		writeGamelist(gamelistDir, systemId, filtered, cfg.List.RamOnly)
-
-		totalGames += len(filtered)
+		// Save GameIndex as JSON
+		if !cfg.List.RamOnly {
+			if data, err := json.MarshalIndent(input.GameIndex, "", "  "); err == nil {
+				_ = os.WriteFile(indexPath, data, 0644)
+			} else {
+				fmt.Fprintf(os.Stderr, "[List] Failed to write GameIndex: %v\n", err)
+			}
+		}
 
 		if !quiet {
-			fmt.Printf("[List] %-15s %d/%d → %d entries [rebuilt]\n",
-				systemId, len(deduped), len(rawFiles), len(filtered))
+			state := "fresh"
+			if anyRebuilt {
+				state = "rebuilt"
+			}
+			fmt.Printf("[List] %-12s %7d entries [%s]\n", "Masterlist.txt", len(masterList), state)
+			fmt.Printf("[List] %-12s %7d entries [%s]\n", "GameIndex", len(input.GameIndex), state)
 		}
-	}
-
-	// Handle case if Master or GameIndex is missing from FAT and needs a full rebuild
-	if !fileExists(filepath.Join(gamelistDir, "Masterlist.txt")) || !fileExists(filepath.Join(gamelistDir, "GameIndex")) {
-		// Full rescan and rebuild process here
-		fmt.Println("[List] Rebuilding Masterlist and GameIndex from scratch...")
-		// Logic to rebuild Masterlist and GameIndex if missing...
-	}
-
-	// Save timestamps once at the end
-	if err := saveTimestamps(gamelistDir, updatedTimestamps); err != nil {
-		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
+	} else {
+		// reuse
+		lines := cache.GetList("Masterlist.txt")
+		if len(lines) == 0 {
+			lines, _ = utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt"))
+			cache.SetList("Masterlist.txt", lines)
+		}
+		// load JSON index
+		if data, err := os.ReadFile(indexPath); err == nil {
+			_ = json.Unmarshal(data, &input.GameIndex)
+		}
+		if !quiet {
+			fmt.Printf("[List] %-12s %7d entries [reused]\n", "Masterlist.txt", len(lines))
+			fmt.Printf("[List] %-12s %7d entries [reused]\n", "GameIndex", len(input.GameIndex))
+		}
 	}
 
 	if !quiet {
