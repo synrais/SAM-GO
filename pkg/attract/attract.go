@@ -79,16 +79,6 @@ func disabled(system string, gamePath string, cfg *config.UserConfig) bool {
 	return false
 }
 
-// rebuildLists regenerates gamelists according to [List] rules.
-func rebuildLists(cfg *config.UserConfig) {
-	fmt.Println("[Attract] All gamelists empty → rebuilding with RunList...")
-	if err := RunList(nil); err != nil {
-		fmt.Fprintf(os.Stderr, "[Attract] ERROR: list rebuild failed: %v\n", err)
-	} else {
-		fmt.Println("[Attract] Rebuilt gamelists, cache refreshed.")
-	}
-}
-
 // filterAllowed applies include/exclude restrictions case-insensitively.
 func filterAllowed(all []string, include, exclude []string) []string {
 	var filtered []string
@@ -125,7 +115,13 @@ func Run(args []string) {
 	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
 	attractCfg := cfg.Attract
 
-	gamelistDir := config.GamelistDir()
+	// Ensure gamelists are built
+	if err := RunList([]string{}); err != nil {
+		fmt.Fprintln(os.Stderr, "[Attract] List build failed:", err)
+	}
+
+	// Load lists into cache
+	ProcessLists(config.GamelistDir(), cfg)
 
 	// control channels
 	skipCh := make(chan struct{}, 1)
@@ -144,7 +140,7 @@ func Run(args []string) {
 		go func() {
 			for ev := range staticdetector.Stream(cfg, skipCh) {
 				if !silent {
-					fmt.Printf("[Attract] %s\n", ev)
+					fmt.Println(ev)
 				}
 			}
 		}()
@@ -179,24 +175,11 @@ func Run(args []string) {
 	files := filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
 	if len(files) == 0 {
 		fmt.Println("[Attract] No gamelists found in cache")
-		rebuildLists(cfg)
-
-		allKeys = cache.ListKeys()
-		allFiles = nil
-		for _, k := range allKeys {
-			if strings.HasSuffix(k, "_gamelist.txt") {
-				allFiles = append(allFiles, k)
-			}
-		}
-		files = filterAllowed(allFiles, attractCfg.Include, attractCfg.Exclude)
-		if len(files) == 0 {
-			fmt.Println("[Attract] No gamelists even after rebuild, exiting.")
-			os.Exit(1)
-		}
+		os.Exit(1)
 	}
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	fmt.Println("[Attract] Mode running. Press Ctrl-C to exit.")
+	fmt.Println("[Attract] Running. Ctrl-C to exit.")
 
 	// Main loop for playing games
 	playGame := func(gamePath, systemID string, ts float64) {
@@ -204,7 +187,7 @@ func Run(args []string) {
 		for {
 			name := filepath.Base(gamePath)
 			name = strings.TrimSuffix(name, filepath.Ext(name))
-			fmt.Printf("[Attract] Playing: %s (%s)\n", name, systemID)
+			fmt.Printf("[Attract] %s - %s <%s>\n", time.Now().Format("15:04:05"), name, gamePath)
 			run.Run([]string{gamePath})
 
 			// base playtime
@@ -287,7 +270,7 @@ func Run(args []string) {
 		}
 
 		if len(files) == 0 {
-			fmt.Println("[Attract] All systems exhausted → refreshing from master cache")
+			fmt.Println("[Attract] All systems exhausted — refreshing from cache masters")
 			cache.ResetAll()
 
 			allKeys = cache.ListKeys()
