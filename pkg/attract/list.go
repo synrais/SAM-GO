@@ -213,11 +213,12 @@ func createGamelists(cfg *config.UserConfig,
 				}
 			}
 
-			// ** Remove old system entries from Masterlist and GameIndex**
+			// ** Remove old system entries and add new data for this system**
 			masterList = removeSystemEntries(masterList, systemId)
 			globalSearch = removeSystemEntries(globalSearch, systemId)
 
-			// ** Add newly rebuilt system entries**
+			// Add new system entries
+			masterList = append(masterList, "# SYSTEM: "+systemId+" #")
 			masterList = append(masterList, rawFiles...)
 			seenSearch := make(map[string]struct{})
 			for _, f := range deduped {
