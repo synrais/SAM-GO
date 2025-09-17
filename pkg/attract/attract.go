@@ -140,7 +140,7 @@ func Run(args []string) {
 		go func() {
 			for ev := range staticdetector.Stream(cfg, skipCh) {
 				if !silent {
-					fmt.Println(ev)
+					fmt.Printf("[Attract] %s\n", ev)
 				}
 			}
 		}()
@@ -179,7 +179,9 @@ func Run(args []string) {
 	}
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	fmt.Println("[Attract] Running. Ctrl-C to exit.")
+	if !silent {
+		fmt.Println("[Attract] Running. Ctrl-C to exit.")
+	}
 
 	// Main loop for playing games
 	playGame := func(gamePath, systemID string, ts float64) {
@@ -187,13 +189,16 @@ func Run(args []string) {
 		for {
 			name := filepath.Base(gamePath)
 			name = strings.TrimSuffix(name, filepath.Ext(name))
-			fmt.Printf("[Attract] %s - %s <%s>\n", time.Now().Format("15:04:05"), name, gamePath)
+			if !silent {
+				fmt.Printf("[Attract] %s - %s <%s>\n",
+					time.Now().Format("15:04:05"), name, gamePath)
+			}
 			run.Run([]string{gamePath})
 
 			// base playtime
 			wait := parsePlayTime(attractCfg.PlayTime, r)
 
-			// if a static timestamp is set, cut playtime earlier
+			// adjust if static timestamp found
 			if ts > 0 {
 				skipDuration := time.Duration(ts*float64(time.Second)) +
 					time.Duration(attractCfg.SkipafterStatic)*time.Second
@@ -222,8 +227,11 @@ func Run(args []string) {
 					}
 					return
 				case <-skipCh:
+					if !silent {
+						fmt.Println("[Attract] Skipped")
+					}
 					if next, err := history.PlayNext(); err == nil && next != "" {
-						_ = history.SetNowPlaying(next) // browsing only
+						_ = history.SetNowPlaying(next)
 						gamePath = next
 						systemID = ""
 						ts = 0
@@ -232,7 +240,7 @@ func Run(args []string) {
 					return
 				case <-backCh:
 					if prev, err := history.PlayBack(); err == nil && prev != "" {
-						_ = history.SetNowPlaying(prev) // browsing only
+						_ = history.SetNowPlaying(prev)
 						gamePath = prev
 						systemID = ""
 						ts = 0
@@ -241,7 +249,7 @@ func Run(args []string) {
 				}
 			}
 			if next, err := history.PlayNext(); err == nil && next != "" {
-				_ = history.SetNowPlaying(next) // browsing only
+				_ = history.SetNowPlaying(next)
 				gamePath = next
 				systemID = ""
 				ts = 0
@@ -256,13 +264,13 @@ func Run(args []string) {
 		select {
 		case <-backCh:
 			if prev, err := history.PlayBack(); err == nil && prev != "" {
-				_ = history.SetNowPlaying(prev) // browsing only
+				_ = history.SetNowPlaying(prev)
 				playGame(prev, "", 0)
 				continue
 			}
 		case <-skipCh:
 			if next, err := history.PlayNext(); err == nil && next != "" {
-				_ = history.SetNowPlaying(next) // browsing only
+				_ = history.SetNowPlaying(next)
 				playGame(next, "", 0)
 				continue
 			}
@@ -270,7 +278,9 @@ func Run(args []string) {
 		}
 
 		if len(files) == 0 {
-			fmt.Println("[Attract] All systems exhausted — refreshing from cache masters")
+			if !silent {
+				fmt.Println("[Attract] All systems exhausted — refreshing from cache")
+			}
 			cache.ResetAll()
 
 			allKeys = cache.ListKeys()
