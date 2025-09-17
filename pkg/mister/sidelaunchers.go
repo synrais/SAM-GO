@@ -27,20 +27,6 @@ func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bo
 	return false, nil
 }
 
-package mister
-
-import (
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
-
-	"github.com/synrais/SAM-GO/pkg/config"
-	"github.com/synrais/SAM-GO/pkg/games"
-	"github.com/synrais/SAM-GO/pkg/utils"
-)
-
 // ----------------- AmigaVision -----------------
 
 func init() {
