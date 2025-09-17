@@ -25,11 +25,6 @@ func gamelistFilename(systemId string) string {
 	return systemId + "_gamelist.txt"
 }
 
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
 func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly bool) {
 	// Always write to cache
 	cache.SetList(gamelistFilename(systemId), files)
@@ -131,7 +126,7 @@ func createGamelists(cfg *config.UserConfig,
 
 		sysStart := time.Now()
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
-		exists := utils.FileExists(gamelistPath)
+		exists := FileExists(gamelistPath)
 
 		var rawFiles []string
 		var systemFiles []string
@@ -259,7 +254,7 @@ func createGamelists(cfg *config.UserConfig,
 	indexPath := filepath.Join(gamelistDir, "GameIndex")
 	masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
 
-	if fresh > 0 || rebuilt > 0 || reused == 0 || !utils.FileExists(masterPath) || !utils.FileExists(indexPath) {
+	if fresh > 0 || rebuilt > 0 || reused == 0 || !FileExists(masterPath) || !FileExists(indexPath) {
 		fmt.Println("[List] Rebuilding Masterlist and GameIndex from scratch...")
 
 		// Masterlist
