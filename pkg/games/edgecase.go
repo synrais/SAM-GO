@@ -52,7 +52,7 @@ func edgecaseAmigaVision(txtPath string) ([]string, error) {
 			continue
 		}
 		// Pseudo-path: txt file plus entry marker
-		results = append(results, txtPath+"/"+line+".amiv")
+		results = append(results, txtPath+"/"+line+".ags")
 	}
 	return results, nil
 }
