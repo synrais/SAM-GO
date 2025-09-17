@@ -65,13 +65,15 @@ func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) [
 }
 
 // ApplyFilterlists applies whitelist, blacklist, and staticlist filtering to gamelist files.
-func ApplyFilterlists(gamelistDir string, systemID string, files []string, cfg *config.UserConfig) []string {
+func ApplyFilterlists(gamelistDir string, systemID string, files []string, cfg *config.UserConfig) ([]string, bool) {
 	filterBase := config.FilterlistDir()
+	hadLists := false
 
 	// Whitelist
 	if cfg.Attract.UseWhitelist {
 		whitelistPath := filepath.Join(filterBase, systemID+"_whitelist.txt")
 		if f, err := os.Open(whitelistPath); err == nil {
+			hadLists = true
 			defer f.Close()
 			whitelist := make(map[string]struct{})
 			scanner := bufio.NewScanner(f)
@@ -86,8 +88,6 @@ func ApplyFilterlists(gamelistDir string, systemID string, files []string, cfg *
 				name, _ := utils.NormalizeEntry(filepath.Base(file))
 				if _, ok := whitelist[name]; ok {
 					kept = append(kept, file)
-				} else {
-					fmt.Printf("[Filters] Excluded %s (not in whitelist)\n", filepath.Base(file))
 				}
 			}
 			files = kept
@@ -98,6 +98,7 @@ func ApplyFilterlists(gamelistDir string, systemID string, files []string, cfg *
 	if cfg.Attract.UseBlacklist {
 		blacklistPath := filepath.Join(filterBase, systemID+"_blacklist.txt")
 		if f, err := os.Open(blacklistPath); err == nil {
+			hadLists = true
 			defer f.Close()
 			blacklist := make(map[string]struct{})
 			scanner := bufio.NewScanner(f)
@@ -110,11 +111,9 @@ func ApplyFilterlists(gamelistDir string, systemID string, files []string, cfg *
 			var kept []string
 			for _, file := range files {
 				name, _ := utils.NormalizeEntry(filepath.Base(file))
-				if _, bad := blacklist[name]; bad {
-					fmt.Printf("[Filters] Excluded %s (in blacklist)\n", filepath.Base(file))
-					continue
+				if _, bad := blacklist[name]; !bad {
+					kept = append(kept, file)
 				}
-				kept = append(kept, file)
 			}
 			files = kept
 		}
@@ -124,6 +123,7 @@ func ApplyFilterlists(gamelistDir string, systemID string, files []string, cfg *
 	if cfg.List.UseStaticlist {
 		staticPath := filepath.Join(filterBase, systemID+"_staticlist.txt")
 		if f, err := os.Open(staticPath); err == nil {
+			hadLists = true
 			defer f.Close()
 			staticMap := make(map[string]string)
 			scanner := bufio.NewScanner(f)
@@ -144,11 +144,10 @@ func ApplyFilterlists(gamelistDir string, systemID string, files []string, cfg *
 				name, _ := utils.NormalizeEntry(filepath.Base(f))
 				if ts, ok := staticMap[name]; ok {
 					files[i] = "<" + ts + ">" + f
-					fmt.Printf("[Filters] Tagged %s with static timestamp %s\n", filepath.Base(f), ts)
 				}
 			}
 		}
 	}
 
-	return files
+	return files, hadLists
 }
