@@ -81,6 +81,33 @@ func createGamelists(cfg *config.UserConfig,
 
     // Iterate over each system and process it
     for systemId, paths := range systemPaths {
+
+        // 🔹 NEW: Apply Attract Include/Exclude filters before scanning folders
+        if len(cfg.Attract.Include) > 0 {
+            allowed := false
+            for _, inc := range cfg.Attract.Include {
+                if strings.EqualFold(systemId, inc) {
+                    allowed = true
+                    break
+                }
+            }
+            if !allowed {
+                if !quiet {
+                    fmt.Printf("Skipping %s (not in Attract Include list)\n", systemId)
+                }
+                continue
+            }
+        }
+        for _, exc := range cfg.Attract.Exclude {
+            if strings.EqualFold(systemId, exc) {
+                if !quiet {
+                    fmt.Printf("Skipping %s (in Attract Exclude list)\n", systemId)
+                }
+                continue
+            }
+        }
+        // 🔹 END NEW
+
         sysStart := time.Now()
         gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
         exists := fileExists(gamelistPath)
@@ -129,7 +156,7 @@ func createGamelists(cfg *config.UserConfig,
                     continue
                 }
 
-                // Apply filterlists to the files (e.g., blacklist, whitelist)
+                // Apply filterlists to the files (e.g., blacklist, whitelist, staticlist)
                 systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
 
                 sort.Strings(systemFiles)
@@ -156,7 +183,7 @@ func createGamelists(cfg *config.UserConfig,
         }
 
         // Add files to the global search and masterlist
-        for _, f := range systemFiles { // Use systemFiles inside this scope
+        for _, f := range systemFiles {
             masterlist[systemId] = append(masterlist[systemId], f)
             clean := utils.StripTimestamp(f)
             base := strings.TrimSpace(clean)
