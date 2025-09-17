@@ -29,12 +29,14 @@ func dumpConfig(cfg *config.UserConfig) {
 	fmt.Printf("  Attract:\n")
 	fmt.Printf("    PlayTime=%s | Random=%v\n", cfg.Attract.PlayTime, cfg.Attract.Random)
 	fmt.Printf("    Include=%v | Exclude=%v\n", cfg.Attract.Include, cfg.Attract.Exclude)
-	fmt.Printf("    UseBlacklist=%v | UseStaticlist=%v | UseWhitelist=%v | UseStaticDetector=%v\n",
-		cfg.Attract.UseBlacklist, cfg.List.UseStaticlist,
-		cfg.Attract.UseWhitelist, cfg.Attract.UseStaticDetector)
+	fmt.Printf("    UseStaticDetector=%v\n", cfg.Attract.UseStaticDetector)
 
 	// List
-	fmt.Printf("  List: Exclude=%v\n", cfg.List.Exclude)
+	fmt.Printf("  List:\n")
+	fmt.Printf("    Exclude=%v\n", cfg.List.Exclude)
+	fmt.Printf("    UseBlacklist=%v | UseStaticlist=%v | UseWhitelist=%v\n",
+    cfg.List.UseBlacklist, cfg.List.UseStaticlist, cfg.List.UseWhitelist)
+
 
 	// Input detector
 	fmt.Printf("  InputDetector: Mouse=%v | Keyboard=%v | Joystick=%v\n",
