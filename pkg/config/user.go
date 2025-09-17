@@ -7,7 +7,7 @@ import (
 
 	"gopkg.in/ini.v1"
 
-	"github.com/synrais/SAM-GO/pkg/systems"
+	"github.com/synrais/SAM-GO/pkg/games"
 )
 
 // --- Config Structs ---
