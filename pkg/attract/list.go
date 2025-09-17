@@ -26,8 +26,8 @@ func gamelistFilename(systemId string) string {
 }
 
 func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly bool) {
-	// Always write to cache
 	cache.SetList(gamelistFilename(systemId), files)
+
 	if ramOnly {
 		return
 	}
@@ -54,9 +54,6 @@ func fileExists(path string) bool {
 }
 
 func writeSimpleList(path string, files []string) {
-	// Always write to cache
-	cache.SetList(filepath.Base(path), files)
-
 	var sb strings.Builder
 	for _, f := range files {
 		sb.WriteString(f)
@@ -74,6 +71,7 @@ func writeSimpleList(path string, files []string) {
 func removeSystemEntries(list []string, systemId string) []string {
 	var newList []string
 	for _, entry := range list {
+		// Skip entries belonging to the system we want to remove
 		if !strings.Contains(entry, systemId) {
 			newList = append(newList, entry)
 		}
@@ -131,7 +129,7 @@ func createGamelists(cfg *config.UserConfig,
 
 		sysStart := time.Now()
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
-		exists := FileExists(gamelistPath)
+		exists := fileExists(gamelistPath)
 
 		var rawFiles []string
 		var systemFiles []string
@@ -151,7 +149,7 @@ func createGamelists(cfg *config.UserConfig,
 
 		status := ""
 		if modified || !exists {
-			// Rescan + rebuild gamelist
+			// Rebuild gamelist
 			for _, path := range paths {
 				files, err := games.GetFiles(systemId, path)
 				if err != nil {
@@ -192,7 +190,6 @@ func createGamelists(cfg *config.UserConfig,
 			sort.Strings(systemFiles)
 			totalGames += len(systemFiles)
 
-			// Always write to cache + FAT
 			writeGamelist(gamelistDir, systemId, systemFiles, cfg.List.RamOnly)
 
 			if exists && !cfg.List.RamOnly {
@@ -218,13 +215,13 @@ func createGamelists(cfg *config.UserConfig,
 				}
 			}
 
-			// Remove old system entries, add updated block
+			// ** Remove old system entries and add new data for this system**
 			masterList = removeSystemEntries(masterList, systemId)
 			globalSearch = removeSystemEntries(globalSearch, systemId)
 
+			// Add new system entries
 			masterList = append(masterList, "# SYSTEM: "+systemId+" #")
 			masterList = append(masterList, rawFiles...)
-
 			seenSearch := make(map[string]struct{})
 			for _, f := range deduped {
 				name, _ := utils.NormalizeEntry(f)
@@ -235,9 +232,12 @@ func createGamelists(cfg *config.UserConfig,
 			}
 
 		} else {
-			// Reuse gamelist from FAT → always copy to cache
-			lines, _ := utils.ReadLines(gamelistPath)
-			cache.SetList(gamelistFilename(systemId), lines)
+			// Reuse cached list
+			lines := cache.GetList(gamelistFilename(systemId))
+			if len(lines) == 0 {
+				lines, _ = utils.ReadLines(gamelistPath)
+				cache.SetList(gamelistFilename(systemId), lines)
+			}
 			systemFiles = lines
 			totalGames += len(systemFiles)
 			reused++
@@ -252,21 +252,24 @@ func createGamelists(cfg *config.UserConfig,
 		}
 	}
 
-	// Save timestamps once
-	_ = saveTimestamps(gamelistDir, updatedTimestamps)
+	// Save timestamps once at the end
+	if err := saveTimestamps(gamelistDir, updatedTimestamps); err != nil {
+		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
+	}
 
-	// --- Masterlist & GameIndex ---
-	indexPath := filepath.Join(gamelistDir, "GameIndex")
+	// --- Masterlist & GameIndex piggyback ---
 	masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
+	indexPath := filepath.Join(gamelistDir, "GameIndex")
 
-	if fresh > 0 || rebuilt > 0 || reused == 0 || !FileExists(masterPath) || !FileExists(indexPath) {
+	if fresh > 0 || rebuilt > 0 || reused == 0 || !fileExists(masterPath) || !fileExists(indexPath) {
 		fmt.Println("[List] Rebuilding Masterlist and GameIndex from scratch...")
 
-		// Masterlist
-		writeSimpleList(masterPath, masterList)
+		cache.SetList("Masterlist.txt", masterList)
+		if !cfg.List.RamOnly {
+			writeSimpleList(masterPath, masterList)
+		}
 		fmt.Printf("[List] Masterlist contains %d titles\n", len(masterList))
 
-		// GameIndex
 		input.GameIndex = make([]input.GameEntry, 0, len(globalSearch))
 		for _, f := range globalSearch {
 			name, ext := utils.NormalizeEntry(f)
@@ -284,6 +287,8 @@ func createGamelists(cfg *config.UserConfig,
 		if !cfg.List.RamOnly {
 			if data, err := json.MarshalIndent(input.GameIndex, "", "  "); err == nil {
 				_ = os.WriteFile(indexPath, data, 0644)
+			} else {
+				fmt.Fprintf(os.Stderr, "[List] Failed to write GameIndex: %v\n", err)
 			}
 		}
 
@@ -296,10 +301,12 @@ func createGamelists(cfg *config.UserConfig,
 			fmt.Printf("[List] %-12s %7d entries [%s]\n", "GameIndex", len(input.GameIndex), state)
 		}
 	} else {
-		// Reuse from FAT → always refresh cache
-		lines, _ := utils.ReadLines(masterPath)
-		cache.SetList("Masterlist.txt", lines)
-
+		// reuse Masterlist + GameIndex
+		lines := cache.GetList("Masterlist.txt")
+		if len(lines) == 0 {
+			lines, _ = utils.ReadLines(masterPath)
+			cache.SetList("Masterlist.txt", lines)
+		}
 		if data, err := os.ReadFile(indexPath); err == nil {
 			_ = json.Unmarshal(data, &input.GameIndex)
 		}
