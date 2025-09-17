@@ -284,7 +284,7 @@ func createGamelists(cfg *config.UserConfig,
 		}
 		fmt.Printf("[SEARCH] GameIndex populated: %d entries\n", len(input.GameIndex))
 		// Drop Search.txt from cache to avoid duplication
-		cache.Delete("Search.txt")
+		cache.DeleteKey("Search.txt")
 	}
 
 	// Write Masterlist.txt
