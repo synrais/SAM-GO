@@ -239,7 +239,7 @@ func createGamelists(cfg *config.UserConfig,
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
 
-	// Write Search.txt
+	// --- Write/Search.txt and build GameIndex ---
 	if fresh > 0 || rebuilt > 0 {
 		sort.Strings(globalSearch)
 		cache.SetList("Search.txt", globalSearch)
@@ -253,13 +253,35 @@ func createGamelists(cfg *config.UserConfig,
 			}
 			fmt.Printf("[List] %-12s %7d entries [%s]\n", "Search.txt", len(globalSearch), state)
 		}
-	} else if !quiet {
+	} else {
 		lines := cache.GetList("Search.txt")
 		if len(lines) == 0 {
 			lines, _ = utils.ReadLines(filepath.Join(gamelistDir, "Search.txt"))
 			cache.SetList("Search.txt", lines)
 		}
-		fmt.Printf("[List] %-12s %7d entries [reused]\n", "Search.txt", len(lines))
+		if !quiet {
+			fmt.Printf("[List] %-12s %7d entries [reused]\n", "Search.txt", len(cache.GetList("Search.txt")))
+		}
+	}
+
+	// Build GameIndex from Search.txt (always runs, fresh or reused)
+	lines := cache.GetList("Search.txt")
+	if len(lines) > 0 {
+		input.GameIndex = make([]input.GameEntry, 0, len(lines))
+		for _, f := range lines {
+			name, ext := utils.NormalizeEntry(f)
+			if name == "" {
+				continue
+			}
+			input.GameIndex = append(input.GameIndex, input.GameEntry{
+				Name: name,
+				Ext:  ext,
+				Path: f,
+			})
+		}
+		fmt.Printf("[SEARCH] GameIndex populated: %d entries\n", len(input.GameIndex))
+		// optional: drop Search.txt from cache if you don’t want duplication
+		// cache.Delete("Search.txt")
 	}
 
 	// Write Masterlist.txt
