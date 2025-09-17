@@ -132,27 +132,33 @@ func LaunchShortCore(path string) error {
 }
 
 func LaunchGame(cfg *config.UserConfig, system games.System, path string) error {
+	// 🔹 First check if sidelauncher wants to handle this system specially
+	if handled, err := SideLauncher(cfg, system, path); handled {
+		return err
+	}
+
 	switch s.ToLower(filepath.Ext(path)) {
 	case ".mra":
+		// Arcade launchers are already valid files
 		err := launchFile(path)
 		if err != nil {
 			return err
 		}
 	case ".mgl":
+		// Pre-made .mgl file → just launch
 		err := launchFile(path)
 		if err != nil {
 			return err
 		}
-
 		if ActiveGameEnabled() {
 			SetActiveGame(path)
 		}
 	default:
+		// Generic game file → build temporary MGL and launch
 		err := launchTempMgl(cfg, &system, path)
 		if err != nil {
 			return err
 		}
-
 		if ActiveGameEnabled() {
 			SetActiveGame(path)
 		}
