@@ -224,9 +224,17 @@ func Run(cfg *config.UserConfig, args []string) {
 		}
 	}
 
-	// Expand groups in include/exclude
-	include := expandGroups(attractCfg.Include)
-	exclude := expandGroups(attractCfg.Exclude)
+	// Expand groups in include/exclude and handle any errors
+	include, err := expandGroups(attractCfg.Include)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[Attract] Error expanding include groups: %v\n", err)
+		os.Exit(1)
+	}
+	exclude, err := expandGroups(attractCfg.Exclude)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[Attract] Error expanding exclude groups: %v\n", err)
+		os.Exit(1)
+	}
 
 	files := filterAllowed(allFiles, include, exclude)
 	if len(files) == 0 {
@@ -387,3 +395,4 @@ func Run(cfg *config.UserConfig, args []string) {
 		cache.SetList(listKey, lines)
 	}
 }
+
