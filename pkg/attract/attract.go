@@ -2,6 +2,7 @@ package attract
 
 import (
 	"math/rand"
+	'fmt"
 	"os"
 	"path/filepath"
 	"strconv"
