@@ -122,6 +122,15 @@ func createGamelists(cfg *config.UserConfig,
 		systemPathMap[p.System.Id] = append(systemPathMap[p.System.Id], p.Path)
 	}
 
+	// Check if Masterlist or GameIndex is missing from FAT and need full rescan
+	masterListExists := fileExists(filepath.Join(gamelistDir, "Masterlist.txt"))
+	gameIndexExists := fileExists(filepath.Join(gamelistDir, "GameIndex"))
+
+	// Full rebuild if Masterlist or GameIndex are missing
+	if !masterListExists || !gameIndexExists {
+		fmt.Println("[List] Full rebuild triggered (Masterlist or GameIndex missing)...")
+	}
+
 	// Process systems in stable order
 	for _, systemId := range systemOrder {
 		paths := systemPathMap[systemId]
@@ -134,6 +143,7 @@ func createGamelists(cfg *config.UserConfig,
 		var systemFiles []string
 		modified := false
 
+		// Check if folder is modified
 		for _, path := range paths {
 			m, currentMod, err := isFolderModified(systemId, path, savedTimestamps)
 			if err != nil {
@@ -148,7 +158,7 @@ func createGamelists(cfg *config.UserConfig,
 
 		status := ""
 		if modified || !exists {
-			// If folder is modified or gamelist is missing, proceed with rescan and regenerate
+			// If folder is modified or gamelist is missing, proceed to rescan and regenerate
 			for _, path := range paths {
 				files, err := games.GetFiles(systemId, path)
 				if err != nil {
@@ -160,7 +170,7 @@ func createGamelists(cfg *config.UserConfig,
 
 			rawCount := len(rawFiles)
 
-			// Dedup per system
+			// Deduplication per system
 			seen := make(map[string]struct{})
 			deduped := make([]string, 0, rawCount)
 			for _, f := range rawFiles {
