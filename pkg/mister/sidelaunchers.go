@@ -45,8 +45,8 @@ func init() {
 }
 
 func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string) error {
-	// Only handle .amiv files
-	if !strings.EqualFold(filepath.Ext(path), ".amiv") {
+	// Only handle .ags files
+	if !strings.EqualFold(filepath.Ext(path), ".ags") {
 		return nil
 	}
 
