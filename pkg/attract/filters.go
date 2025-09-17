@@ -134,7 +134,7 @@ func ApplyFilterlists(gamelistDir string, systemID string, files []string, cfg *
 	hadLists := false
 
 	// Whitelist
-	if cfg.Attract.UseWhitelist {
+	if cfg.List.UseWhitelist {
 		whitelistPath := filepath.Join(filterBase, systemID+"_whitelist.txt")
 		if f, err := os.Open(whitelistPath); err == nil {
 			hadLists = true
@@ -159,7 +159,7 @@ func ApplyFilterlists(gamelistDir string, systemID string, files []string, cfg *
 	}
 
 	// Blacklist
-	if cfg.Attract.UseBlacklist {
+	if cfg.List.UseBlacklist {
 		blacklistPath := filepath.Join(filterBase, systemID+"_blacklist.txt")
 		if f, err := os.Open(blacklistPath); err == nil {
 			hadLists = true
