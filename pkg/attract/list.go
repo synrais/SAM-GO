@@ -132,7 +132,7 @@ func createGamelists(cfg *config.UserConfig,
 			beforeFilter := dedupedCount
 			systemFiles = FilterUniqueWithMGL(deduped)
 			systemFiles = FilterExtensions(systemFiles, systemId, cfg)
-			systemFiles = ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
+			systemFiles, hadLists := ApplyFilterlists(gamelistDir, systemId, systemFiles, cfg)
 			filteredCount := len(systemFiles)
 			filtersRemoved := beforeFilter - filteredCount
 
@@ -155,13 +155,13 @@ func createGamelists(cfg *config.UserConfig,
 			}
 
 			if !quiet {
-				if filtersRemoved > 0 {
+				if hadLists {
 					fmt.Printf("[List] %-12s %5d/%-5d → %-5d entries (-%d filtered) (%.2fs) [%s]\n",
 						systemId, dedupedCount, rawCount, filteredCount, filtersRemoved,
 						time.Since(sysStart).Seconds(), status,
 					)
 				} else {
-					fmt.Printf("[List] %-12s %5d/%-5d → %-5d entries (%.2fs) [%s]\n",
+					fmt.Printf("[List] %-12s %5d/%-5d → %-5d entries (no lists) (%.2fs) [%s]\n",
 						systemId, dedupedCount, rawCount, filteredCount,
 						time.Since(sysStart).Seconds(), status,
 					)
