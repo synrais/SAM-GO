@@ -47,6 +47,10 @@ func Run(args []string) error {
 	// Update globals
 	setLastPlayed(system, runPath)
 
+	// 🎵 Log "Now Playing"
+	fmt.Printf("[RUN] Now Playing %s: (%s)\n", system.Id, LastPlayedName)
+
 	// Launch game
 	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
 }
+
