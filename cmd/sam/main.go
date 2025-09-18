@@ -135,9 +135,10 @@ func splitCommands(args []string) [][]string {
 func handleCommand(cfg *config.UserConfig, cmd string, args []string, skipCh chan struct{}) {
 	switch cmd {
 	case "-list":
-		if err := attract.RunList(args); err != nil {
-			fmt.Fprintln(os.Stderr, "List failed:", err)
-		}
+    	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
+    	if attract.CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
+        	fmt.Fprintln(os.Stderr, "List failed: no games indexed")
+    	}
 	case "-run":
 		if err := run.Run(args); err != nil {
 			fmt.Fprintln(os.Stderr, "Run failed:", err)
