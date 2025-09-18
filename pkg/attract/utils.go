@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"bufio"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
@@ -166,6 +168,114 @@ func matchRule(rule, candidate string) bool {
 		candidate = strings.TrimSuffix(candidate, filepath.Ext(candidate))
 	}
 	return candidate == rule
+}
+
+// -----------------------------
+// Extra helpers from attract.go
+// -----------------------------
+
+// ParsePlayTime handles "40" or "40-130"
+func ParsePlayTime(value string, r *rand.Rand) time.Duration {
+	if strings.Contains(value, "-") {
+		parts := strings.SplitN(value, "-", 2)
+		min, _ := strconv.Atoi(strings.TrimSpace(parts[0]))
+		max, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if max > min {
+			return time.Duration(r.Intn(max-min+1)+min) * time.Second
+		}
+		return time.Duration(min) * time.Second
+	}
+	secs, _ := strconv.Atoi(value)
+	return time.Duration(secs) * time.Second
+}
+
+// Disabled checks if a game should be blocked by rules
+func Disabled(system string, gamePath string, cfg *config.UserConfig) bool {
+	rules, ok := cfg.Disable[system]
+	if !ok {
+		return false
+	}
+
+	base := filepath.Base(gamePath)
+	ext := filepath.Ext(gamePath)
+	dir := filepath.Base(filepath.Dir(gamePath))
+
+	for _, f := range rules.Folders {
+		if matchRule(f, dir) {
+			return true
+		}
+	}
+	for _, f := range rules.Files {
+		if matchRule(f, base) {
+			return true
+		}
+	}
+	for _, e := range rules.Extensions {
+		if strings.EqualFold(ext, e) {
+			return true
+		}
+	}
+	return false
+}
+
+// GetSystemsByCategory retrieves systems by category (Console, Handheld, Arcade, etc.)
+func GetSystemsByCategory(category string) ([]string, error) {
+	var systems []string
+	for _, sys := range games.AllSystems() {
+		if strings.EqualFold(sys.Category, category) {
+			systems = append(systems, sys.Id)
+		}
+	}
+	if len(systems) == 0 {
+		return nil, fmt.Errorf("no systems found in category: %s", category)
+	}
+	return systems, nil
+}
+
+// ExpandGroups expands category/group names into system IDs.
+func ExpandGroups(list []string) ([]string, error) {
+	var expanded []string
+	for _, item := range list {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+
+		if trimmed == "Console" || trimmed == "Handheld" || trimmed == "Arcade" || trimmed == "Computer" {
+			groupSystems, err := GetSystemsByCategory(trimmed)
+			if err != nil {
+				return nil, fmt.Errorf("group not found: %v", trimmed)
+			}
+			expanded = append(expanded, groupSystems...)
+			continue
+		}
+
+		if sys, err := games.LookupSystem(trimmed); err == nil {
+			expanded = append(expanded, sys.Id)
+			continue
+		}
+
+		expanded = append(expanded, trimmed)
+	}
+	return expanded, nil
+}
+
+// FilterAllowed applies include/exclude restrictions case-insensitively.
+func FilterAllowed(all []string, include, exclude []string) []string {
+	var filtered []string
+	for _, sys := range all {
+		base := strings.TrimSuffix(filepath.Base(sys), "_gamelist.txt")
+		if len(include) > 0 {
+			if !ContainsInsensitive(include, base) {
+				continue
+			}
+		}
+		if ContainsInsensitive(exclude, base) {
+			continue
+		}
+		filtered = append(filtered, sys)
+	}
+	return filtered
 }
 
 // -----------------------------
