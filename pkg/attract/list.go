@@ -2,7 +2,6 @@ package attract
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,11 +16,9 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// ---------------------------
-// Main createGamelists logic
-// ---------------------------
-
-func createGamelists(cfg *config.UserConfig,
+// CreateGamelists scans, deduplicates, filters and writes gamelists.
+// Called by higher-level packages (e.g. attract) — no CLI logic here.
+func CreateGamelists(cfg *config.UserConfig,
 	gamelistDir string,
 	systemPaths []games.PathResult,
 	quiet bool) int {
@@ -39,6 +36,7 @@ func createGamelists(cfg *config.UserConfig,
 	fresh, rebuilt, reused := 0, 0, 0
 	var emptySystems []string
 
+	// load saved modtimes
 	savedTimestamps, err := loadSavedTimestamps(gamelistDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[List] Error loading saved timestamps: %v\n", err)
@@ -46,6 +44,7 @@ func createGamelists(cfg *config.UserConfig,
 	}
 	updatedTimestamps := savedTimestamps
 
+	// build system→paths map
 	systemPathMap := make(map[string][]string)
 	systemOrder := []string{}
 	for _, p := range systemPaths {
@@ -55,6 +54,7 @@ func createGamelists(cfg *config.UserConfig,
 		systemPathMap[p.System.Id] = append(systemPathMap[p.System.Id], p.Path)
 	}
 
+	// load master + index
 	masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
 	indexPath := filepath.Join(gamelistDir, "GameIndex")
 	var masterList []string
@@ -66,16 +66,18 @@ func createGamelists(cfg *config.UserConfig,
 		_ = json.Unmarshal(data, &input.GameIndex)
 	}
 
+	// process each system
 	for _, systemId := range systemOrder {
 		paths := systemPathMap[systemId]
-
 		sysStart := time.Now()
+
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
 		exists := fileExists(gamelistPath)
 
 		var rawFiles []string
 		modified := false
 
+		// check timestamps
 		for _, path := range paths {
 			m, currentMod, err := isFolderModified(systemId, path, savedTimestamps)
 			if err != nil {
@@ -89,6 +91,7 @@ func createGamelists(cfg *config.UserConfig,
 		}
 
 		if modified || !exists {
+			// rescan files
 			for _, path := range paths {
 				files, err := games.GetFiles(systemId, path)
 				if err != nil {
@@ -98,26 +101,16 @@ func createGamelists(cfg *config.UserConfig,
 				rawFiles = append(rawFiles, files...)
 			}
 
-			// Dedup per system
-			seen := make(map[string]struct{})
-			deduped := make([]string, 0, len(rawFiles))
-			for _, f := range rawFiles {
-				name, _ := utils.NormalizeEntry(f)
-				if _, ok := seen[name]; ok {
-					continue
-				}
-				seen[name] = struct{}{}
-				deduped = append(deduped, f)
-			}
+			// dedup
+			deduped := dedupeFiles(rawFiles)
 
-			// Disk stage
+			// disk stage
 			beforeDisk := len(deduped)
 			diskFiltered := FilterExtensions(deduped, systemId, cfg)
 			extRemoved := beforeDisk - len(diskFiltered)
 
-			// Cache stage
+			// cache stage
 			cacheFiles, counts, _ := ApplyFilterlistsDetailed(gamelistDir, systemId, diskFiltered, cfg)
-
 			if len(cacheFiles) == 0 {
 				emptySystems = append(emptySystems, systemId)
 				continue
@@ -152,35 +145,14 @@ func createGamelists(cfg *config.UserConfig,
 				)
 			}
 
-			// Update Masterlist + GameIndex
+			// update masterlist + game index
 			masterList = removeSystemBlock(masterList, systemId)
 			masterList = append(masterList, "# SYSTEM: "+systemId+" #")
 			masterList = append(masterList, rawFiles...)
-			newIndex := make([]input.GameEntry, 0, len(input.GameIndex))
-			for _, e := range input.GameIndex {
-				if !strings.Contains(e.Path, "/"+systemId+"/") {
-					newIndex = append(newIndex, e)
-				}
-			}
-			input.GameIndex = newIndex
-			seenSearch := make(map[string]struct{})
-			for _, f := range deduped {
-				name, ext := utils.NormalizeEntry(f)
-				if name == "" {
-					continue
-				}
-				if _, ok := seenSearch[name]; ok {
-					continue
-				}
-				input.GameIndex = append(input.GameIndex, input.GameEntry{
-					Name: name,
-					Ext:  ext,
-					Path: f,
-				})
-				seenSearch[name] = struct{}{}
-			}
+			updateGameIndex(systemId, deduped)
 
 		} else {
+			// reuse cached list
 			lines := cache.GetList(gamelistFilename(systemId))
 			if len(lines) == 0 {
 				lines, _ = utils.ReadLines(gamelistPath)
@@ -209,12 +181,12 @@ func createGamelists(cfg *config.UserConfig,
 		}
 	}
 
-	// Save timestamps
+	// save timestamps
 	if err := saveTimestamps(gamelistDir, updatedTimestamps); err != nil {
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
 
-	// Save Masterlist + GameIndex
+	// save masterlist + index
 	cache.SetList("Masterlist.txt", masterList)
 	if !cfg.List.RamOnly {
 		writeSimpleList(masterPath, masterList)
@@ -223,7 +195,7 @@ func createGamelists(cfg *config.UserConfig,
 		}
 	}
 
-	// Summary
+	// summary
 	if !quiet {
 		fmt.Printf("[List] Masterlist contains %d titles\n", countGames(masterList))
 		fmt.Printf("[List] GameIndex contains %d titles\n", len(input.GameIndex))
@@ -244,73 +216,4 @@ func createGamelists(cfg *config.UserConfig,
 	}
 
 	return totalGames
-}
-
-// ---------------------------
-// CLI entry point
-// ---------------------------
-
-func RunList(args []string) error {
-	fs := flag.NewFlagSet("list", flag.ContinueOnError)
-
-	exePath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("[List] Failed to detect SAM install path: %w", err)
-	}
-	baseDir := filepath.Dir(exePath)
-
-	defaultOut := filepath.Join(baseDir, "SAM_Gamelists")
-	gamelistDir := fs.String("o", defaultOut, "gamelist files directory")
-
-	filter := fs.String("s", "all", "list of systems to index (comma separated)")
-	quiet := fs.Bool("q", false, "suppress all status output")
-	detect := fs.Bool("d", false, "list active system folders")
-	ramOnly := fs.Bool("ramonly", false, "build lists in RAM only (do not write to SD)")
-
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
-
-	if *ramOnly {
-		cfg.List.RamOnly = true
-		if !*quiet {
-			fmt.Println("[List] RamOnly mode enabled via CLI")
-		}
-	}
-
-	var systems []games.System
-	if *filter == "all" {
-		if len(cfg.List.Exclude) > 0 {
-			systems = games.AllSystemsExcept(cfg.List.Exclude)
-		} else {
-			systems = games.AllSystems()
-		}
-	} else {
-		for _, filterId := range strings.Split(*filter, ",") {
-			filterId = strings.TrimSpace(filterId)
-			system, err := games.LookupSystem(filterId)
-			if err != nil {
-				continue
-			}
-			systems = append(systems, *system)
-		}
-	}
-
-	if *detect {
-		results := games.GetActiveSystemPaths(cfg, systems)
-		for _, r := range results {
-			fmt.Printf("%s:%s\n", strings.ToLower(r.System.Id), r.Path)
-		}
-		return nil
-	}
-
-	systemPaths := games.GetSystemPaths(cfg, systems)
-	total := createGamelists(cfg, *gamelistDir, systemPaths, *quiet)
-
-	if total == 0 {
-		return fmt.Errorf("[List] No games indexed")
-	}
-	return nil
 }
