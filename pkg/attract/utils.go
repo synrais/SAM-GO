@@ -110,9 +110,9 @@ func ParseLine(line string) (float64, string) {
 	return 0, line
 }
 
-func ReadStaticTimestamp(system, game string) float64 {
+func ReadStaticTimestamp(systemID, game string) float64 {
 	filterBase := config.FilterlistDir()
-	path := filepath.Join(filterBase, system+"_staticlist.txt")
+	path := filepath.Join(filterBase, systemID+"_staticlist.txt")
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -399,15 +399,15 @@ func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) [
 // Filterlist runners
 // -----------------------------
 
-// Detailed version with per-category counts
-func ApplyFilterlistsDetailed(gamelistDir, system string, lines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
+// Apply Filterlists with per-category counts
+func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
 	filterBase := config.FilterlistDir()
 	hadLists := false
 	counts := map[string]int{"White": 0, "Black": 0, "Static": 0, "Folder": 0, "File": 0}
 
 	// Whitelist
-	if cfg.List.UseWhitelist && AllowedFor(system, cfg.List.WhitelistInclude, cfg.List.WhitelistExclude) {
-		whitelist := ReadNameSet(filepath.Join(filterBase, system+"_whitelist.txt"))
+	if cfg.List.UseWhitelist && AllowedFor(systemID, cfg.List.WhitelistInclude, cfg.List.WhitelistExclude) {
+		whitelist := ReadNameSet(filepath.Join(filterBase, systemID+"_whitelist.txt"))
 		if whitelist != nil {
 			hadLists = true
 			var kept []string
@@ -424,8 +424,8 @@ func ApplyFilterlistsDetailed(gamelistDir, system string, lines []string, cfg *c
 	}
 
 	// Blacklist
-	if cfg.List.UseBlacklist && AllowedFor(system, cfg.List.BlacklistInclude, cfg.List.BlacklistExclude) {
-		bl := ReadNameSet(filepath.Join(filterBase, system+"_blacklist.txt"))
+	if cfg.List.UseBlacklist && AllowedFor(systemID, cfg.List.BlacklistInclude, cfg.List.BlacklistExclude) {
+		bl := ReadNameSet(filepath.Join(filterBase, systemID+"_blacklist.txt"))
 		if bl != nil {
 			hadLists = true
 			var kept []string
@@ -442,8 +442,8 @@ func ApplyFilterlistsDetailed(gamelistDir, system string, lines []string, cfg *c
 	}
 
 	// Staticlist
-	if cfg.List.UseStaticlist && AllowedFor(system, cfg.List.StaticlistInclude, cfg.List.StaticlistExclude) {
-		sm := ReadStaticMap(filepath.Join(filterBase, system+"_staticlist.txt"))
+	if cfg.List.UseStaticlist && AllowedFor(systemID, cfg.List.StaticlistInclude, cfg.List.StaticlistExclude) {
+		sm := ReadStaticMap(filepath.Join(filterBase, systemID+"_staticlist.txt"))
 		if sm != nil {
 			hadLists = true
 			for i, l := range lines {
@@ -457,14 +457,14 @@ func ApplyFilterlistsDetailed(gamelistDir, system string, lines []string, cfg *c
 	}
 
 	before := len(lines)
-	lines = FilterFoldersAndFiles(lines, system, cfg)
+	lines = FilterFoldersAndFiles(lines, systemID, cfg)
 	counts["Folder"] = before - len(lines)
 
 	before = len(lines)
 	lines = FilterUniqueWithMGL(lines)
 	counts["File"] = before - len(lines)
 
-	cache.SetList(system+"_gamelist.txt", lines)
+	cache.SetList(systemID+"_gamelist.txt", lines)
 	return lines, counts, hadLists
 }
 
