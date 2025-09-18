@@ -626,10 +626,10 @@ func updateTimestamp(list []SavedTimestamp, systemID, path string, mod time.Time
 // History navigation
 // -----------------------------
 //
-// It uses the cache to persist the timeline of 
-// games played, and maintains a currentIndex
-// pointer into that list. The index moves
-// forward/backward as the user navigates.
+// Provides a minimal forward/backward timeline of played
+// games. The history is persisted in cache, and this local
+// pointer (currentIndex) tracks where we are inside it.
+// -----------------------------
 
 // currentIndex points into the History timeline (in cache).
 // -1 means "no history yet".
