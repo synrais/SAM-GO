@@ -21,12 +21,8 @@ func containsInsensitive(list []string, item string) bool {
 	return false
 }
 
-// matchesSystem checks if a system name appears in a list.
 func matchesSystem(list []string, system string) bool {
-	if containsInsensitive(list, system) {
-		return true
-	}
-	return false
+	return containsInsensitive(list, system)
 }
 
 func allowedFor(system string, include, exclude []string) bool {
@@ -39,7 +35,6 @@ func allowedFor(system string, include, exclude []string) bool {
 	return true
 }
 
-// readNameSet loads a text file into a normalized set (using utils.NormalizeEntry).
 func readNameSet(path string) map[string]struct{} {
 	f, err := os.Open(path)
 	if err != nil {
@@ -59,7 +54,6 @@ func readNameSet(path string) map[string]struct{} {
 	return set
 }
 
-// readStaticMap loads staticlist.txt into a map of normalizedName → timestamp.
 func readStaticMap(path string) map[string]string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -77,7 +71,6 @@ func readStaticMap(path string) map[string]string {
 		if len(parts) != 2 {
 			continue
 		}
-		// 🔹 Strip < > so timestamp is stored clean
 		ts := strings.Trim(parts[0], "<>")
 		name, _ := utils.NormalizeEntry(parts[1])
 		m[name] = ts
@@ -85,77 +78,77 @@ func readStaticMap(path string) map[string]string {
 	return m
 }
 
-// ProcessLists applies whitelist, blacklist, and staticlist filtering.
-// Does NOT modify disk gamelists – only updates in-memory cache.
-// Also preloads Search.txt and Masterlist.txt into cache.
-func ProcessLists(fullDir string, cfg *config.UserConfig) {
-	files, _ := filepath.Glob(filepath.Join(fullDir, "*_gamelist.txt"))
-	for _, f := range files {
-		system := strings.TrimSuffix(filepath.Base(f), "_gamelist.txt")
-
-		lines, err := utils.ReadLines(f)
-		if err != nil {
-			continue
-		}
-
-		// Build filterlist base path via config helper
-		filterBase := config.FilterlistDir()
-
-		// Whitelist
-		if cfg.List.UseWhitelist && allowedFor(system,
-			cfg.List.WhitelistInclude, cfg.List.WhitelistExclude) {
-
-			whitelist := readNameSet(filepath.Join(filterBase, system+"_whitelist.txt"))
-			if whitelist != nil {
-				var kept []string
-				for _, l := range lines {
-					name, _ := utils.NormalizeEntry(l)
-					if _, ok := whitelist[name]; ok {
-						kept = append(kept, l)
-					}
-				}
-				lines = kept
-			}
-		}
-
-		// Blacklist
-		if cfg.List.UseBlacklist && allowedFor(system,
-			cfg.List.BlacklistInclude, cfg.List.BlacklistExclude) {
-
-			bl := readNameSet(filepath.Join(filterBase, system+"_blacklist.txt"))
-			if bl != nil {
-				var kept []string
-				for _, l := range lines {
-					name, _ := utils.NormalizeEntry(l)
-					if _, bad := bl[name]; !bad {
-						kept = append(kept, l)
-					}
-				}
-				lines = kept
-			}
-		}
-
-		// Static list timestamps
-		if cfg.List.UseStaticlist && allowedFor(system,
-			cfg.List.StaticlistInclude, cfg.List.StaticlistExclude) {
-
-			sm := readStaticMap(filepath.Join(filterBase, system+"_staticlist.txt"))
-			if sm != nil {
-				for i, l := range lines {
-					name, _ := utils.NormalizeEntry(l)
-					if ts, ok := sm[name]; ok {
-						lines[i] = "<" + ts + ">" + l
-					}
-				}
-			}
-		}
-
-		// Update only cache (runtime view)
-		cache.SetList(filepath.Base(f), lines)
+// ProcessLists applies whitelist, blacklist, and staticlist filtering
+// to lists already in cache (disk-prepared lists). Returns filtered lines
+// and counts per filter type.
+func ProcessLists(system string, cfg *config.UserConfig) ([]string, map[string]int) {
+	lines := cache.GetList(gamelistFilename(system))
+	if len(lines) == 0 {
+		return nil, nil
 	}
+
+	filterBase := config.FilterlistDir()
+	counts := map[string]int{"white": 0, "black": 0, "static": 0}
+
+	// Whitelist
+	if cfg.List.UseWhitelist && allowedFor(system,
+		cfg.List.WhitelistInclude, cfg.List.WhitelistExclude) {
+
+		whitelist := readNameSet(filepath.Join(filterBase, system+"_whitelist.txt"))
+		if whitelist != nil {
+			var kept []string
+			for _, l := range lines {
+				name, _ := utils.NormalizeEntry(l)
+				if _, ok := whitelist[name]; ok {
+					kept = append(kept, l)
+				} else {
+					counts["white"]++
+				}
+			}
+			lines = kept
+		}
+	}
+
+	// Blacklist
+	if cfg.List.UseBlacklist && allowedFor(system,
+		cfg.List.BlacklistInclude, cfg.List.BlacklistExclude) {
+
+		bl := readNameSet(filepath.Join(filterBase, system+"_blacklist.txt"))
+		if bl != nil {
+			var kept []string
+			for _, l := range lines {
+				name, _ := utils.NormalizeEntry(l)
+				if _, bad := bl[name]; bad {
+					counts["black"]++
+					continue
+				}
+				kept = append(kept, l)
+			}
+			lines = kept
+		}
+	}
+
+	// Static list timestamps
+	if cfg.List.UseStaticlist && allowedFor(system,
+		cfg.List.StaticlistInclude, cfg.List.StaticlistExclude) {
+
+		sm := readStaticMap(filepath.Join(filterBase, system+"_staticlist.txt"))
+		if sm != nil {
+			for i, l := range lines {
+				name, _ := utils.NormalizeEntry(l)
+				if ts, ok := sm[name]; ok {
+					lines[i] = "<" + ts + ">" + l
+					counts["static"]++
+				}
+			}
+		}
+	}
+
+	// Update cache
+	cache.SetList(gamelistFilename(system), lines)
+	return lines, counts
 }
 
-// ParseLine separates an optional <timestamp> prefix from a gamelist line.
 func ParseLine(line string) (float64, string) {
 	if strings.HasPrefix(line, "<") {
 		if idx := strings.Index(line, ">"); idx > 1 {
@@ -168,7 +161,6 @@ func ParseLine(line string) (float64, string) {
 	return 0, line
 }
 
-// ReadStaticTimestamp returns the timestamp for a game from the static list.
 func ReadStaticTimestamp(_ string, system, game string) float64 {
 	filterBase := config.FilterlistDir()
 	path := filepath.Join(filterBase, system+"_staticlist.txt")
@@ -187,7 +179,6 @@ func ReadStaticTimestamp(_ string, system, game string) float64 {
 		if len(parts) != 2 {
 			continue
 		}
-		// 🔹 Strip < > here too
 		tsStr := strings.Trim(parts[0], "<>")
 		name, _ := utils.NormalizeEntry(parts[1])
 		if name == game {
