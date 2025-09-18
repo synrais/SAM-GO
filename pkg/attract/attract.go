@@ -67,7 +67,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 	// 4a. Static detector watches for inactivity and pushes Skip events.
 	if attractCfg.UseStaticDetector {
 		go func() {
-			for ev := range staticdetector.Stream(cfg, skipCh) {
+			for ev := range Stream(cfg, skipCh) {
 				if !silent {
 					fmt.Printf("[Attract] %s\n", ev)
 				}
@@ -124,7 +124,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 				fmt.Printf("[Attract] %s - %s <%s>\n",
 					time.Now().Format("15:04:05"), name, gamePath)
 			}
-			Run([]string{gamePath}) // <- now calling local Run from utils
+			Run([]string{gamePath}) // now local Run from utils.go
 
 			// Decide how long to keep game running.
 			wait := ParsePlayTime(attractCfg.PlayTime, r)
