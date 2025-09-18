@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/synrais/SAM-GO/pkg/attract"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/run"
@@ -29,10 +28,10 @@ const (
 
 // Singleton globals
 var (
-	streamOnce   sync.Once
-	streamCh     chan StaticEvent
-	skipChGlobal chan<- struct{}
-	paused       atomic.Bool
+	streamOnce sync.Once
+	streamCh   chan StaticEvent
+	skipCh     chan<- struct{}
+	paused     atomic.Bool
 )
 
 // Pause toggles the static detector's paused state.
@@ -128,14 +127,11 @@ func isEntryInFile(path, game string) bool {
 func addToFile(system, game, suffix string) {
 	dir := config.FilterlistDir()
 	_ = os.MkdirAll(dir, 0777)
-	// Use system ID for naming the file
 	path := filepath.Join(dir, system+suffix)
 
-	// Normalize game entry
 	name, _ := utils.NormalizeEntry(game)
 	entry := name
 
-	// For staticlist, keep timestamp if provided
 	if strings.Contains(suffix, "staticlist") {
 		if strings.HasPrefix(game, "<") {
 			if idx := strings.Index(game, ">"); idx > 1 {
@@ -145,7 +141,6 @@ func addToFile(system, game, suffix string) {
 		}
 	}
 
-	// Already present?
 	if isEntryInFile(path, entry) {
 		return
 	}
@@ -157,8 +152,6 @@ func addToFile(system, game, suffix string) {
 	defer f.Close()
 
 	fmt.Fprintf(f, "%s\n", entry)
-
-	// Log the raw game string for readability
 	fmt.Printf("\n[LIST] Added \"%s\" to %s%s\n", game, system, suffix)
 }
 
@@ -191,10 +184,10 @@ func (e StaticEvent) String() string {
 }
 
 // Stream launches the static screen detector and streams events (singleton).
-func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
+func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent {
 	streamOnce.Do(func() {
 		streamCh = make(chan StaticEvent, 1)
-		skipChGlobal = skipCh
+		skipCh = skipChan
 
 		baseCfg := cfg.StaticDetector
 		overrides := cfg.StaticDetector.Systems
@@ -211,7 +204,6 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 			}
 			defer res.Close()
 
-			// detector state
 			staticScreenRun := 0.0
 			staticStartTime := 0.0
 			sampleFrames := 0
@@ -223,7 +215,6 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 			handledStatic := false
 			currCfg := baseCfg
 
-			// helper to reset state when a new game is detected
 			resetState := func(game string) {
 				lastGame = game
 				staticScreenRun = 0
@@ -234,9 +225,8 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 				handledBlack = false
 				handledStatic = false
 
-				// reload overrides if any
 				currCfg = baseCfg
-				sysName := strings.ToLower(run.LastPlayedSystem.Id) // Changed to use system ID
+				sysName := strings.ToLower(run.LastPlayedSystem.Id)
 				if ov, ok := overrides[sysName]; ok {
 					if ov.BlackThreshold != nil {
 						currCfg.BlackThreshold = *ov.BlackThreshold
@@ -278,12 +268,9 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 
 				t1 := time.Now()
 
-				// game identifiers
-				displayGame := fmt.Sprintf("[%s] %s", run.LastPlayedSystem.Id, run.LastPlayedName) // Changed to use system ID
-				// normalized clean name for lists
+				displayGame := fmt.Sprintf("[%s] %s", run.LastPlayedSystem.Id, run.LastPlayedName)
 				cleanGame, _ := utils.NormalizeEntry(run.LastPlayedName)
 
-				// detect game change → reset counters
 				if displayGame != lastGame {
 					resetState(displayGame)
 				}
@@ -293,13 +280,9 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 				res.Height = int(res.Map[8])<<8 | int(res.Map[9])
 				res.Line = int(res.Map[10])<<8 | int(res.Map[11])
 
-				// Sanity check resolution
-				valid := true
-				if res.Width < 64 || res.Width > 2048 ||
+				valid := !(res.Width < 64 || res.Width > 2048 ||
 					res.Height < 64 || res.Height > 2048 ||
-					res.Line < res.Width*3 || res.Line > 2048*4 {
-					valid = false
-				}
+					res.Line < res.Width*3 || res.Line > 2048*4)
 
 				idx := 0
 				var sumR, sumG, sumB int
@@ -394,16 +377,14 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 				domName := nearestColorName(domR, domG, domB)
 				avgName := nearestColorName(avgR, avgG, avgB)
 
-				// black/static detection
 				if uptime > currCfg.Grace {
 					if avgHex == "#000000" && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
 						if currCfg.WriteBlackList {
-							addToFile(run.LastPlayedSystem.Id, cleanGame, "_blacklist.txt") // Use system ID here
+							addToFile(run.LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
 						}
 						if currCfg.SkipBlack {
-							_, _ = history.Next()
 							select {
-							case skipChGlobal <- struct{}{}:
+							case skipCh <- struct{}{}:
 							default:
 							}
 						}
@@ -412,12 +393,11 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 					if avgHex != "#000000" && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
 						if currCfg.WriteStaticList {
 							entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
-							addToFile(run.LastPlayedSystem.Id, entry, "_staticlist.txt") // Use system ID here
+							addToFile(run.LastPlayedSystem.Id, entry, "_staticlist.txt")
 						}
 						if currCfg.SkipStatic {
-							_, _ = history.Next()
 							select {
-							case skipChGlobal <- struct{}{}:
+							case skipCh <- struct{}{}:
 							default:
 							}
 						}
@@ -437,7 +417,7 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 					DominantName: domName,
 					AverageHex:   avgHex,
 					AverageName:  avgName,
-					Game:         displayGame, // pretty display string
+					Game:         displayGame,
 				}
 				streamCh <- event
 
@@ -447,7 +427,7 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 					time.Sleep(frameDur - elapsed)
 				}
 			}
-		}() 
+		}()
 	})
 
 	return streamCh
