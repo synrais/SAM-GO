@@ -49,6 +49,8 @@ func loadSavedTimestamps(gamelistDir string) ([]SavedTimestamp, error) {
 // NOTE: does NOT write; caller should update and save once after all systems.
 // Check if a folder or any subfolder was modified compared to saved timestamps.
 // Only considers directories, not individual files.
+// Check if a folder or any subfolder was modified compared to saved timestamps.
+// Only considers directories, not individual files.
 func isFolderModified(systemID, path string, saved []SavedTimestamp) (bool, time.Time, error) {
 	var latestMod time.Time
 	modified := false
@@ -89,29 +91,6 @@ func isFolderModified(systemID, path string, saved []SavedTimestamp) (bool, time
 
 	// no record yet → treat as modified
 	return true, latestMod, nil
-}
-
-	// Fallback: if nothing found, stat root directly
-	if latest.IsZero() {
-		info, err := os.Stat(rootPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return false, time.Time{}, nil
-			}
-			return false, time.Time{}, fmt.Errorf("[Modtime] Failed to stat %s: %w", rootPath, err)
-		}
-		latest = info.ModTime()
-	}
-
-	// Compare to saved
-	for _, ts := range saved {
-		if ts.SystemID == systemID && ts.Path == rootPath {
-			return latest.After(ts.ModTime), latest, nil
-		}
-	}
-
-	// no record yet → treat as modified
-	return true, latest, nil
 }
 
 // Update or insert timestamp
