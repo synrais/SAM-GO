@@ -20,6 +20,8 @@ import (
 
 	"golang.org/x/exp/constraints"
 	"golang.org/x/term"
+    "golang.org/x/text/unicode/norm"
+    "unicode"     
 )
 
 var r = rand.New(rand.NewSource(time.Now().UnixNano()))
