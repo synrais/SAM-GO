@@ -12,12 +12,11 @@ import (
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/input"
-	"github.com/synrais/SAM-GO/pkg/run"
 	"github.com/synrais/SAM-GO/pkg/staticdetector"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// Run is the main entrypoint for Attract Mode.
+// RunAttract is the main entrypoint for Attract Mode.
 // Timeline overview:
 //
 // 1. Build gamelists (CreateGamelists)
@@ -33,7 +32,7 @@ import (
 //    - If all games exhausted, refresh from cache
 //
 // The loop continues indefinitely until killed (Ctrl+C).
-func Run(cfg *config.UserConfig, args []string) {
+func RunAttract(cfg *config.UserConfig, args []string) {
 	attractCfg := cfg.Attract
 
 	// 1. Ensure gamelists are built (or refreshed).
@@ -126,7 +125,7 @@ func Run(cfg *config.UserConfig, args []string) {
 				fmt.Printf("[Attract] %s - %s <%s>\n",
 					time.Now().Format("15:04:05"), name, gamePath)
 			}
-			run.Run([]string{gamePath})
+			Run([]string{gamePath}) // <- now calling local Run from utils
 
 			// Decide how long to keep game running.
 			wait := ParsePlayTime(attractCfg.PlayTime, r)
