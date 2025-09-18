@@ -61,28 +61,34 @@ func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConf
 		dir := filepath.Dir(f)
 		skip := false
 
-		// Folder filter
+		// Folder filter (now supports wildcards!)
 		for _, folder := range folders {
-			if folder != "" && strings.Contains(strings.ToLower(dir), strings.ToLower(folder)) {
-				fmt.Printf("[Filters] Skipping %s (folder %s disabled)\n", base, folder)
-				skip = true
-				break
+			if folder != "" {
+				// Lowercase both sides for case-insensitive matching
+				match, _ := filepath.Match(strings.ToLower(folder), strings.ToLower(dir))
+				if match {
+					fmt.Printf("[Filters] Skipping %s (folder %s disabled)\n", base, folder)
+					skip = true
+					break
+				}
 			}
 		}
 		if skip {
 			continue
 		}
 
-		// File pattern filter
+		// File pattern filter (already wildcard-enabled)
 		for _, pat := range patterns {
 			if pat != "" {
-				if ok, _ := filepath.Match(pat, base); ok {
+				match, _ := filepath.Match(strings.ToLower(pat), strings.ToLower(base))
+				if match {
 					fmt.Printf("[Filters] Skipping %s (pattern %s disabled)\n", base, pat)
 					skip = true
 					break
 				}
 			}
 		}
+
 		if !skip {
 			filtered = append(filtered, f)
 		}
