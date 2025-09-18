@@ -128,6 +128,7 @@ func isEntryInFile(path, game string) bool {
 func addToFile(system, game, suffix string) {
 	dir := config.FilterlistDir()
 	_ = os.MkdirAll(dir, 0777)
+	// Use system ID for naming the file
 	path := filepath.Join(dir, system+suffix)
 
 	// Normalize game entry
@@ -235,7 +236,7 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 
 				// reload overrides if any
 				currCfg = baseCfg
-				sysName := strings.ToLower(run.LastPlayedSystem.Name)
+				sysName := strings.ToLower(run.LastPlayedSystem.Id) // Changed to use system ID
 				if ov, ok := overrides[sysName]; ok {
 					if ov.BlackThreshold != nil {
 						currCfg.BlackThreshold = *ov.BlackThreshold
@@ -278,7 +279,7 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 				t1 := time.Now()
 
 				// game identifiers
-				displayGame := fmt.Sprintf("[%s] %s", run.LastPlayedSystem.Name, run.LastPlayedName)
+				displayGame := fmt.Sprintf("[%s] %s", run.LastPlayedSystem.Id, run.LastPlayedName) // Changed to use system ID
 				// normalized clean name for lists
 				cleanGame, _ := utils.NormalizeEntry(run.LastPlayedName)
 
@@ -393,13 +394,11 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 				domName := nearestColorName(domR, domG, domB)
 				avgName := nearestColorName(avgR, avgG, avgB)
 
-				system := run.LastPlayedSystem.Name
-
 				// black/static detection
 				if uptime > currCfg.Grace {
 					if avgHex == "#000000" && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
 						if currCfg.WriteBlackList {
-							addToFile(system, cleanGame, "_blacklist.txt")
+							addToFile(run.LastPlayedSystem.Id, cleanGame, "_blacklist.txt") // Use system ID here
 						}
 						if currCfg.SkipBlack {
 							_, _ = history.Next()
@@ -413,7 +412,7 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 					if avgHex != "#000000" && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
 						if currCfg.WriteStaticList {
 							entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
-							addToFile(system, entry, "_staticlist.txt")
+							addToFile(run.LastPlayedSystem.Id, entry, "_staticlist.txt") // Use system ID here
 						}
 						if currCfg.SkipStatic {
 							_, _ = history.Next()
@@ -448,7 +447,7 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 					time.Sleep(frameDur - elapsed)
 				}
 			}
-		}()
+		}() 
 	})
 
 	return streamCh
