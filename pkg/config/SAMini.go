@@ -8,8 +8,13 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-// LoadUserConfig loads SAM.ini into a UserConfig, falling back to defaults.
-func LoadUserConfig(name string, defaults *UserConfig) (*UserConfig, error) {
+// LoadSAMConfig loads SAM.ini into a UserConfig, overlaying onto the provided defaults.
+//
+// Caller should construct defaults with NewDefaultConfig() from SAMconfig.go before calling.
+//
+// Example:
+//   cfg, err := config.LoadSAMConfig("SAM", config.NewDefaultConfig())
+func LoadSAMConfig(name string, defaults *UserConfig) (*UserConfig, error) {
 	iniPath := os.Getenv(UserConfigEnv)
 
 	exePath, err := os.Executable()
