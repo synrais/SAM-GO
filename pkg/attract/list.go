@@ -102,7 +102,7 @@ func CreateGamelists(cfg *config.UserConfig,
 			}
 
 			// dedup
-			deduped := dedupeFiles(rawFiles)
+			deduped := DedupeFiles(rawFiles)
 
 			// disk stage
 			beforeDisk := len(deduped)
