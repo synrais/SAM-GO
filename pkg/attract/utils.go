@@ -190,8 +190,8 @@ func ParsePlayTime(value string, r *rand.Rand) time.Duration {
 }
 
 // Disabled checks if a game should be blocked by rules
-func Disabled(system string, gamePath string, cfg *config.UserConfig) bool {
-	rules, ok := cfg.Disable[system]
+func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
+	rules, ok := cfg.Disable[systemID]
 	if !ok {
 		return false
 	}
@@ -220,23 +220,23 @@ func Disabled(system string, gamePath string, cfg *config.UserConfig) bool {
 
 // GetSystemsByCategory retrieves systems by category (Console, Handheld, Arcade, etc.)
 func GetSystemsByCategory(category string) ([]string, error) {
-	var systems []string
-	for _, sys := range games.AllSystems() {
-		if strings.EqualFold(sys.Category, category) {
-			systems = append(systems, sys.Id)
+	var systemIDs []string
+	for _, systemID := range games.AllSystems() {
+		if strings.EqualFold(systemID.Category, category) {
+			systemIDs = append(systemIDs, systemID.Id)
 		}
 	}
-	if len(systems) == 0 {
+	if len(systemIDs) == 0 {
 		return nil, fmt.Errorf("no systems found in category: %s", category)
 	}
-	return systems, nil
+	return systemIDs, nil
 }
 
 // ExpandGroups expands category/group names into system IDs.
-func ExpandGroups(list []string) ([]string, error) {
+func ExpandGroups(systemIDs []string) ([]string, error) {
 	var expanded []string
-	for _, item := range list {
-		trimmed := strings.TrimSpace(item)
+	for _, systemID := range systemIDs {
+		trimmed := strings.TrimSpace(systemID)
 		if trimmed == "" {
 			continue
 		}
@@ -312,9 +312,9 @@ func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConf
 		folders = append(folders, global.Folders...)
 		patterns = append(patterns, global.Files...)
 	}
-	if sys, ok := cfg.Disable[strings.ToLower(systemID)]; ok {
-		folders = append(folders, sys.Folders...)
-		patterns = append(patterns, sys.Files...)
+	if rules, ok := cfg.Disable[strings.ToLower(systemID)]; ok {
+		folders = append(folders, rules.Folders...)
+		patterns = append(patterns, rules.Files...)
 	}
 
 	if len(folders) == 0 && len(patterns) == 0 {
@@ -366,8 +366,8 @@ func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) [
 	if global, ok := cfg.Disable["all"]; ok {
 		rules = append(rules, global.Extensions...)
 	}
-	if sys, ok := cfg.Disable[sysKey]; ok {
-		rules = append(rules, sys.Extensions...)
+	if systemRules, ok := cfg.Disable[sysKey]; ok {
+		rules = append(rules, systemRules.Extensions...)
 	}
 
 	if len(rules) == 0 {
