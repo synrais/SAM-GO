@@ -161,8 +161,10 @@ func createGamelists(cfg *config.UserConfig,
 
 		var rawFiles []string
 		var systemFiles []string
-		modified := false
 
+		// Consolidated per-system modification check
+		modified := false
+		latestMod := int64(0)
 		for _, path := range paths {
 			m, currentMod, err := isFolderModified(systemId, path, savedTimestamps)
 			if err != nil {
@@ -171,8 +173,14 @@ func createGamelists(cfg *config.UserConfig,
 			}
 			if m {
 				modified = true
-				updatedTimestamps = updateTimestamp(updatedTimestamps, systemId, path, currentMod)
 			}
+			if currentMod > latestMod {
+				latestMod = currentMod
+			}
+		}
+		if modified {
+			// update once per system
+			updatedTimestamps = updateTimestamp(updatedTimestamps, systemId, "", latestMod)
 		}
 
 		status := ""
