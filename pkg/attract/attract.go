@@ -35,7 +35,7 @@ func Run(cfg *config.UserConfig, args []string) {
 			if err != nil {
 				continue
 			}
-			lines, counts, _ := ApplyFilterlistsDetailed(config.GamelistDir(), system.Id, lines, cfg)
+			lines, counts, _ := ApplyFilterlists(config.GamelistDir(), system.Id, lines, cfg)
 			cache.SetList(filepath.Base(f), lines)
 			if counts["White"] > 0 || counts["Black"] > 0 || counts["Static"] > 0 || counts["Folder"] > 0 || counts["File"] > 0 {
 				fmt.Printf("[Attract] %s - White: %d, Black: %d, Static: %d, Folder: %d, File: %d\n",
