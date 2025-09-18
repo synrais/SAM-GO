@@ -7,6 +7,20 @@ import (
 
 	"github.com/synrais/SAM-GO/pkg/cache"
 )
+// DedupeFiles removes duplicate entries based on normalized names.
+func DedupeFiles(files []string) []string {
+    seen := make(map[string]struct{})
+    deduped := make([]string, 0, len(files))
+    for _, f := range files {
+        name, _ := utils.NormalizeEntry(f)
+        if _, ok := seen[name]; ok {
+            continue
+        }
+        seen[name] = struct{}{}
+        deduped = append(deduped, f)
+    }
+    return deduped
+}
 
 // gamelistFilename returns the standard filename for a system's gamelist.
 func gamelistFilename(systemId string) string {
