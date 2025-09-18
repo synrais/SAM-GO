@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -80,18 +79,18 @@ func Run(cfg *config.UserConfig, args []string) {
 		}
 	}
 
-	include, err := expandGroups(attractCfg.Include)
+	include, err := ExpandGroups(attractCfg.Include)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[Attract] Error expanding include groups: %v\n", err)
 		os.Exit(1)
 	}
-	exclude, err := expandGroups(attractCfg.Exclude)
+	exclude, err := ExpandGroups(attractCfg.Exclude)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[Attract] Error expanding exclude groups: %v\n", err)
 		os.Exit(1)
 	}
 
-	files := filterAllowed(allFiles, include, exclude)
+	files := FilterAllowed(allFiles, include, exclude)
 	if len(files) == 0 {
 		fmt.Println("[Attract] No gamelists found in cache")
 		os.Exit(1)
@@ -113,7 +112,7 @@ func Run(cfg *config.UserConfig, args []string) {
 			}
 			run.Run([]string{gamePath})
 
-			wait := parsePlayTime(attractCfg.PlayTime, r)
+			wait := ParsePlayTime(attractCfg.PlayTime, r)
 			if ts > 0 {
 				skipDuration := time.Duration(ts*float64(time.Second)) +
 					time.Duration(cfg.List.SkipafterStatic)*time.Second
@@ -197,7 +196,7 @@ func Run(cfg *config.UserConfig, args []string) {
 					allFiles = append(allFiles, k)
 				}
 			}
-			files = filterAllowed(allFiles, include, exclude)
+			files = FilterAllowed(allFiles, include, exclude)
 
 			if len(files) == 0 {
 				fmt.Println("[Attract] No gamelists even after reset, exiting.")
@@ -225,7 +224,7 @@ func Run(cfg *config.UserConfig, args []string) {
 		ts, gamePath := utils.ParseLine(lines[index])
 		systemID := strings.TrimSuffix(filepath.Base(listKey), "_gamelist.txt")
 
-		if disabled(systemID, gamePath, cfg) {
+		if Disabled(systemID, gamePath, cfg) {
 			lines = append(lines[:index], lines[index+1:]...)
 			cache.SetList(listKey, lines)
 			continue
