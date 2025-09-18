@@ -40,13 +40,16 @@ func FilterUniqueWithMGL(files []string) []string {
 func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConfig) []string {
 	var folders, patterns []string
 
+	// Always normalize systemID to lowercase for lookup
+	sysKey := strings.ToLower(systemID)
+
 	// Global rules [Disable.ALL]
 	if global, ok := cfg.Disable["all"]; ok {
 		folders = append(folders, global.Folders...)
 		patterns = append(patterns, global.Files...)
 	}
 	// System-specific rules
-	if sys, ok := cfg.Disable[systemID]; ok {
+	if sys, ok := cfg.Disable[sysKey]; ok {
 		folders = append(folders, sys.Folders...)
 		patterns = append(patterns, sys.Files...)
 	}
@@ -61,10 +64,9 @@ func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConf
 		dir := filepath.Dir(f)
 		skip := false
 
-		// Folder filter (now supports wildcards!)
+		// Folder filter (wildcard + case-insensitive)
 		for _, folder := range folders {
 			if folder != "" {
-				// Lowercase both sides for case-insensitive matching
 				match, _ := filepath.Match(strings.ToLower(folder), strings.ToLower(dir))
 				if match {
 					fmt.Printf("[Filters] Skipping %s (folder %s disabled)\n", base, folder)
@@ -77,7 +79,7 @@ func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConf
 			continue
 		}
 
-		// File pattern filter (already wildcard-enabled)
+		// File pattern filter (wildcard + case-insensitive)
 		for _, pat := range patterns {
 			if pat != "" {
 				match, _ := filepath.Match(strings.ToLower(pat), strings.ToLower(base))
@@ -100,12 +102,15 @@ func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConf
 func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) []string {
 	var rules []string
 
+	// Always normalize systemID to lowercase for lookup
+	sysKey := strings.ToLower(systemID)
+
 	// Global rules [Disable.ALL]
 	if global, ok := cfg.Disable["all"]; ok {
 		rules = append(rules, global.Extensions...)
 	}
 	// System-specific rules
-	if sys, ok := cfg.Disable[systemID]; ok {
+	if sys, ok := cfg.Disable[sysKey]; ok {
 		rules = append(rules, sys.Extensions...)
 	}
 
