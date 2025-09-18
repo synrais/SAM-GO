@@ -386,23 +386,30 @@ var (
 )
 
 // NormalizeEntry converts a filename or path into a normalized search key
-// (lowercase, strips punctuation, preserves word spacing, collapses multiple spaces).
+// using Unicode normalization and rune classification.
 // Returns (normalized name, extension).
 func NormalizeEntry(p string) (string, string) {
-	base := filepath.Base(StripTimestamp(p)) // Remove timestamp if present
-	ext := strings.ToLower(filepath.Ext(base)) // Get the extension and convert it to lowercase
-	name := strings.TrimSuffix(base, ext) // Strip the extension from the filename
+	// Strip timestamp if present
+	base := filepath.Base(StripTimestamp(p))
 
-	// Convert to lowercase
-	name = strings.ToLower(name)
+	// Lowercase + decompose Unicode
+	name := strings.ToLower(strings.TrimSuffix(base, filepath.Ext(base)))
+	name = norm.NFKD.String(name)
 
-	// Replace non-alphanumeric characters (except spaces) with spaces
-	// So it keeps spaces but removes punctuation, underscores, etc.
-	name = nonWord.ReplaceAllString(name, " ")
+	// Walk runes: keep letters, numbers, spaces. Drop punctuation only.
+	var b strings.Builder
+	for _, r := range name {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			b.WriteRune(r)
+		} else if unicode.IsSpace(r) {
+			b.WriteRune(' ')
+		}
+	}
 
-	// Collapse multiple spaces into a single space
-	name = strings.TrimSpace(multiSpace.ReplaceAllString(name, " "))
+	// Collapse multiple spaces into one
+	normalized := strings.Join(strings.Fields(b.String()), " ")
 
-	// Return the cleaned name and the extension without the dot
-	return name, strings.TrimPrefix(ext, ".")
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(base)), ".")
+
+	return normalized, ext
 }
