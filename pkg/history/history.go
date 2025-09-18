@@ -1,7 +1,6 @@
 package history
 
 import (
-	"errors"
 	"os"
 	"strings"
 
