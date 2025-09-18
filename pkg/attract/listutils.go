@@ -7,6 +7,35 @@ import (
 
 	"github.com/synrais/SAM-GO/pkg/cache"
 )
+
+// UpdateGameIndex refreshes the global search index for a system.
+func UpdateGameIndex(systemID string, deduped []string) {
+    newIndex := make([]input.GameEntry, 0, len(input.GameIndex))
+    for _, e := range input.GameIndex {
+        if !strings.Contains(e.Path, "/"+systemID+"/") {
+            newIndex = append(newIndex, e)
+        }
+    }
+    input.GameIndex = newIndex
+
+    seen := make(map[string]struct{})
+    for _, f := range deduped {
+        name, ext := utils.NormalizeEntry(f)
+        if name == "" {
+            continue
+        }
+        if _, ok := seen[name]; ok {
+            continue
+        }
+        input.GameIndex = append(input.GameIndex, input.GameEntry{
+            Name: name,
+            Ext:  ext,
+            Path: f,
+        })
+        seen[name] = struct{}{}
+    }
+}
+
 // DedupeFiles removes duplicate entries based on normalized names.
 func DedupeFiles(files []string) []string {
     seen := make(map[string]struct{})
