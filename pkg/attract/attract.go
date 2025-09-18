@@ -17,17 +17,32 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// Run executes attract mode using the provided config and args.
+// Run is the main entrypoint for Attract Mode.
+// Timeline overview:
+//
+// 1. Build gamelists (CreateGamelists)
+// 2. Load gamelists into cache
+// 3. Setup channels for Skip / Back actions
+// 4. Start static detector + input listeners
+// 5. Gather allowed system gamelists (respect include/exclude groups)
+// 6. Enter the main Attract loop:
+//    - Pick a system list and game
+//    - Play game for configured time
+//    - React to Skip / Back / Timer events
+//    - Remove the game from the active list
+//    - If all games exhausted, refresh from cache
+//
+// The loop continues indefinitely until killed (Ctrl+C).
 func Run(cfg *config.UserConfig, args []string) {
 	attractCfg := cfg.Attract
 
-	// Ensure gamelists are built using CreateGamelists
+	// 1. Ensure gamelists are built (or refreshed).
 	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
 	if CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
 		fmt.Fprintln(os.Stderr, "[Attract] List build failed: no games indexed")
 	}
 
-	// Load lists into cache
+	// 2. Load lists into cache memory for quick access.
 	for _, system := range games.AllSystems() {
 		files, _ := filepath.Glob(filepath.Join(config.GamelistDir(), "*_"+system.Id+"_gamelist.txt"))
 		for _, f := range files {
@@ -39,9 +54,11 @@ func Run(cfg *config.UserConfig, args []string) {
 		}
 	}
 
+	// 3. Channels for navigation (skip/next/back).
 	skipCh := make(chan struct{}, 1)
 	backCh := make(chan struct{}, 1)
 
+	// Optional silent flag for less logging.
 	silent := false
 	for _, a := range args {
 		if a == "-s" || a == "--silent" {
@@ -49,6 +66,7 @@ func Run(cfg *config.UserConfig, args []string) {
 		}
 	}
 
+	// 4a. Static detector watches for inactivity and pushes Skip events.
 	if attractCfg.UseStaticDetector {
 		go func() {
 			for ev := range staticdetector.Stream(cfg, skipCh) {
@@ -59,6 +77,7 @@ func Run(cfg *config.UserConfig, args []string) {
 		}()
 	}
 
+	// 4b. Input listeners (keyboard/mouse/joystick) for Skip/Back actions.
 	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
 		input.RelayInputs(cfg,
 			func() { select { case backCh <- struct{}{}: default: } },
@@ -66,6 +85,7 @@ func Run(cfg *config.UserConfig, args []string) {
 		)
 	}
 
+	// 5. Collect gamelists in cache, apply include/exclude filters.
 	allKeys := cache.ListKeys()
 	var allFiles []string
 	for _, k := range allKeys {
@@ -96,6 +116,7 @@ func Run(cfg *config.UserConfig, args []string) {
 		fmt.Println("[Attract] Running. Ctrl-C to exit.")
 	}
 
+	// Helper: play one game and handle skip/back/timer.
 	playGame := func(gamePath string, ts float64) {
 	Launch:
 		for {
@@ -107,8 +128,10 @@ func Run(cfg *config.UserConfig, args []string) {
 			}
 			run.Run([]string{gamePath})
 
+			// Decide how long to keep game running.
 			wait := ParsePlayTime(attractCfg.PlayTime, r)
 			if ts > 0 {
+				// Staticlist timestamp may shorten duration.
 				skipDuration := time.Duration(ts*float64(time.Second)) +
 					time.Duration(cfg.List.SkipafterStatic)*time.Second
 				if skipDuration < wait {
@@ -116,9 +139,11 @@ func Run(cfg *config.UserConfig, args []string) {
 				}
 			}
 
+			// Loop until timer expires, Skip pressed, or Back pressed.
 			deadline := time.Now().Add(wait)
 			for time.Now().Before(deadline) {
 				if input.IsSearching() {
+					// Pause timer if in search mode.
 					time.Sleep(100 * time.Millisecond)
 					deadline = deadline.Add(100 * time.Millisecond)
 					continue
@@ -150,6 +175,7 @@ func Run(cfg *config.UserConfig, args []string) {
 					}
 				}
 			}
+			// Timer ran out → auto advance.
 			if next, ok := PlayNext(); ok {
 				gamePath = next
 				ts = 0
@@ -159,7 +185,9 @@ func Run(cfg *config.UserConfig, args []string) {
 		}
 	}
 
+	// 6. Main attract loop: forever cycle.
 	for {
+		// Handle instant Back/Skip requests outside main play loop.
 		select {
 		case <-backCh:
 			if prev, ok := PlayBack(); ok {
@@ -174,6 +202,7 @@ func Run(cfg *config.UserConfig, args []string) {
 		default:
 		}
 
+		// If exhausted, reset cache and start fresh.
 		if len(files) == 0 {
 			if !silent {
 				fmt.Println("[Attract] All systems exhausted — refreshing from cache")
@@ -195,9 +224,11 @@ func Run(cfg *config.UserConfig, args []string) {
 			}
 		}
 
+		// Pick random system and game from its list.
 		listKey := files[r.Intn(len(files))]
 		lines := cache.GetList(listKey)
 		if len(lines) == 0 {
+			// Drop empty list from rotation.
 			var newFiles []string
 			for _, f := range files {
 				if f != listKey {
@@ -208,15 +239,18 @@ func Run(cfg *config.UserConfig, args []string) {
 			continue
 		}
 
+		// Pick one entry (first or random).
 		index := 0
 		if attractCfg.Random {
 			index = r.Intn(len(lines))
 		}
 		ts, gamePath := utils.ParseLine(lines[index])
 
+		// Mark in history and run.
 		Play(gamePath)
 		playGame(gamePath, ts)
 
+		// Remove game from list so it won’t repeat until refresh.
 		lines = append(lines[:index], lines[index+1:]...)
 		cache.SetList(listKey, lines)
 	}
