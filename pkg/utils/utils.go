@@ -285,6 +285,22 @@ func RemoveEmptyDirs(path string) error {
 	return nil
 }
 
+// DedupeFiles removes duplicates based on normalized entry names.
+// Keeps the first occurrence, drops later ones.
+func DedupeFiles(files []string) []string {
+	seen := make(map[string]struct{})
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		name, _ := NormalizeEntry(f)
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, f)
+	}
+	return out
+}
+
 func GetLocalIp() (net.IP, error) {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
@@ -342,8 +358,6 @@ func ReadLines(path string) ([]string, error) {
 	}
 	return out, scanner.Err()
 }
-
-// --- Cross-package shared helpers ---
 
 // NormalizeName converts a file path or name to lowercase base name without extension.
 func NormalizeName(p string) string {
