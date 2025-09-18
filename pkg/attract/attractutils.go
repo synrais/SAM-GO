@@ -500,10 +500,16 @@ func countGames(master []string) int {
 }
 
 func updateGameIndex(systemID string, files []string) {
-	if input.GameIndex == nil {
-		input.GameIndex = make(map[string][]string)
+	unique := utils.DedupeFiles(files)
+	for _, f := range unique {
+		name, ext := utils.NormalizeEntry(f)
+		entry := input.GameEntry{
+			Name: name,
+			Ext:  ext,
+			Path: f,
+		}
+		input.GameIndex = append(input.GameIndex, entry)
 	}
-	input.GameIndex[systemID] = utils.DedupeFiles(files)
 }
 
 // -----------------------------
