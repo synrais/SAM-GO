@@ -1,4 +1,4 @@
-package history
+package attract
 
 import (
 	"os"
