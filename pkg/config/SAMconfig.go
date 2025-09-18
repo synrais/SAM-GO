@@ -1,11 +1,6 @@
 package config
 
-// --- Config Structs ---
-
-type SystemsConfig struct {
-	GamesFolder []string `ini:"games_folder,omitempty,allowshadow"`
-	SetCore     []string `ini:"set_core,omitempty,allowshadow"`
-}
+// --- SAM-Specific Config Structs ---
 
 type AttractConfig struct {
 	PlayTime          string   `ini:"playtime,omitempty"`
@@ -69,11 +64,10 @@ type InputDetectorConfig struct {
 	JoystickMap map[string]string `ini:"-"`
 }
 
-// UserConfig: root config struct for SAM
+// --- Root SAM Config Struct ---
 type UserConfig struct {
 	AppPath        string
 	IniPath        string
-	Systems        SystemsConfig           `ini:"systems,omitempty"`
 	Attract        AttractConfig           `ini:"attract,omitempty"`
 	StaticDetector StaticDetectorConfig    `ini:"staticdetector,omitempty"`
 	InputDetector  InputDetectorConfig     `ini:"inputdetector,omitempty"`
@@ -82,7 +76,6 @@ type UserConfig struct {
 }
 
 // --- Default Config Constructor ---
-
 func NewDefaultConfig() *UserConfig {
 	return &UserConfig{
 		Attract: AttractConfig{
