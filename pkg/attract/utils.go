@@ -15,6 +15,7 @@ import (
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/input"
+	"github.com/synrais/SAM-GO/pkg/mister"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
