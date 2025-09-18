@@ -129,7 +129,7 @@ func ApplyFilterlistsDetailed(gamelistDir, system string, lines []string, cfg *c
 		}
 	}
 
-	// Staticlist (timestamp injection only, count = matches)
+	// Staticlist
 	if cfg.List.UseStaticlist && allowedFor(system,
 		cfg.List.StaticlistInclude, cfg.List.StaticlistExclude) {
 		sm := readStaticMap(filepath.Join(filterBase, system+"_staticlist.txt"))
@@ -174,6 +174,7 @@ func ParseLine(line string) (float64, string) {
 	return 0, line
 }
 
+// ReadStaticTimestamp returns the timestamp for a game from the staticlist.
 func ReadStaticTimestamp(_ string, system, game string) float64 {
 	filterBase := config.FilterlistDir()
 	path := filepath.Join(filterBase, system+"_staticlist.txt")
