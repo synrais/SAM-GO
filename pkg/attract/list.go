@@ -101,8 +101,8 @@ func CreateGamelists(cfg *config.UserConfig,
 				rawFiles = append(rawFiles, files...)
 			}
 
-			// dedup
-			deduped := DedupeFiles(rawFiles)
+			// dedup (now lives in utils)
+			deduped := utils.DedupeFiles(rawFiles)
 
 			// disk stage
 			beforeDisk := len(deduped)
@@ -129,8 +129,7 @@ func CreateGamelists(cfg *config.UserConfig,
 
 			if !quiet {
 				fmt.Printf(
-					"[List] %-12s Disk: %d → %d (Ext:%d, Dupes:%d) Cache: %d → %d "+
-						"(White:%d, Black:%d, Static:%d, Folder:%d, File:%d) (%.2fs) [%s]\n",
+					"[List] %-12s Disk: %d → %d (Ext:%d, Dupes:%d) Cache: %d → %d (White:%d, Black:%d, Static:%d, Folder:%d, File:%d) (%.2fs) [%s]\n",
 					systemId,
 					len(rawFiles), len(diskFiltered),
 					-extRemoved, len(rawFiles)-beforeDisk,
@@ -170,8 +169,7 @@ func CreateGamelists(cfg *config.UserConfig,
 
 			if !quiet {
 				fmt.Printf(
-					"[List] %-12s Disk: %d → %d (Ext:%d) Cache: %d → %d "+
-						"(White:%d, Black:%d, Static:%d, Folder:%d, File:%d) (%.2fs) [reused]\n",
+					"[List] %-12s Disk: %d → %d (Ext:%d) Cache: %d → %d (White:%d, Black:%d, Static:%d, Folder:%d, File:%d) (%.2fs) [reused]\n",
 					systemId,
 					beforeDisk, len(diskFiltered),
 					-extRemoved,
