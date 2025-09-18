@@ -77,7 +77,8 @@ func readStaticMap(path string) map[string]string {
 		if len(parts) != 2 {
 			continue
 		}
-		ts := strings.TrimSpace(parts[0])
+		// 🔹 Strip < > so timestamp is stored clean
+		ts := strings.Trim(parts[0], "<>")
 		name, _ := utils.NormalizeEntry(parts[1])
 		m[name] = ts
 	}
@@ -186,9 +187,11 @@ func ReadStaticTimestamp(_ string, system, game string) float64 {
 		if len(parts) != 2 {
 			continue
 		}
+		// 🔹 Strip < > here too
+		tsStr := strings.Trim(parts[0], "<>")
 		name, _ := utils.NormalizeEntry(parts[1])
 		if name == game {
-			ts, _ := strconv.ParseFloat(parts[0], 64)
+			ts, _ := strconv.ParseFloat(tsStr, 64)
 			return ts
 		}
 	}
