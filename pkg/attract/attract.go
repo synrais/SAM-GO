@@ -171,8 +171,25 @@ func Run(cfg *config.UserConfig, args []string) {
 		fmt.Fprintln(os.Stderr, "[Attract] List build failed:", err)
 	}
 
-	// Load lists into cache
-	ProcessLists(config.GamelistDir(), cfg)
+	// Load lists into cache using the detailed filter function
+	for _, system := range games.AllSystems() {
+		files, _ := filepath.Glob(filepath.Join(config.GamelistDir(), "*_"+system.Id+"_gamelist.txt"))
+		for _, f := range files {
+			lines, err := utils.ReadLines(f)
+			if err != nil {
+				continue
+			}
+			// Apply the detailed filters
+			lines, counts, _ := ApplyFilterlistsDetailed(config.GamelistDir(), system.Id, lines, cfg)
+			// Cache the filtered lines
+			cache.SetList(filepath.Base(f), lines)
+			// Log the filter counts
+			if counts["White"] > 0 || counts["Black"] > 0 || counts["Static"] > 0 || counts["Folder"] > 0 || counts["File"] > 0 {
+				fmt.Printf("[Attract] %s - White: %d, Black: %d, Static: %d, Folder: %d, File: %d\n",
+					system.Id, counts["White"], counts["Black"], counts["Static"], counts["Folder"], counts["File"])
+			}
+		}
+	}
 
 	// control channels
 	skipCh := make(chan struct{}, 1)
