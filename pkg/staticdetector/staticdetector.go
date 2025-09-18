@@ -13,7 +13,7 @@ import (
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/input"
-	"github.com/synrais/SAM-GO/pkg/run"
+	"github.com/synrais/SAM-GO/pkg/attract"
 	"github.com/synrais/SAM-GO/pkg/utils"
 	"golang.org/x/sys/unix"
 )
@@ -226,7 +226,7 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 				handledStatic = false
 
 				currCfg = baseCfg
-				sysName := strings.ToLower(run.LastPlayedSystem.Id)
+				sysName := strings.ToLower(attract.LastPlayedSystem.Id)
 				if ov, ok := overrides[sysName]; ok {
 					if ov.BlackThreshold != nil {
 						currCfg.BlackThreshold = *ov.BlackThreshold
@@ -268,8 +268,8 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 
 				t1 := time.Now()
 
-				displayGame := fmt.Sprintf("[%s] %s", run.LastPlayedSystem.Id, run.LastPlayedName)
-				cleanGame, _ := utils.NormalizeEntry(run.LastPlayedName)
+				displayGame := fmt.Sprintf("[%s] %s", attract.LastPlayedSystem.Id, attract.LastPlayedName)
+				cleanGame, _ := utils.NormalizeEntry(attract.LastPlayedName)
 
 				if displayGame != lastGame {
 					resetState(displayGame)
@@ -352,7 +352,7 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 					}
 					if !changed {
 						if staticScreenRun == 0 {
-							staticStartTime = frameTime.Sub(run.LastStartTime).Seconds()
+							staticStartTime = frameTime.Sub(attract.LastStartTime).Seconds()
 						}
 						staticScreenRun += frameTime.Sub(lastFrameTime).Seconds()
 					} else {
@@ -364,7 +364,7 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 				firstFrame = false
 				lastFrameTime = frameTime
 
-				uptime := frameTime.Sub(run.LastStartTime).Seconds()
+				uptime := frameTime.Sub(attract.LastStartTime).Seconds()
 
 				domHex := rgbToHex(domR, domG, domB)
 				avgHex := rgbToHex(avgR, avgG, avgB)
@@ -374,7 +374,7 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 				if uptime > currCfg.Grace {
 					if avgHex == "#000000" && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
 						if currCfg.WriteBlackList {
-							addToFile(run.LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
+							addToFile(attract.LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
 						}
 						if currCfg.SkipBlack {
 							select { case skipCh <- struct{}{}: default: }
@@ -384,7 +384,7 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 					if avgHex != "#000000" && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
 						if currCfg.WriteStaticList {
 							entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
-							addToFile(run.LastPlayedSystem.Id, entry, "_staticlist.txt")
+							addToFile(attract.LastPlayedSystem.Id, entry, "_staticlist.txt")
 						}
 						if currCfg.SkipStatic {
 							select { case skipCh <- struct{}{}: default: }
