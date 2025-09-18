@@ -166,9 +166,10 @@ func filterAllowed(all []string, include, exclude []string) []string {
 func Run(cfg *config.UserConfig, args []string) {
 	attractCfg := cfg.Attract
 
-	// Ensure gamelists are built
-	if err := RunList([]string{}); err != nil {
-		fmt.Fprintln(os.Stderr, "[Attract] List build failed:", err)
+	// Ensure gamelists are built using CreateGamelists
+	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
+	if CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
+    	fmt.Fprintln(os.Stderr, "[Attract] List build failed: no games indexed")
 	}
 
 	// Load lists into cache using the detailed filter function
