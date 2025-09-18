@@ -110,7 +110,7 @@ func CreateGamelists(cfg *config.UserConfig,
 			extRemoved := beforeDisk - len(diskFiltered)
 
 			// cache stage
-			cacheFiles, counts, _ := ApplyFilterlistsDetailed(gamelistDir, systemId, diskFiltered, cfg)
+			cacheFiles, counts, _ := ApplyFilterlists(gamelistDir, systemId, diskFiltered, cfg)
 			if len(cacheFiles) == 0 {
 				emptySystems = append(emptySystems, systemId)
 				continue
@@ -162,7 +162,7 @@ func CreateGamelists(cfg *config.UserConfig,
 			beforeDisk := len(lines)
 			diskFiltered := FilterExtensions(lines, systemId, cfg)
 			extRemoved := beforeDisk - len(diskFiltered)
-			cacheFiles, counts, _ := ApplyFilterlistsDetailed(gamelistDir, systemId, diskFiltered, cfg)
+			cacheFiles, counts, _ := ApplyFilterlists(gamelistDir, systemId, diskFiltered, cfg)
 
 			totalGames += len(cacheFiles)
 			reused++
