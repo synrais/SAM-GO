@@ -149,7 +149,7 @@ func CreateGamelists(cfg *config.UserConfig,
 			masterList = removeSystemBlock(masterList, systemId)
 			masterList = append(masterList, "# SYSTEM: "+systemId+" #")
 			masterList = append(masterList, rawFiles...)
-			UpdateGameIndex(systemId, deduped)
+			updateGameIndex(systemId, deduped)
 
 		} else {
 			// reuse cached list
