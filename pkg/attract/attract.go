@@ -35,12 +35,7 @@ func Run(cfg *config.UserConfig, args []string) {
 			if err != nil {
 				continue
 			}
-			lines, counts, _ := ApplyFilterlists(config.GamelistDir(), system.Id, lines, cfg)
 			cache.SetList(filepath.Base(f), lines)
-			if counts["White"] > 0 || counts["Black"] > 0 || counts["Static"] > 0 || counts["Folder"] > 0 || counts["File"] > 0 {
-				fmt.Printf("[Attract] %s - White: %d, Black: %d, Static: %d, Folder: %d, File: %d\n",
-					system.Id, counts["White"], counts["Black"], counts["Static"], counts["Folder"], counts["File"])
-			}
 		}
 	}
 
@@ -101,7 +96,7 @@ func Run(cfg *config.UserConfig, args []string) {
 		fmt.Println("[Attract] Running. Ctrl-C to exit.")
 	}
 
-	playGame := func(gamePath, systemID string, ts float64) {
+	playGame := func(gamePath string, ts float64) {
 	Launch:
 		for {
 			name := filepath.Base(gamePath)
@@ -133,7 +128,6 @@ func Run(cfg *config.UserConfig, args []string) {
 				case <-time.After(remaining):
 					if next, ok := PlayNext(); ok {
 						gamePath = next
-						systemID = ""
 						ts = 0
 						continue Launch
 					}
@@ -144,7 +138,6 @@ func Run(cfg *config.UserConfig, args []string) {
 					}
 					if next, ok := PlayNext(); ok {
 						gamePath = next
-						systemID = ""
 						ts = 0
 						continue Launch
 					}
@@ -152,7 +145,6 @@ func Run(cfg *config.UserConfig, args []string) {
 				case <-backCh:
 					if prev, ok := PlayBack(); ok {
 						gamePath = prev
-						systemID = ""
 						ts = 0
 						continue Launch
 					}
@@ -160,7 +152,6 @@ func Run(cfg *config.UserConfig, args []string) {
 			}
 			if next, ok := PlayNext(); ok {
 				gamePath = next
-				systemID = ""
 				ts = 0
 				continue Launch
 			}
@@ -172,12 +163,12 @@ func Run(cfg *config.UserConfig, args []string) {
 		select {
 		case <-backCh:
 			if prev, ok := PlayBack(); ok {
-				playGame(prev, "", 0)
+				playGame(prev, 0)
 				continue
 			}
 		case <-skipCh:
 			if next, ok := PlayNext(); ok {
-				playGame(next, "", 0)
+				playGame(next, 0)
 				continue
 			}
 		default:
@@ -222,16 +213,9 @@ func Run(cfg *config.UserConfig, args []string) {
 			index = r.Intn(len(lines))
 		}
 		ts, gamePath := utils.ParseLine(lines[index])
-		systemID := strings.TrimSuffix(filepath.Base(listKey), "_gamelist.txt")
-
-		if Disabled(systemID, gamePath, cfg) {
-			lines = append(lines[:index], lines[index+1:]...)
-			cache.SetList(listKey, lines)
-			continue
-		}
 
 		Play(gamePath)
-		playGame(gamePath, systemID, ts)
+		playGame(gamePath, ts)
 
 		lines = append(lines[:index], lines[index+1:]...)
 		cache.SetList(listKey, lines)
