@@ -82,14 +82,8 @@ func readStaticMap(path string) map[string]string {
 // returning the filtered lines + counts for logging.
 func ApplyFilterlistsDetailed(gamelistDir, system string, lines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
 	filterBase := config.FilterlistDir()
-	counts := map[string]int{
-		"White":  0,
-		"Black":  0,
-		"Static": 0,
-		"Folder": 0,
-		"File":   0,
-	}
 	hadLists := false
+	counts := map[string]int{"White": 0, "Black": 0, "Static": 0, "Folder": 0, "File": 0}
 
 	// Whitelist
 	if cfg.List.UseWhitelist && allowedFor(system,
