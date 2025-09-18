@@ -1,112 +1,126 @@
 package attract
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
-	"github.com/synrais/SAM-GO/pkg/cache"
-	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// gamelistFilename returns the filename for a system's gamelist.
-func gamelistFilename(systemId string) string {
-	return systemId + "_gamelist.txt"
-}
-
-// writeGamelist saves a gamelist both in cache and optionally on disk.
-func writeGamelist(gamelistDir, systemId string, files []string, ramOnly bool) {
-	cache.SetList(gamelistFilename(systemId), files)
-	if ramOnly {
-		return
-	}
-	var sb strings.Builder
-	for _, file := range files {
-		sb.WriteString(file)
-		sb.WriteByte('\n')
-	}
-	data := []byte(sb.String())
-	gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
-	_ = os.MkdirAll(filepath.Dir(gamelistPath), 0755)
-	_ = os.WriteFile(gamelistPath, data, 0644)
-}
-
-// writeSimpleList writes a plain list of files to disk.
-func writeSimpleList(path string, files []string) {
-	var sb strings.Builder
-	for _, f := range files {
-		sb.WriteString(f)
-		sb.WriteByte('\n')
-	}
-	_ = os.MkdirAll(filepath.Dir(path), 0755)
-	_ = os.WriteFile(path, []byte(sb.String()), 0644)
-}
-
-// fileExists checks if a path exists.
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-// removeSystemBlock strips all lines of a system's block from a masterlist.
-func removeSystemBlock(list []string, systemId string) []string {
-	var out []string
-	skip := false
-	for _, line := range list {
-		if strings.HasPrefix(line, "# SYSTEM: ") {
-			if strings.Contains(line, systemId) {
-				skip = true
-				continue
-			} else {
-				skip = false
-			}
-		}
-		if !skip {
-			out = append(out, line)
+// ContainsInsensitive checks if list contains item (case-insensitive).
+func ContainsInsensitive(list []string, item string) bool {
+	for _, v := range list {
+		if strings.EqualFold(strings.TrimSpace(v), item) {
+			return true
 		}
 	}
-	return out
+	return false
 }
 
-// countGames counts non-comment lines in a masterlist.
-func countGames(list []string) int {
-	n := 0
-	for _, line := range list {
-		if strings.HasPrefix(line, "# SYSTEM:") {
+// MatchesSystem checks if system name matches (case-insensitive).
+func MatchesSystem(list []string, system string) bool {
+	return ContainsInsensitive(list, system)
+}
+
+// AllowedFor determines if a system is allowed based on include/exclude lists.
+func AllowedFor(system string, include, exclude []string) bool {
+	if len(include) > 0 && !MatchesSystem(include, system) {
+		return false
+	}
+	if MatchesSystem(exclude, system) {
+		return false
+	}
+	return true
+}
+
+// ReadNameSet reads a file into a set of normalized names.
+func ReadNameSet(path string) map[string]struct{} {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	set := make(map[string]struct{})
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
 			continue
 		}
-		n++
+		name, _ := utils.NormalizeEntry(line)
+		set[name] = struct{}{}
 	}
-	return n
+	return set
 }
 
-// updateGameIndex refreshes the global GameIndex with deduped file entries.
-func updateGameIndex(systemId string, deduped []string) {
-	// Drop old entries for this system
-	newIndex := make([]input.GameEntry, 0, len(input.GameIndex))
-	for _, e := range input.GameIndex {
-		if !strings.Contains(e.Path, "/"+systemId+"/") {
-			newIndex = append(newIndex, e)
-		}
+// ReadStaticMap reads a staticlist file mapping name → timestamp.
+func ReadStaticMap(path string) map[string]string {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
 	}
-	input.GameIndex = newIndex
+	defer f.Close()
 
-	// Add fresh entries
-	seenSearch := make(map[string]struct{})
-	for _, f := range deduped {
-		name, ext := utils.NormalizeEntry(f)
-		if name == "" {
+	m := make(map[string]string)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
 			continue
 		}
-		if _, ok := seenSearch[name]; ok {
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
 			continue
 		}
-		input.GameIndex = append(input.GameIndex, input.GameEntry{
-			Name: name,
-			Ext:  ext,
-			Path: f,
-		})
-		seenSearch[name] = struct{}{}
+		ts := strings.Trim(parts[0], "<>")
+		name, _ := utils.NormalizeEntry(parts[1])
+		m[name] = ts
 	}
+	return m
+}
+
+// ParseLine extracts optional <timestamp> from a gamelist line.
+func ParseLine(line string) (float64, string) {
+	if strings.HasPrefix(line, "<") {
+		if idx := strings.Index(line, ">"); idx > 1 {
+			tsStr := line[1:idx]
+			rest := line[idx+1:]
+			ts, _ := strconv.ParseFloat(tsStr, 64)
+			return ts, rest
+		}
+	}
+	return 0, line
+}
+
+// ReadStaticTimestamp looks up a game's timestamp in staticlist.
+func ReadStaticTimestamp(system, game string) float64 {
+	path := filepath.Join("filterlists", system+"_staticlist.txt") // uses default dir
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		tsStr := strings.Trim(parts[0], "<>")
+		name, _ := utils.NormalizeEntry(parts[1])
+		if name == game {
+			ts, _ := strconv.ParseFloat(tsStr, 64)
+			return ts
+		}
+	}
+	return 0
 }
