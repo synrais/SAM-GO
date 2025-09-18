@@ -2,6 +2,7 @@ package run
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -19,6 +20,8 @@ var (
 	LastStartTime    time.Time
 )
 
+const nowPlayingFile = "/tmp/Now_Playing.txt"
+
 // GetLastPlayed returns the last system, path, clean name, and start time.
 func GetLastPlayed() (system games.System, path, name string, start time.Time) {
 	return LastPlayedSystem, LastPlayedPath, LastPlayedName, LastStartTime
@@ -34,6 +37,13 @@ func setLastPlayed(system games.System, path string) {
 	LastPlayedName = strings.TrimSuffix(base, filepath.Ext(base))
 }
 
+// writeNowPlayingFile writes "SystemName - GameName [SystemID]" to Now_Playing.txt.
+func writeNowPlayingFile() error {
+	entry := fmt.Sprintf("%s - %s [%s]",
+		LastPlayedSystem.Name, LastPlayedName, LastPlayedSystem.Id)
+	return os.WriteFile(nowPlayingFile, []byte(entry), 0644)
+}
+
 // Run launches a game (normal file path).
 func Run(args []string) error {
 	if len(args) < 1 {
@@ -47,10 +57,14 @@ func Run(args []string) error {
 	// Update globals
 	setLastPlayed(system, runPath)
 
+	// Write Now_Playing.txt
+	if err := writeNowPlayingFile(); err != nil {
+		fmt.Printf("[RUN] Failed to write Now_Playing.txt: %v\n", err)
+	}
+
 	// Log "Now Playing"
 	fmt.Printf("[RUN] Now Playing %s: %s\n", system.Id, LastPlayedName)
 
 	// Launch game
 	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
 }
-
