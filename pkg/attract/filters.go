@@ -40,16 +40,13 @@ func FilterUniqueWithMGL(files []string) []string {
 func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConfig) []string {
 	var folders, patterns []string
 
-	// Always normalize systemID to lowercase for lookup
-	sysKey := strings.ToLower(systemID)
-
 	// Global rules [Disable.ALL]
 	if global, ok := cfg.Disable["all"]; ok {
 		folders = append(folders, global.Folders...)
 		patterns = append(patterns, global.Files...)
 	}
 	// System-specific rules
-	if sys, ok := cfg.Disable[sysKey]; ok {
+	if sys, ok := cfg.Disable[systemID]; ok {
 		folders = append(folders, sys.Folders...)
 		patterns = append(patterns, sys.Files...)
 	}
@@ -64,22 +61,39 @@ func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConf
 		dir := filepath.Dir(f)
 		skip := false
 
-		// Folder filter (wildcard + case-insensitive)
+		// --- Folder filter (wildcards or exact folder segment match only) ---
 		for _, folder := range folders {
-			if folder != "" {
-				match, _ := filepath.Match(strings.ToLower(folder), strings.ToLower(dir))
+			if folder == "" {
+				continue
+			}
+			folderLower := strings.ToLower(folder)
+			hasWildcard := strings.ContainsAny(folderLower, "*?[")
+			dirParts := strings.Split(strings.ToLower(dir), string(os.PathSeparator))
+
+			for _, seg := range dirParts {
+				var match bool
+				if hasWildcard {
+					// Wildcard: match folder segment against pattern
+					match, _ = filepath.Match(folderLower, seg)
+				} else {
+					// Exact folder name match
+					match = seg == folderLower
+				}
 				if match {
 					fmt.Printf("[Filters] Skipping %s (folder %s disabled)\n", base, folder)
 					skip = true
 					break
 				}
 			}
+			if skip {
+				break
+			}
 		}
 		if skip {
 			continue
 		}
 
-		// File pattern filter (wildcard + case-insensitive)
+		// --- File pattern filter (wildcards supported, base filename only) ---
 		for _, pat := range patterns {
 			if pat != "" {
 				match, _ := filepath.Match(strings.ToLower(pat), strings.ToLower(base))
