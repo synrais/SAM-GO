@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -44,26 +45,58 @@ func loadSavedTimestamps(gamelistDir string) ([]SavedTimestamp, error) {
 	return timestamps, nil
 }
 
-// Check if folder was modified compared to saved timestamps
+// Check if folder or any subfolder was modified compared to saved timestamps.
 // NOTE: does NOT write; caller should update and save once after all systems.
-func isFolderModified(systemID, path string, saved []SavedTimestamp) (bool, time.Time, error) {
-	info, err := os.Stat(path)
+func isFolderModified(systemID, rootPath string, saved []SavedTimestamp) (bool, time.Time, error) {
+	latest := time.Time{}
+
+	// Walk only directories, skip files
+	err := filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			// skip bad paths, but keep walking
+			return nil
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil // ignore broken dirs
+		}
+		mod := info.ModTime()
+		if mod.After(latest) {
+			latest = mod
+		}
+		return nil
+	})
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, time.Time{}, nil
 		}
-		return false, time.Time{}, fmt.Errorf("[Modtime] Failed to stat %s: %w", path, err)
+		return false, time.Time{}, fmt.Errorf("[Modtime] Failed to walk %s: %w", rootPath, err)
 	}
-	currentMod := info.ModTime()
 
+	// Fallback: if nothing found, stat root directly
+	if latest.IsZero() {
+		info, err := os.Stat(rootPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return false, time.Time{}, nil
+			}
+			return false, time.Time{}, fmt.Errorf("[Modtime] Failed to stat %s: %w", rootPath, err)
+		}
+		latest = info.ModTime()
+	}
+
+	// Compare to saved
 	for _, ts := range saved {
-		if ts.SystemID == systemID && ts.Path == path {
-			return currentMod.After(ts.ModTime), currentMod, nil
+		if ts.SystemID == systemID && ts.Path == rootPath {
+			return latest.After(ts.ModTime), latest, nil
 		}
 	}
 
 	// no record yet → treat as modified
-	return true, currentMod, nil
+	return true, latest, nil
 }
 
 // Update or insert timestamp
