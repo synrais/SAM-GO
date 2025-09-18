@@ -129,7 +129,8 @@ func CreateGamelists(cfg *config.UserConfig,
 
 			if !quiet {
 				fmt.Printf(
-					"[List] %-12s Disk: %d → %d (Ext:%d, Dupes:%d) Cache: %d → %d (White:%d, Black:%d, Static:%d, Folder:%d, File:%d) (%.2fs) [%s]\n",
+					"[List] %-12s Disk: %d → %d (Ext:%d, Dupes:%d) Cache: %d → %d "+
+						"(White:%d, Black:%d, Static:%d, Folder:%d, File:%d) (%.2fs) [%s]\n",
 					systemId,
 					len(rawFiles), len(diskFiltered),
 					-extRemoved, len(rawFiles)-beforeDisk,
@@ -149,7 +150,7 @@ func CreateGamelists(cfg *config.UserConfig,
 			masterList = removeSystemBlock(masterList, systemId)
 			masterList = append(masterList, "# SYSTEM: "+systemId+" #")
 			masterList = append(masterList, rawFiles...)
-			updateGameIndex(systemId, deduped)
+			UpdateGameIndex(systemId, deduped)
 
 		} else {
 			// reuse cached list
@@ -169,7 +170,8 @@ func CreateGamelists(cfg *config.UserConfig,
 
 			if !quiet {
 				fmt.Printf(
-					"[List] %-12s Disk: %d → %d (Ext:%d) Cache: %d → %d (White:%d, Black:%d, Static:%d, Folder:%d, File:%d) (%.2fs) [reused]\n",
+					"[List] %-12s Disk: %d → %d (Ext:%d) Cache: %d → %d "+
+						"(White:%d, Black:%d, Static:%d, Folder:%d, File:%d) (%.2fs) [reused]\n",
 					systemId,
 					beforeDisk, len(diskFiltered),
 					-extRemoved,
