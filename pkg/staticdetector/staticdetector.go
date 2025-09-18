@@ -275,6 +275,7 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 					resetState(displayGame)
 				}
 
+				// Capture frame
 				res.Header = int(res.Map[2])<<8 | int(res.Map[3])
 				res.Width = int(res.Map[6])<<8 | int(res.Map[7])
 				res.Height = int(res.Map[8])<<8 | int(res.Map[9])
@@ -319,6 +320,7 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 				avgG := sumG / samples
 				avgB := sumB / samples
 
+				// Dominant color
 				sort.Slice(currRGB[:samples], func(i, j int) bool { return currRGB[i] < currRGB[j] })
 				bestCount := 0
 				currCount := 1
@@ -338,7 +340,7 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 				domG := int((bestVal >> 8) & 0xFF)
 				domB := int(bestVal & 0xFF)
 
-				stuckPixels := 0
+				// Check for static screen
 				frameTime := time.Now()
 				if !firstFrame {
 					changed := false
@@ -352,18 +354,10 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 						if staticScreenRun == 0 {
 							staticStartTime = frameTime.Sub(run.LastStartTime).Seconds()
 						}
-						delta := frameTime.Sub(lastFrameTime).Seconds()
-						if delta > 0 {
-							staticScreenRun += delta
-						}
+						staticScreenRun += frameTime.Sub(lastFrameTime).Seconds()
 					} else {
 						staticScreenRun = 0
 						staticStartTime = 0
-					}
-					for i := 0; i < samples; i++ {
-						if currRGB[i] == prevRGB[i] {
-							stuckPixels++
-						}
 					}
 				}
 				copy(prevRGB, currRGB[:samples])
@@ -383,10 +377,7 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 							addToFile(run.LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
 						}
 						if currCfg.SkipBlack {
-							select {
-							case skipCh <- struct{}{}:
-							default:
-							}
+							select { case skipCh <- struct{}{}: default: }
 						}
 						handledBlack = true
 					}
@@ -396,10 +387,7 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 							addToFile(run.LastPlayedSystem.Id, entry, "_staticlist.txt")
 						}
 						if currCfg.SkipStatic {
-							select {
-							case skipCh <- struct{}{}:
-							default:
-							}
+							select { case skipCh <- struct{}{}: default: }
 						}
 						handledStatic = true
 					}
@@ -409,7 +397,7 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 					Uptime:       uptime,
 					Frames:       sampleFrames,
 					StaticScreen: staticScreenRun,
-					StuckPixels:  stuckPixels,
+					StuckPixels:  samples,
 					Samples:      samples,
 					Width:        res.Width,
 					Height:       res.Height,
