@@ -82,18 +82,14 @@ func disabled(system string, gamePath string, cfg *config.UserConfig) bool {
 // getSystemsByCategory retrieves systems by category (Console, Handheld, Arcade, etc.)
 func getSystemsByCategory(category string) ([]string, error) {
 	var systems []string
-
-	// Fetch all systems by their category
 	for _, sys := range games.AllSystems() {
 		if strings.EqualFold(sys.Category, category) {
 			systems = append(systems, sys.Id)
 		}
 	}
-
 	if len(systems) == 0 {
 		return nil, fmt.Errorf("no systems found in category: %s", category)
 	}
-
 	return systems, nil
 }
 
@@ -106,7 +102,6 @@ func expandGroups(list []string) ([]string, error) {
 			continue
 		}
 
-		// Try group (Console, Handheld, etc.)
 		if trimmed == "Console" || trimmed == "Handheld" || trimmed == "Arcade" || trimmed == "Computer" {
 			groupSystems, err := getSystemsByCategory(trimmed)
 			if err != nil {
@@ -116,13 +111,11 @@ func expandGroups(list []string) ([]string, error) {
 			continue
 		}
 
-		// Try individual system (or alias)
 		if sys, err := games.LookupSystem(trimmed); err == nil {
 			expanded = append(expanded, sys.Id)
 			continue
 		}
 
-		// Otherwise, keep raw
 		expanded = append(expanded, trimmed)
 	}
 	return expanded, nil
@@ -187,11 +180,9 @@ func Run(cfg *config.UserConfig, args []string) {
 		}
 	}
 
-	// control channels
 	skipCh := make(chan struct{}, 1)
 	backCh := make(chan struct{}, 1)
 
-	// parse extra flags
 	silent := false
 	for _, a := range args {
 		if a == "-s" || a == "--silent" {
@@ -199,7 +190,6 @@ func Run(cfg *config.UserConfig, args []string) {
 		}
 	}
 
-	// Start static detector
 	if attractCfg.UseStaticDetector {
 		go func() {
 			for ev := range staticdetector.Stream(cfg, skipCh) {
@@ -210,19 +200,13 @@ func Run(cfg *config.UserConfig, args []string) {
 		}()
 	}
 
-	// Hook inputs → back = backCh, next = skipCh
 	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
 		input.RelayInputs(cfg,
-			func() { // Back
-				select { case backCh <- struct{}{}: default: }
-			},
-			func() { // Next
-				select { case skipCh <- struct{}{}: default: }
-			},
+			func() { select { case backCh <- struct{}{}: default: } },
+			func() { select { case skipCh <- struct{}{}: default: } },
 		)
 	}
 
-	// Collect gamelists from cache
 	allKeys := cache.ListKeys()
 	var allFiles []string
 	for _, k := range allKeys {
@@ -253,7 +237,6 @@ func Run(cfg *config.UserConfig, args []string) {
 		fmt.Println("[Attract] Running. Ctrl-C to exit.")
 	}
 
-	// Main loop for playing games
 	playGame := func(gamePath, systemID string, ts float64) {
 	Launch:
 		for {
@@ -284,9 +267,10 @@ func Run(cfg *config.UserConfig, args []string) {
 				remaining := time.Until(deadline)
 				select {
 				case <-time.After(remaining):
-					if next, err := PlayNext(); err == nil && next != "" {
-						_ = SetNowPlaying(next)
-						gamePath, systemID, ts = next, "", 0
+					if next, ok := PlayNext(); ok {
+						gamePath = next
+						systemID = ""
+						ts = 0
 						continue Launch
 					}
 					return
@@ -294,41 +278,41 @@ func Run(cfg *config.UserConfig, args []string) {
 					if !silent {
 						fmt.Println("[Attract] Skipped")
 					}
-					if next, err := PlayNext(); err == nil && next != "" {
-						_ = SetNowPlaying(next)
-						gamePath, systemID, ts = next, "", 0
+					if next, ok := PlayNext(); ok {
+						gamePath = next
+						systemID = ""
+						ts = 0
 						continue Launch
 					}
 					return
 				case <-backCh:
-					if prev, err := PlayBack(); err == nil && prev != "" {
-						_ = SetNowPlaying(prev)
-						gamePath, systemID, ts = prev, "", 0
+					if prev, ok := PlayBack(); ok {
+						gamePath = prev
+						systemID = ""
+						ts = 0
 						continue Launch
 					}
 				}
 			}
-			if next, err := PlayNext(); err == nil && next != "" {
-				_ = SetNowPlaying(next)
-				gamePath, systemID, ts = next, "", 0
+			if next, ok := PlayNext(); ok {
+				gamePath = next
+				systemID = ""
+				ts = 0
 				continue Launch
 			}
 			return
 		}
 	}
 
-	// Handle main loop
 	for {
 		select {
 		case <-backCh:
-			if prev, err := PlayBack(); err == nil && prev != "" {
-				_ = SetNowPlaying(prev)
+			if prev, ok := PlayBack(); ok {
 				playGame(prev, "", 0)
 				continue
 			}
 		case <-skipCh:
-			if next, err := PlayNext(); err == nil && next != "" {
-				_ = SetNowPlaying(next)
+			if next, ok := PlayNext(); ok {
 				playGame(next, "", 0)
 				continue
 			}
@@ -340,6 +324,7 @@ func Run(cfg *config.UserConfig, args []string) {
 				fmt.Println("[Attract] All systems exhausted — refreshing from cache")
 			}
 			cache.ResetAll()
+
 			allKeys = cache.ListKeys()
 			allFiles = nil
 			for _, k := range allKeys {
@@ -348,6 +333,7 @@ func Run(cfg *config.UserConfig, args []string) {
 				}
 			}
 			files = filterAllowed(allFiles, include, exclude)
+
 			if len(files) == 0 {
 				fmt.Println("[Attract] No gamelists even after reset, exiting.")
 				return
@@ -380,7 +366,7 @@ func Run(cfg *config.UserConfig, args []string) {
 			continue
 		}
 
-		_ = Play(gamePath)
+		Play(gamePath)
 		playGame(gamePath, systemID, ts)
 
 		lines = append(lines[:index], lines[index+1:]...)
