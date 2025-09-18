@@ -14,7 +14,6 @@ import (
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/input"
-	"github.com/synrais/SAM-GO/pkg/staticdetector"
 )
 
 const socketPath = "/tmp/sam.sock"
@@ -138,11 +137,11 @@ func handleCommand(cfg *config.UserConfig, cmd string, args []string, skipCh cha
 			fmt.Fprintln(os.Stderr, "List failed: no games indexed")
 		}
 	case "-run":
-		if err := attract.Run(args); err != nil { // <- call new Run in attract/utils
+		if err := attract.Run(args); err != nil {
 			fmt.Fprintln(os.Stderr, "Run failed:", err)
 		}
 	case "-attract":
-		attract.RunAttract(cfg, args) // <- renamed RunAttract
+		attract.RunAttract(cfg, args)
 	case "-back":
 		if _, ok := attract.PlayBack(); !ok {
 			fmt.Fprintln(os.Stderr, "Back failed: no previous game in history")
@@ -164,7 +163,7 @@ func handleCommand(cfg *config.UserConfig, cmd string, args []string, skipCh cha
 			fmt.Println(line)
 		}
 	case "-static":
-		for ev := range staticdetector.Stream(cfg, skipCh) {
+		for ev := range attract.Stream(cfg, skipCh) {
 			fmt.Println(ev)
 		}
 	default:
@@ -231,7 +230,6 @@ func sendToRunningInstance(cmds [][]string) bool {
 }
 
 func main() {
-	// Restrict the Go runtime heap to reduce the overall virtual memory footprint.
 	debug.SetMemoryLimit(128 * 1024 * 1024) // 128MB soft limit
 
 	if len(os.Args) < 2 {
@@ -245,11 +243,9 @@ func main() {
 		return
 	}
 
-	// INI path lives next to executable
 	exePath, _ := os.Executable()
 	iniPath := filepath.Join(filepath.Dir(exePath), iniFileName)
 
-	// Generate INI if missing
 	if _, err := os.Stat(iniPath); os.IsNotExist(err) {
 		fmt.Println("[MAIN] No INI found, generating from embedded default...")
 		if err := os.WriteFile(iniPath, []byte(assets.DefaultSAMIni), 0644); err != nil {
@@ -261,7 +257,6 @@ func main() {
 		fmt.Println("[MAIN] Found INI at", iniPath)
 	}
 
-	// Load config
 	cfg, err := config.LoadUserConfig("SAM", &config.UserConfig{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[MAIN] Config load error:", err)
@@ -269,12 +264,10 @@ func main() {
 	}
 	fmt.Println("[MAIN] Loaded config from:", cfg.IniPath)
 
-	// Dump settings
 	dumpConfig(cfg)
 
-	// Start command server
 	commandChan := make(chan []string)
-	skipCh := make(chan struct{}, 1) // shared skip channel for static detector
+	skipCh := make(chan struct{}, 1)
 	startServer(commandChan)
 	defer os.Remove(socketPath)
 
