@@ -1,41 +1,6 @@
 package config
 
-import (
-	"time"
-)
-
 // --- Config Structs ---
-
-type LaunchSyncConfig struct{}
-
-type PlayLogConfig struct {
-	SaveEvery   int    `ini:"save_every,omitempty"`
-	OnCoreStart string `ini:"on_core_start,omitempty"`
-	OnCoreStop  string `ini:"on_core_stop,omitempty"`
-	OnGameStart string `ini:"on_game_start,omitempty"`
-	OnGameStop  string `ini:"on_game_stop,omitempty"`
-}
-
-type RandomConfig struct{}
-
-type SearchConfig struct {
-	Filter []string `ini:"filter,omitempty" delim:","`
-	Sort   string   `ini:"sort,omitempty"`
-}
-
-type RemoteConfig struct {
-	MdnsService     bool   `ini:"mdns_service,omitempty"`
-	SyncSSHKeys     bool   `ini:"sync_ssh_keys,omitempty"`
-	CustomLogo      string `ini:"custom_logo,omitempty"`
-	AnnounceGameUrl string `ini:"announce_game_url,omitempty"`
-}
-
-type NfcConfig struct {
-	ConnectionString string `ini:"connection_string,omitempty"`
-	AllowCommands    bool   `ini:"allow_commands,omitempty"`
-	DisableSounds    bool   `ini:"disable_sounds,omitempty"`
-	ProbeDevice      bool   `ini:"probe_device,omitempty"`
-}
 
 type SystemsConfig struct {
 	GamesFolder []string `ini:"games_folder,omitempty,allowshadow"`
@@ -104,15 +69,10 @@ type InputDetectorConfig struct {
 	JoystickMap map[string]string `ini:"-"`
 }
 
+// UserConfig: root config struct for SAM
 type UserConfig struct {
 	AppPath        string
 	IniPath        string
-	LaunchSync     LaunchSyncConfig        `ini:"launchsync,omitempty"`
-	PlayLog        PlayLogConfig           `ini:"playlog,omitempty"`
-	Random         RandomConfig            `ini:"random,omitempty"`
-	Search         SearchConfig            `ini:"search,omitempty"`
-	Remote         RemoteConfig            `ini:"remote,omitempty"`
-	Nfc            NfcConfig               `ini:"nfc,omitempty"`
 	Systems        SystemsConfig           `ini:"systems,omitempty"`
 	Attract        AttractConfig           `ini:"attract,omitempty"`
 	StaticDetector StaticDetectorConfig    `ini:"staticdetector,omitempty"`
