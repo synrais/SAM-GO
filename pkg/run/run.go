@@ -12,6 +12,8 @@ import (
 	"github.com/synrais/SAM-GO/pkg/mister"
 )
 
+const nowPlayingFile = "/tmp/Now_Playing.txt"
+
 // Globals to expose last played info
 var (
 	LastPlayedSystem games.System
@@ -19,8 +21,6 @@ var (
 	LastPlayedName   string // basename without extension
 	LastStartTime    time.Time
 )
-
-const nowPlayingFile = "/tmp/Now_Playing.txt"
 
 // GetLastPlayed returns the last system, path, clean name, and start time.
 func GetLastPlayed() (system games.System, path, name string, start time.Time) {
@@ -37,11 +37,23 @@ func setLastPlayed(system games.System, path string) {
 	LastPlayedName = strings.TrimSuffix(base, filepath.Ext(base))
 }
 
-// writeNowPlayingFile writes "SystemName - GameName [SystemID]" to Now_Playing.txt.
+// writeNowPlayingFile writes Now_Playing.txt with 3 lines:
+// [System Name] GameName
+// SystemID GameName.ext
+// /full/path/to/GameName.ext
 func writeNowPlayingFile() error {
-	entry := fmt.Sprintf("%s - %s [%s]",
-		LastPlayedSystem.Name, LastPlayedName, LastPlayedSystem.Id)
-	return os.WriteFile(nowPlayingFile, []byte(entry), 0644)
+	// Line 1: Pretty system name + clean game name
+	line1 := fmt.Sprintf("[%s] %s", LastPlayedSystem.Name, LastPlayedName)
+
+	// Line 2: System ID + original file basename (with extension)
+	base := filepath.Base(LastPlayedPath)
+	line2 := fmt.Sprintf("%s %s", LastPlayedSystem.Id, base)
+
+	// Line 3: Full absolute path
+	line3 := LastPlayedPath
+
+	content := strings.Join([]string{line1, line2, line3}, "\n")
+	return os.WriteFile(nowPlayingFile, []byte(content), 0644)
 }
 
 // Run launches a game (normal file path).
@@ -63,7 +75,7 @@ func Run(args []string) error {
 	}
 
 	// Log "Now Playing"
-	fmt.Printf("[RUN] Now Playing %s: %s\n", system.Id, LastPlayedName)
+	fmt.Printf("[RUN] Now Playing %s: %s\n", system.Name, LastPlayedName)
 
 	// Launch game
 	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
