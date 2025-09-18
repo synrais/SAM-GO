@@ -12,9 +12,8 @@ import (
 	"github.com/synrais/SAM-GO/pkg/assets"
 	"github.com/synrais/SAM-GO/pkg/attract"
 	"github.com/synrais/SAM-GO/pkg/config"
-    "github.com/synrais/SAM-GO/pkg/games"
+	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/input"
-	"github.com/synrais/SAM-GO/pkg/run"
 	"github.com/synrais/SAM-GO/pkg/staticdetector"
 )
 
@@ -35,8 +34,7 @@ func dumpConfig(cfg *config.UserConfig) {
 	fmt.Printf("  List:\n")
 	fmt.Printf("    Exclude=%v\n", cfg.List.Exclude)
 	fmt.Printf("    UseBlacklist=%v | UseStaticlist=%v | UseWhitelist=%v\n",
-    cfg.List.UseBlacklist, cfg.List.UseStaticlist, cfg.List.UseWhitelist)
-
+		cfg.List.UseBlacklist, cfg.List.UseStaticlist, cfg.List.UseWhitelist)
 
 	// Input detector
 	fmt.Printf("  InputDetector: Mouse=%v | Keyboard=%v | Joystick=%v\n",
@@ -135,16 +133,16 @@ func splitCommands(args []string) [][]string {
 func handleCommand(cfg *config.UserConfig, cmd string, args []string, skipCh chan struct{}) {
 	switch cmd {
 	case "-list":
-    	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
-    	if attract.CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
-        	fmt.Fprintln(os.Stderr, "List failed: no games indexed")
-    	}
+		systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
+		if attract.CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
+			fmt.Fprintln(os.Stderr, "List failed: no games indexed")
+		}
 	case "-run":
-		if err := run.Run(args); err != nil {
+		if err := attract.Run(args); err != nil { // <- call new Run in attract/utils
 			fmt.Fprintln(os.Stderr, "Run failed:", err)
 		}
 	case "-attract":
-		attract.Run(cfg, args)
+		attract.RunAttract(cfg, args) // <- renamed RunAttract
 	case "-back":
 		if _, ok := attract.PlayBack(); !ok {
 			fmt.Fprintln(os.Stderr, "Back failed: no previous game in history")
