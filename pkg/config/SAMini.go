@@ -1,163 +1,127 @@
 package config
 
-import (
-	"os"
-	"path/filepath"
-	"strings"
-
-	"gopkg.in/ini.v1"
-)
-
-// LoadSAMConfig loads SAM.ini into a UserConfig, overlaying onto the provided defaults.
+// --- SAM Config Structs ---
 //
-// Caller should construct defaults with NewDefaultConfig() from SAMconfig.go before calling.
-//
-// Example:
-//   cfg, err := config.LoadSAMConfig("SAM", config.NewDefaultConfig())
-func LoadSAMConfig(name string, defaults *UserConfig) (*UserConfig, error) {
-	iniPath := os.Getenv(UserConfigEnv)
+// These are specific to SAM’s features (Attract Mode, StaticDetector, etc.).
+// They are layered on top of the base repo’s config system but remain separate
+// from the original `config.go` to avoid collisions.
 
-	exePath, err := os.Executable()
-	if err != nil {
-		return defaults, err
-	}
-	appPath := os.Getenv(UserAppPathEnv)
-	if appPath != "" {
-		exePath = appPath
-	}
-	if iniPath == "" {
-		iniPath = filepath.Join(filepath.Dir(exePath), name+".ini")
-	}
-
-	// Seed with defaults
-	defaults.AppPath = exePath
-	defaults.IniPath = iniPath
-
-	// Load INI
-	cfg, err := ini.ShadowLoad(iniPath)
-	if err != nil {
-		return defaults, err
-	}
-
-	// Normalize keys/sections to lowercase
-	for _, section := range cfg.Sections() {
-		origName := section.Name()
-		lowerName := strings.ToLower(origName)
-		if lowerName != origName {
-			dest := cfg.Section(lowerName)
-			for _, key := range section.Keys() {
-				dest.NewKey(strings.ToLower(key.Name()), key.Value())
-			}
-		}
-		for _, key := range section.Keys() {
-			lowerKey := strings.ToLower(key.Name())
-			if lowerKey != key.Name() {
-				section.NewKey(lowerKey, key.Value())
-			}
-		}
-	}
-
-	// Overlay INI values onto defaults
-	if err := cfg.MapTo(defaults); err != nil {
-		return defaults, err
-	}
-
-	// Normalize include/exclude lists
-	normalizeList := func(raw []string) []string {
-		var result []string
-		for _, v := range raw {
-			for _, p := range strings.Split(v, ",") {
-				if trimmed := strings.TrimSpace(p); trimmed != "" {
-					result = append(result, trimmed)
-				}
-			}
-		}
-		return result
-	}
-	defaults.Attract.Include = normalizeList(defaults.Attract.Include)
-	defaults.Attract.Exclude = normalizeList(defaults.Attract.Exclude)
-	defaults.List.Exclude = normalizeList(defaults.List.Exclude)
-	defaults.List.BlacklistInclude = normalizeList(defaults.List.BlacklistInclude)
-	defaults.List.BlacklistExclude = normalizeList(defaults.List.BlacklistExclude)
-	defaults.List.StaticlistInclude = normalizeList(defaults.List.StaticlistInclude)
-	defaults.List.StaticlistExclude = normalizeList(defaults.List.StaticlistExclude)
-	defaults.List.WhitelistInclude = normalizeList(defaults.List.WhitelistInclude)
-	defaults.List.WhitelistExclude = normalizeList(defaults.List.WhitelistExclude)
-
-	// Input device overrides
-	if sec, err := cfg.GetSection("inputdetector.keyboard"); err == nil {
-		for _, key := range sec.Keys() {
-			defaults.InputDetector.KeyboardMap[strings.ToLower(key.Name())] = key.Value()
-		}
-	}
-	if sec, err := cfg.GetSection("inputdetector.mouse"); err == nil {
-		for _, key := range sec.Keys() {
-			defaults.InputDetector.MouseMap[strings.ToLower(key.Name())] = key.Value()
-		}
-	}
-	if sec, err := cfg.GetSection("inputdetector.joystick"); err == nil {
-		for _, key := range sec.Keys() {
-			defaults.InputDetector.JoystickMap[strings.ToLower(key.Name())] = key.Value()
-		}
-	}
-
-	// Parse disable.* and staticdetector.* overrides
-	for _, section := range cfg.Sections() {
-		secName := strings.ToLower(section.Name())
-		switch {
-		case strings.HasPrefix(secName, "disable."):
-			sys := strings.TrimPrefix(secName, "disable.")
-			var rules DisableRules
-			_ = section.MapTo(&rules)
-			defaults.Disable[sys] = rules
-		case strings.HasPrefix(secName, "staticdetector."):
-			sys := strings.TrimPrefix(secName, "staticdetector.")
-			var sc StaticDetectorOverride
-			if section.HasKey("blackthreshold") {
-				v, _ := section.Key("blackthreshold").Float64()
-				sc.BlackThreshold = &v
-			}
-			if section.HasKey("staticthreshold") {
-				v, _ := section.Key("staticthreshold").Float64()
-				sc.StaticThreshold = &v
-			}
-			if section.HasKey("skipblack") {
-				v, _ := section.Key("skipblack").Bool()
-				sc.SkipBlack = &v
-			}
-			if section.HasKey("writeblacklist") {
-				v, _ := section.Key("writeblacklist").Bool()
-				sc.WriteBlackList = &v
-			}
-			if section.HasKey("skipstatic") {
-				v, _ := section.Key("skipstatic").Bool()
-				sc.SkipStatic = &v
-			}
-			if section.HasKey("writestaticlist") {
-				v, _ := section.Key("writestaticlist").Bool()
-				sc.WriteStaticList = &v
-			}
-			if section.HasKey("grace") {
-				v, _ := section.Key("grace").Float64()
-				sc.Grace = &v
-			}
-			defaults.StaticDetector.Systems[sys] = sc
-		}
-	}
-
-	return defaults, nil
+// SystemsConfig defines core/system folder mappings.
+type SystemsConfig struct {
+	GamesFolder []string `ini:"games_folder,omitempty,allowshadow"`
+	SetCore     []string `ini:"set_core,omitempty,allowshadow"`
 }
 
-// --- Directory helpers ---
-
-func BaseDir() string {
-	exe, err := os.Executable()
-	if err != nil {
-		cwd, _ := os.Getwd()
-		return cwd
-	}
-	return filepath.Dir(exe)
+// AttractConfig controls the Attract Mode feature.
+type AttractConfig struct {
+	PlayTime          string   `ini:"playtime,omitempty"`
+	Random            bool     `ini:"random,omitempty"`
+	Include           []string `ini:"include,omitempty" delim:","`
+	Exclude           []string `ini:"exclude,omitempty" delim:","`
+	UseStaticDetector bool     `ini:"usestaticdetector,omitempty"`
 }
 
-func GamelistDir() string   { return filepath.Join(BaseDir(), "SAM_Gamelists") }
-func FilterlistDir() string { return filepath.Join(GamelistDir(), "SAM_Filterlists") }
+// ListConfig controls filtering and list-building rules.
+type ListConfig struct {
+	RamOnly           bool     `ini:"ramonly,omitempty"`
+	Exclude           []string `ini:"exclude,omitempty" delim:","`
+
+	UseBlacklist      bool     `ini:"useblacklist,omitempty"`
+	BlacklistInclude  []string `ini:"blacklist_include,omitempty" delim:","`
+	BlacklistExclude  []string `ini:"blacklist_exclude,omitempty" delim:","`
+
+	UseStaticlist     bool     `ini:"usestaticlist,omitempty"`
+	StaticlistInclude []string `ini:"staticlist_include,omitempty" delim:","`
+	StaticlistExclude []string `ini:"staticlist_exclude,omitempty" delim:","`
+	SkipafterStatic   int      `ini:"skipafterstatic,omitempty"`
+
+	UseWhitelist      bool     `ini:"usewhitelist,omitempty"`
+	WhitelistInclude  []string `ini:"whitelist_include,omitempty" delim:","`
+	WhitelistExclude  []string `ini:"whitelist_exclude,omitempty" delim:","`
+}
+
+// DisableRules allow filtering by folder, file, or extension.
+type DisableRules struct {
+	Folders    []string `ini:"folders,omitempty" delim:","`
+	Files      []string `ini:"files,omitempty" delim:","`
+	Extensions []string `ini:"extensions,omitempty" delim:","`
+}
+
+// StaticDetectorOverride allows per-system overrides of thresholds/flags.
+type StaticDetectorOverride struct {
+	BlackThreshold  *float64 `ini:"blackthreshold,omitempty"`
+	StaticThreshold *float64 `ini:"staticthreshold,omitempty"`
+	SkipBlack       *bool    `ini:"skipblack,omitempty"`
+	WriteBlackList  *bool    `ini:"writeblacklist,omitempty"`
+	SkipStatic      *bool    `ini:"skipstatic,omitempty"`
+	WriteStaticList *bool    `ini:"writestaticlist,omitempty"`
+	Grace           *float64 `ini:"grace,omitempty"`
+}
+
+// StaticDetectorConfig holds defaults plus per-system overrides.
+type StaticDetectorConfig struct {
+	BlackThreshold  float64                           `ini:"blackthreshold,omitempty"`
+	StaticThreshold float64                           `ini:"staticthreshold,omitempty"`
+	SkipBlack       bool                              `ini:"skipblack,omitempty"`
+	WriteBlackList  bool                              `ini:"writeblacklist,omitempty"`
+	SkipStatic      bool                              `ini:"skipstatic,omitempty"`
+	WriteStaticList bool                              `ini:"writestaticlist,omitempty"`
+	Grace           float64                           `ini:"grace,omitempty"`
+	Systems         map[string]StaticDetectorOverride `ini:"-"`
+}
+
+// InputDetectorConfig maps devices/buttons to actions.
+type InputDetectorConfig struct {
+	Mouse       bool              `ini:"mouse,omitempty"`
+	Keyboard    bool              `ini:"keyboard,omitempty"`
+	Joystick    bool              `ini:"joystick,omitempty"`
+	KeyboardMap map[string]string `ini:"-"`
+	MouseMap    map[string]string `ini:"-"`
+	JoystickMap map[string]string `ini:"-"`
+}
+
+// UserConfig is the root struct SAM uses for runtime config.
+// It combines Attract Mode, StaticDetector, InputDetector, Lists, etc.
+type UserConfig struct {
+	AppPath        string
+	IniPath        string
+	Systems        SystemsConfig           `ini:"systems,omitempty"`
+	Attract        AttractConfig           `ini:"attract,omitempty"`
+	StaticDetector StaticDetectorConfig    `ini:"staticdetector,omitempty"`
+	InputDetector  InputDetectorConfig     `ini:"inputdetector,omitempty"`
+	List           ListConfig              `ini:"list,omitempty"`
+	Disable        map[string]DisableRules `ini:"-"`
+}
+
+// --- Default Config Constructor ---
+
+// NewDefaultConfig returns a fresh UserConfig seeded with safe defaults.
+// These act as fallbacks if the SAM.ini is missing or contains bogus values.
+// The defaults are later overlaid by LoadSAMConfig in SAMini.go.
+func NewDefaultConfig() *UserConfig {
+	return &UserConfig{
+		Attract: AttractConfig{
+			PlayTime: "40",
+			Random:   true,
+		},
+		StaticDetector: StaticDetectorConfig{
+			BlackThreshold:  30,
+			StaticThreshold: 30,
+			SkipBlack:       true,
+			WriteBlackList:  true,
+			SkipStatic:      true,
+			WriteStaticList: true,
+			Grace:           25,
+			Systems:         make(map[string]StaticDetectorOverride),
+		},
+		InputDetector: InputDetectorConfig{
+			KeyboardMap: map[string]string{"left": "back", "right": "next", "`": "search"},
+			MouseMap:    map[string]string{"swipeleft": "back", "swiperight": "next"},
+			JoystickMap: map[string]string{"dpleft": "back", "dpright": "next", "leftx-": "back", "leftx+": "next"},
+		},
+		List: ListConfig{
+			SkipafterStatic: 10,
+		},
+		Disable: make(map[string]DisableRules),
+	}
+}
