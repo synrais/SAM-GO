@@ -621,3 +621,51 @@ func updateTimestamp(list []SavedTimestamp, systemID, path string, mod time.Time
 		ModTime:  mod,
 	})
 }
+
+// -----------------------------
+// History navigation
+// -----------------------------
+//
+// It uses the cache to persist the timeline of 
+// games played, and maintains a currentIndex
+// pointer into that list. The index moves
+// forward/backward as the user navigates.
+
+// currentIndex points into the History timeline (in cache).
+// -1 means "no history yet".
+var currentIndex int = -1
+
+// Play records a game into history and sets the index to it.
+func Play(path string) {
+	hist := cache.GetList("History.txt")
+	hist = append(hist, path)
+	cache.SetList("History.txt", hist)
+	currentIndex = len(hist) - 1
+}
+
+// Next moves forward in the history timeline.
+func Next() (string, bool) {
+	hist := cache.GetList("History.txt")
+	if currentIndex >= 0 && currentIndex < len(hist)-1 {
+		currentIndex++
+		return hist[currentIndex], true
+	}
+	return "", false
+}
+
+// Back moves backward in the history timeline.
+func Back() (string, bool) {
+	hist := cache.GetList("History.txt")
+	if currentIndex > 0 {
+		currentIndex--
+		return hist[currentIndex], true
+	}
+	return "", false
+}
+
+// PlayNext is a convenient alias for Next.
+func PlayNext() (string, bool) { return Next() }
+
+// PlayBack is a convenient alias for Back.
+func PlayBack() (string, bool) { return Back() }
+
