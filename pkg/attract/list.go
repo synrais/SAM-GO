@@ -61,13 +61,11 @@ func writeSimpleList(path string, files []string) {
 	}
 }
 
-// fileExists is a local helper (replacement for utils.FileExists).
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
 
-// removeSystemBlock removes the block for a system (separator + entries)
 func removeSystemBlock(list []string, systemId string) []string {
 	var out []string
 	skip := false
@@ -87,7 +85,6 @@ func removeSystemBlock(list []string, systemId string) []string {
 	return out
 }
 
-// countGames ignores system separators when counting titles
 func countGames(list []string) int {
 	n := 0
 	for _, line := range list {
@@ -121,7 +118,6 @@ func createGamelists(cfg *config.UserConfig,
 	fresh, rebuilt, reused := 0, 0, 0
 	var emptySystems []string
 
-	// Load saved timestamps
 	savedTimestamps, err := loadSavedTimestamps(gamelistDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[List] Error loading saved timestamps: %v\n", err)
@@ -129,9 +125,8 @@ func createGamelists(cfg *config.UserConfig,
 	}
 	updatedTimestamps := savedTimestamps
 
-	// Group paths by system
 	systemPathMap := make(map[string][]string)
-	systemOrder := []string{} // stable order
+	systemOrder := []string{}
 	for _, p := range systemPaths {
 		if _, ok := systemPathMap[p.System.Id]; !ok {
 			systemOrder = append(systemOrder, p.System.Id)
@@ -139,7 +134,6 @@ func createGamelists(cfg *config.UserConfig,
 		systemPathMap[p.System.Id] = append(systemPathMap[p.System.Id], p.Path)
 	}
 
-	// Load existing Masterlist & GameIndex if present
 	masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
 	indexPath := filepath.Join(gamelistDir, "GameIndex")
 	var masterList []string
@@ -151,7 +145,6 @@ func createGamelists(cfg *config.UserConfig,
 		_ = json.Unmarshal(data, &input.GameIndex)
 	}
 
-	// Process systems in stable order
 	for _, systemId := range systemOrder {
 		paths := systemPathMap[systemId]
 
@@ -177,7 +170,6 @@ func createGamelists(cfg *config.UserConfig,
 
 		status := ""
 		if modified || !exists {
-			// Rebuild gamelist
 			for _, path := range paths {
 				files, err := games.GetFiles(systemId, path)
 				if err != nil {
@@ -189,7 +181,6 @@ func createGamelists(cfg *config.UserConfig,
 
 			rawCount := len(rawFiles)
 
-			// Dedup per system
 			seen := make(map[string]struct{})
 			deduped := make([]string, 0, rawCount)
 			for _, f := range rawFiles {
@@ -202,7 +193,6 @@ func createGamelists(cfg *config.UserConfig,
 			}
 			dedupedCount := len(deduped)
 
-			// ✅ Apply filters in correct order
 			beforeFilter := dedupedCount
 			systemFiles = FilterFoldersAndFiles(deduped, systemId, cfg)
 			systemFiles = FilterExtensions(systemFiles, systemId, cfg)
@@ -243,12 +233,10 @@ func createGamelists(cfg *config.UserConfig,
 				}
 			}
 
-			// 🔥 Update Masterlist & GameIndex for this system only
 			masterList = removeSystemBlock(masterList, systemId)
 			masterList = append(masterList, "# SYSTEM: "+systemId+" #")
 			masterList = append(masterList, rawFiles...)
 
-			// Remove system entries from GameIndex
 			newIndex := make([]input.GameEntry, 0, len(input.GameIndex))
 			for _, e := range input.GameIndex {
 				if !strings.Contains(e.Path, "/"+systemId+"/") {
@@ -257,7 +245,6 @@ func createGamelists(cfg *config.UserConfig,
 			}
 			input.GameIndex = newIndex
 
-			// Add fresh deduped entries
 			seenSearch := make(map[string]struct{})
 			for _, f := range deduped {
 				name, ext := utils.NormalizeEntry(f)
@@ -276,7 +263,6 @@ func createGamelists(cfg *config.UserConfig,
 			}
 
 		} else {
-			// Reuse cached list
 			lines := cache.GetList(gamelistFilename(systemId))
 			if len(lines) == 0 {
 				lines, _ = utils.ReadLines(gamelistPath)
@@ -296,12 +282,13 @@ func createGamelists(cfg *config.UserConfig,
 		}
 	}
 
-	// Save timestamps once at the end
+	// Always re-apply filterlists (whitelist/blacklist/staticlist) to cache
+	ProcessLists(gamelistDir, cfg)
+
 	if err := saveTimestamps(gamelistDir, updatedTimestamps); err != nil {
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
 
-	// Save Masterlist + GameIndex
 	cache.SetList("Masterlist.txt", masterList)
 	if !cfg.List.RamOnly {
 		writeSimpleList(masterPath, masterList)
@@ -310,7 +297,6 @@ func createGamelists(cfg *config.UserConfig,
 		}
 	}
 
-	// Stats
 	if !quiet {
 		fmt.Printf("[List] Masterlist contains %d titles\n", countGames(masterList))
 		fmt.Printf("[List] GameIndex contains %d titles\n", len(input.GameIndex))
