@@ -2,6 +2,7 @@ package attract
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,91 +18,10 @@ import (
 )
 
 // ---------------------------
-// Helpers
+// Main createGamelists logic
 // ---------------------------
 
-func gamelistFilename(systemId string) string {
-	return systemId + "_gamelist.txt"
-}
-
-func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly bool) {
-	cache.SetList(gamelistFilename(systemId), files)
-	if ramOnly {
-		return
-	}
-
-	var sb strings.Builder
-	for _, file := range files {
-		sb.WriteString(file)
-		sb.WriteByte('\n')
-	}
-	data := []byte(sb.String())
-
-	gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
-	if err := os.MkdirAll(filepath.Dir(gamelistPath), 0755); err != nil {
-		panic(err)
-	}
-	if err := os.WriteFile(gamelistPath, data, 0644); err != nil {
-		panic(err)
-	}
-}
-
-func writeSimpleList(path string, files []string) {
-	var sb strings.Builder
-	for _, f := range files {
-		sb.WriteString(f)
-		sb.WriteByte('\n')
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		panic(err)
-	}
-	if err := os.WriteFile(path, []byte(sb.String()), 0644); err != nil {
-		panic(err)
-	}
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-func removeSystemBlock(list []string, systemId string) []string {
-	var out []string
-	skip := false
-	for _, line := range list {
-		if strings.HasPrefix(line, "# SYSTEM: ") {
-			if strings.Contains(line, systemId) {
-				skip = true
-				continue
-			} else {
-				skip = false
-			}
-		}
-		if !skip {
-			out = append(out, line)
-		}
-	}
-	return out
-}
-
-func countGames(list []string) int {
-	n := 0
-	for _, line := range list {
-		if strings.HasPrefix(line, "# SYSTEM:") {
-			continue
-		}
-		n++
-	}
-	return n
-}
-
-// ---------------------------
-// Main gamelist builder
-// ---------------------------
-
-// CreateGamelists builds gamelists for the provided systems.
-// Returns the total number of indexed games.
-func CreateGamelists(cfg *config.UserConfig,
+func createGamelists(cfg *config.UserConfig,
 	gamelistDir string,
 	systemPaths []games.PathResult,
 	quiet bool) int {
@@ -324,4 +244,73 @@ func CreateGamelists(cfg *config.UserConfig,
 	}
 
 	return totalGames
+}
+
+// ---------------------------
+// CLI entry point
+// ---------------------------
+
+func RunList(args []string) error {
+	fs := flag.NewFlagSet("list", flag.ContinueOnError)
+
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("[List] Failed to detect SAM install path: %w", err)
+	}
+	baseDir := filepath.Dir(exePath)
+
+	defaultOut := filepath.Join(baseDir, "SAM_Gamelists")
+	gamelistDir := fs.String("o", defaultOut, "gamelist files directory")
+
+	filter := fs.String("s", "all", "list of systems to index (comma separated)")
+	quiet := fs.Bool("q", false, "suppress all status output")
+	detect := fs.Bool("d", false, "list active system folders")
+	ramOnly := fs.Bool("ramonly", false, "build lists in RAM only (do not write to SD)")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	cfg, _ := config.LoadUserConfig("SAM", &config.UserConfig{})
+
+	if *ramOnly {
+		cfg.List.RamOnly = true
+		if !*quiet {
+			fmt.Println("[List] RamOnly mode enabled via CLI")
+		}
+	}
+
+	var systems []games.System
+	if *filter == "all" {
+		if len(cfg.List.Exclude) > 0 {
+			systems = games.AllSystemsExcept(cfg.List.Exclude)
+		} else {
+			systems = games.AllSystems()
+		}
+	} else {
+		for _, filterId := range strings.Split(*filter, ",") {
+			filterId = strings.TrimSpace(filterId)
+			system, err := games.LookupSystem(filterId)
+			if err != nil {
+				continue
+			}
+			systems = append(systems, *system)
+		}
+	}
+
+	if *detect {
+		results := games.GetActiveSystemPaths(cfg, systems)
+		for _, r := range results {
+			fmt.Printf("%s:%s\n", strings.ToLower(r.System.Id), r.Path)
+		}
+		return nil
+	}
+
+	systemPaths := games.GetSystemPaths(cfg, systems)
+	total := createGamelists(cfg, *gamelistDir, systemPaths, *quiet)
+
+	if total == 0 {
+		return fmt.Errorf("[List] No games indexed")
+	}
+	return nil
 }
