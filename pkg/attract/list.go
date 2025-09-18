@@ -21,13 +21,23 @@ import (
 // Helpers
 // ---------------------------
 
+type FilterStats struct {
+	ExtRemoved    int
+	DupesRemoved  int
+	BlackRemoved  int
+	WhiteRemoved  int
+	StaticTagged  int
+	FolderRemoved int
+	FileRemoved   int
+}
+
 func gamelistFilename(systemId string) string {
 	return systemId + "_gamelist.txt"
 }
 
 func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly bool) {
+	cache.SetList(gamelistFilename(systemId), files)
 	if ramOnly {
-		cache.SetList(gamelistFilename(systemId), files)
 		return
 	}
 
@@ -45,9 +55,6 @@ func writeGamelist(gamelistDir string, systemId string, files []string, ramOnly 
 	if err := os.WriteFile(gamelistPath, data, 0644); err != nil {
 		panic(err)
 	}
-
-	// Cache disk list too (deduped + ext-filtered, but before whitelist/blacklist/static)
-	cache.SetList(gamelistFilename(systemId), files)
 }
 
 func writeSimpleList(path string, files []string) {
@@ -131,7 +138,7 @@ func createGamelists(cfg *config.UserConfig,
 
 	// Group paths by system
 	systemPathMap := make(map[string][]string)
-	systemOrder := []string{}
+	systemOrder := []string{} // stable order
 	for _, p := range systemPaths {
 		if _, ok := systemPathMap[p.System.Id]; !ok {
 			systemOrder = append(systemOrder, p.System.Id)
@@ -139,7 +146,7 @@ func createGamelists(cfg *config.UserConfig,
 		systemPathMap[p.System.Id] = append(systemPathMap[p.System.Id], p.Path)
 	}
 
-	// Load existing Masterlist & GameIndex
+	// Load existing Masterlist & GameIndex if present
 	masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
 	indexPath := filepath.Join(gamelistDir, "GameIndex")
 	var masterList []string
@@ -151,7 +158,7 @@ func createGamelists(cfg *config.UserConfig,
 		_ = json.Unmarshal(data, &input.GameIndex)
 	}
 
-	// Process systems
+	// Process systems in stable order
 	for _, systemId := range systemOrder {
 		paths := systemPathMap[systemId]
 
@@ -160,6 +167,7 @@ func createGamelists(cfg *config.UserConfig,
 		exists := fileExists(gamelistPath)
 
 		var rawFiles []string
+		var cacheFiles []string
 		modified := false
 
 		for _, path := range paths {
@@ -175,6 +183,9 @@ func createGamelists(cfg *config.UserConfig,
 		}
 
 		status := ""
+		var diskStats FilterStats
+		var cacheStats FilterStats
+
 		if modified || !exists {
 			// Rebuild gamelist
 			for _, path := range paths {
@@ -186,61 +197,41 @@ func createGamelists(cfg *config.UserConfig,
 				rawFiles = append(rawFiles, files...)
 			}
 
-			// Extension filter + dedupe = DISK list
-			extFiltered := FilterExtensions(rawFiles, systemId, cfg)
+			rawCount := len(rawFiles)
 
+			// Extension filter (Disk stage)
+			beforeExt := len(rawFiles)
+			extFiltered := FilterExtensions(rawFiles, systemId, cfg)
+			diskStats.ExtRemoved = beforeExt - len(extFiltered)
+
+			// Dedup per system (Disk stage)
 			seen := make(map[string]struct{})
 			deduped := make([]string, 0, len(extFiltered))
 			for _, f := range extFiltered {
 				name, _ := utils.NormalizeEntry(f)
 				if _, ok := seen[name]; ok {
+					diskStats.DupesRemoved++
 					continue
 				}
 				seen[name] = struct{}{}
 				deduped = append(deduped, f)
 			}
 
-			// Write disk gamelist (deduped + ext only)
-			writeGamelist(gamelistDir, systemId, deduped, cfg.List.RamOnly)
+			diskCount := len(deduped)
 
-			// Cache stage: apply all other filters
-			systemFiles, _, hadLists := ApplyFilterlistsDetailed(gamelistDir, systemId, deduped, cfg)
-
-			// ✅ ensure cache stores filtered version
-			cache.SetList(gamelistFilename(systemId), systemFiles)
-
-			if len(systemFiles) == 0 {
+			if len(deduped) == 0 {
 				emptySystems = append(emptySystems, systemId)
 				continue
 			}
 
-			sort.Strings(systemFiles)
-			totalGames += len(systemFiles)
+			// Write deduped+ext filtered list to disk
+			sort.Strings(deduped)
+			writeGamelist(gamelistDir, systemId, deduped, cfg.List.RamOnly)
 
-			if exists && !cfg.List.RamOnly {
-				rebuilt++
-				status = "rebuilt"
-			} else {
-				fresh++
-				status = "fresh"
-			}
-
-			if !quiet {
-				if hadLists {
-					fmt.Printf("[List] %-15s Disk:%4d → %-4d  Cache:%-4d (%7.2fs) [%s]\n",
-						systemId, len(rawFiles), len(deduped), len(systemFiles),
-						time.Since(sysStart).Seconds(), status)
-				} else {
-					fmt.Printf("[List] %-15s Disk:%4d → %-4d  Cache:%-4d (no filterlists) (%7.2fs) [%s]\n",
-						systemId, len(rawFiles), len(deduped), len(systemFiles),
-						time.Since(sysStart).Seconds(), status)
-				}
-			}
-
-			// Update Masterlist & GameIndex
+			// Update Masterlist + GameIndex with disk stage only
 			masterList = removeSystemBlock(masterList, systemId)
 			masterList = append(masterList, "# SYSTEM: "+systemId+" #")
-			masterList = append(masterList, rawFiles...)
+			masterList = append(masterList, deduped...)
 
 			newIndex := make([]input.GameEntry, 0, len(input.GameIndex))
 			for _, e := range input.GameIndex {
@@ -249,7 +240,6 @@ func createGamelists(cfg *config.UserConfig,
 				}
 			}
 			input.GameIndex = newIndex
-
 			seenSearch := make(map[string]struct{})
 			for _, f := range deduped {
 				name, ext := utils.NormalizeEntry(f)
@@ -267,38 +257,57 @@ func createGamelists(cfg *config.UserConfig,
 				seenSearch[name] = struct{}{}
 			}
 
+			// Cache stage filters
+			cacheFiles, cacheStats, _ = ApplyFilterlistsDetailed(gamelistDir, systemId, deduped, cfg)
+
+			totalGames += len(cacheFiles)
+
+			if exists && !cfg.List.RamOnly {
+				rebuilt++
+				status = "rebuilt"
+			} else {
+				fresh++
+				status = "fresh"
+			}
+
+			if !quiet {
+				fmt.Printf("[List] %-12s Disk: %d → %d (Ext:-%d, Dupes:-%d) Cache: %d → %d (Black:-%d, White:-%d, Static:-%d Folder:-%d, File:-%d) (%.2fs) [%s]\n",
+					systemId,
+					rawCount, diskCount, diskStats.ExtRemoved, diskStats.DupesRemoved,
+					diskCount, len(cacheFiles), cacheStats.BlackRemoved, cacheStats.WhiteRemoved,
+					cacheStats.StaticTagged, cacheStats.FolderRemoved, cacheStats.FileRemoved,
+					time.Since(sysStart).Seconds(), status,
+				)
+			}
+
 		} else {
-			// Reuse cached list
+			// Reuse disk list, apply cache filters fresh
 			lines := cache.GetList(gamelistFilename(systemId))
 			if len(lines) == 0 {
 				lines, _ = utils.ReadLines(gamelistPath)
 				cache.SetList(gamelistFilename(systemId), lines)
 			}
 
-			systemFiles, _, hadLists := ApplyFilterlistsDetailed(gamelistDir, systemId, lines, cfg)
-
-			// ✅ make sure cache stores filtered version
-			cache.SetList(gamelistFilename(systemId), systemFiles)
-
-			totalGames += len(systemFiles)
+			diskCount := len(lines)
+			cacheFiles, cacheStats, _ = ApplyFilterlistsDetailed(gamelistDir, systemId, lines, cfg)
+			totalGames += len(cacheFiles)
 			reused++
 			status = "reused"
 
 			if !quiet {
-				if hadLists {
-					fmt.Printf("[List] %-15s Reused → %-4d (with filterlists) (%7.2fs)\n",
-						systemId, len(systemFiles),
-						time.Since(sysStart).Seconds())
-				} else {
-					fmt.Printf("[List] %-15s Reused → %-4d (no filterlists) (%7.2fs)\n",
-						systemId, len(systemFiles),
-						time.Since(sysStart).Seconds())
-				}
+				fmt.Printf("[List] %-12s Disk: %d → %d (cached) Cache: %d → %d (Black:-%d, White:-%d, Static:-%d Folder:-%d, File:-%d) (%.2fs) [%s]\n",
+					systemId,
+					diskCount, diskCount,
+					diskCount, len(cacheFiles),
+					cacheStats.BlackRemoved, cacheStats.WhiteRemoved,
+					cacheStats.StaticTagged, cacheStats.FolderRemoved, cacheStats.FileRemoved,
+					time.Since(sysStart).Seconds(), status,
+				)
 			}
 		}
 	}
 
-	// Save timestamps once
+	// Save timestamps once at the end
 	if err := saveTimestamps(gamelistDir, updatedTimestamps); err != nil {
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
