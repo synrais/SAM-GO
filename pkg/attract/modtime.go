@@ -47,25 +47,28 @@ func loadSavedTimestamps(gamelistDir string) ([]SavedTimestamp, error) {
 
 // Check if folder or any subfolder was modified compared to saved timestamps.
 // NOTE: does NOT write; caller should update and save once after all systems.
-func isFolderModified(systemID, rootPath string, saved []SavedTimestamp) (bool, time.Time, error) {
-	latest := time.Time{}
+// Check if a folder or any subfolder was modified compared to saved timestamps.
+// Only considers directories, not individual files.
+func isFolderModified(systemID, path string, saved []SavedTimestamp) (bool, time.Time, error) {
+	var latestMod time.Time
+	modified := false
 
-	// Walk only directories, skip files
-	err := filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
-			// skip bad paths, but keep walking
+			// skip problematic subdirs
 			return nil
 		}
 		if !d.IsDir() {
+			// ignore files entirely
 			return nil
 		}
-		info, err := os.Stat(path)
+		info, err := d.Info()
 		if err != nil {
-			return nil // ignore broken dirs
+			return nil
 		}
 		mod := info.ModTime()
-		if mod.After(latest) {
-			latest = mod
+		if mod.After(latestMod) {
+			latestMod = mod
 		}
 		return nil
 	})
@@ -73,8 +76,20 @@ func isFolderModified(systemID, rootPath string, saved []SavedTimestamp) (bool, 
 		if os.IsNotExist(err) {
 			return false, time.Time{}, nil
 		}
-		return false, time.Time{}, fmt.Errorf("[Modtime] Failed to walk %s: %w", rootPath, err)
+		return false, time.Time{}, fmt.Errorf("[Modtime] Walk failed for %s: %w", path, err)
 	}
+
+	// compare against saved record (only root path entry is stored)
+	for _, ts := range saved {
+		if ts.SystemID == systemID && ts.Path == path {
+			modified = latestMod.After(ts.ModTime)
+			return modified, latestMod, nil
+		}
+	}
+
+	// no record yet → treat as modified
+	return true, latestMod, nil
+}
 
 	// Fallback: if nothing found, stat root directly
 	if latest.IsZero() {
