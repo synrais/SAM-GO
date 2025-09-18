@@ -442,3 +442,109 @@ func ApplyFilterlists(gamelistDir, systemID string, files []string, cfg *config.
 
 	return files, hadLists
 }
+
+// -----------------------------
+// List + Masterlist helpers
+// -----------------------------
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func gamelistFilename(systemID string) string {
+	return systemID + "_gamelist.txt"
+}
+
+func writeGamelist(dir, systemID string, files []string, ramOnly bool) {
+	if ramOnly {
+		return
+	}
+	path := filepath.Join(dir, gamelistFilename(systemID))
+	_ = os.WriteFile(path, []byte(strings.Join(files, "\n")), 0644)
+}
+
+func writeSimpleList(path string, lines []string) {
+	_ = os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+func removeSystemBlock(master []string, systemID string) []string {
+	var out []string
+	skip := false
+	for _, line := range master {
+		if strings.HasPrefix(line, "# SYSTEM: ") {
+			if strings.Contains(line, systemID) {
+				skip = true
+				continue
+			}
+			skip = false
+		}
+		if !skip {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func countGames(master []string) int {
+	count := 0
+	for _, line := range master {
+		if !strings.HasPrefix(line, "# SYSTEM:") {
+			count++
+		}
+	}
+	return count
+}
+
+func updateGameIndex(systemID string, files []string) {
+	if input.GameIndex == nil {
+		input.GameIndex = make(map[string][]string)
+	}
+	input.GameIndex[systemID] = utils.DedupeFiles(files)
+}
+
+// -----------------------------
+// Timestamp helpers
+// -----------------------------
+
+type systemTimestamps map[string]map[string]time.Time
+
+func loadSavedTimestamps(dir string) (systemTimestamps, error) {
+	path := filepath.Join(dir, "timestamps.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return make(systemTimestamps), nil
+	}
+	var ts systemTimestamps
+	if err := json.Unmarshal(data, &ts); err != nil {
+		return make(systemTimestamps), err
+	}
+	return ts, nil
+}
+
+func saveTimestamps(dir string, ts systemTimestamps) error {
+	path := filepath.Join(dir, "timestamps.json")
+	data, err := json.MarshalIndent(ts, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+func isFolderModified(systemID, path string, ts systemTimestamps) (bool, time.Time, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false, time.Time{}, err
+	}
+	modTime := info.ModTime()
+	prev := ts[systemID][path]
+	return modTime.After(prev), modTime, nil
+}
+
+func updateTimestamp(ts systemTimestamps, systemID, path string, modTime time.Time) systemTimestamps {
+	if ts[systemID] == nil {
+		ts[systemID] = make(map[string]time.Time)
+	}
+	ts[systemID][path] = modTime
+	return ts
+}
