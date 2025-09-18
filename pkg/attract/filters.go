@@ -11,6 +11,45 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
+// -----------------------------
+// Matching helper
+// -----------------------------
+
+// matchRule applies human-friendly pattern matching to a candidate string.
+func matchRule(rule, candidate string) bool {
+	rule = strings.ToLower(strings.TrimSpace(rule))
+	candidate = strings.ToLower(strings.TrimSpace(candidate))
+
+	if rule == "" || candidate == "" {
+		return false
+	}
+
+	// Wildcard contains check
+	if strings.HasPrefix(rule, "*") && strings.HasSuffix(rule, "*") && len(rule) > 2 {
+		sub := strings.Trim(rule, "*")
+		return strings.Contains(candidate, sub)
+	}
+	// Prefix match
+	if strings.HasSuffix(rule, "*") {
+		prefix := strings.TrimSuffix(rule, "*")
+		return strings.HasPrefix(candidate, prefix)
+	}
+	// Suffix match
+	if strings.HasPrefix(rule, "*") {
+		suffix := strings.TrimPrefix(rule, "*")
+		return strings.HasSuffix(candidate, suffix)
+	}
+	// Exact match (ignore extension for candidate if rule lacks one)
+	if !strings.Contains(rule, ".") {
+		candidate = strings.TrimSuffix(candidate, filepath.Ext(candidate))
+	}
+	return candidate == rule
+}
+
+// -----------------------------
+// Filters
+// -----------------------------
+
 // FilterUniqueWithMGL filters out duplicate files based on their base name
 // (ignores extension) and prioritizes `.mgl` files.
 func FilterUniqueWithMGL(files []string) []string {
@@ -46,7 +85,7 @@ func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConf
 		patterns = append(patterns, global.Files...)
 	}
 	// System-specific rules
-	if sys, ok := cfg.Disable[systemID]; ok {
+	if sys, ok := cfg.Disable[strings.ToLower(systemID)]; ok {
 		folders = append(folders, sys.Folders...)
 		patterns = append(patterns, sys.Files...)
 	}
@@ -61,26 +100,12 @@ func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConf
 		dir := filepath.Dir(f)
 		skip := false
 
-		// --- Folder filter (wildcards or exact folder segment match only) ---
-		for _, folder := range folders {
-			if folder == "" {
-				continue
-			}
-			folderLower := strings.ToLower(folder)
-			hasWildcard := strings.ContainsAny(folderLower, "*?[")
-			dirParts := strings.Split(strings.ToLower(dir), string(os.PathSeparator))
-
+		// --- Folder filter (check each segment) ---
+		dirParts := strings.Split(dir, string(os.PathSeparator))
+		for _, folderRule := range folders {
 			for _, seg := range dirParts {
-				var match bool
-				if hasWildcard {
-					// Wildcard: match folder segment against pattern
-					match, _ = filepath.Match(folderLower, seg)
-				} else {
-					// Exact folder name match
-					match = seg == folderLower
-				}
-				if match {
-					fmt.Printf("[Filters] Skipping %s (folder %s disabled)\n", base, folder)
+				if matchRule(folderRule, seg) {
+					fmt.Printf("[Filters] Skipping %s (folder %s disabled)\n", base, folderRule)
 					skip = true
 					break
 				}
@@ -93,15 +118,12 @@ func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConf
 			continue
 		}
 
-		// --- File pattern filter (wildcards supported, base filename only) ---
-		for _, pat := range patterns {
-			if pat != "" {
-				match, _ := filepath.Match(strings.ToLower(pat), strings.ToLower(base))
-				if match {
-					fmt.Printf("[Filters] Skipping %s (pattern %s disabled)\n", base, pat)
-					skip = true
-					break
-				}
+		// --- File pattern filter ---
+		for _, fileRule := range patterns {
+			if matchRule(fileRule, base) {
+				fmt.Printf("[Filters] Skipping %s (pattern %s disabled)\n", base, fileRule)
+				skip = true
+				break
 			}
 		}
 
