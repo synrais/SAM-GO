@@ -12,7 +12,7 @@ import (
 
 	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
-    "github.com/synrais/SAM-GO/pkg/input"
+	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
@@ -507,59 +507,15 @@ func updateGameIndex(systemID string, files []string) {
 }
 
 // -----------------------------
-// Timestamp helpers
+// Timestamp helpers (modtime version only)
 // -----------------------------
 
-type systemTimestamps map[string]map[string]time.Time
-
-func loadSavedTimestamps(dir string) (systemTimestamps, error) {
-	path := filepath.Join(dir, "timestamps.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return make(systemTimestamps), nil
-	}
-	var ts systemTimestamps
-	if err := json.Unmarshal(data, &ts); err != nil {
-		return make(systemTimestamps), err
-	}
-	return ts, nil
-}
-
-func saveTimestamps(dir string, ts systemTimestamps) error {
-	path := filepath.Join(dir, "timestamps.json")
-	data, err := json.MarshalIndent(ts, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0644)
-}
-
-func isFolderModified(systemID, path string, ts systemTimestamps) (bool, time.Time, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false, time.Time{}, err
-	}
-	modTime := info.ModTime()
-	prev := ts[systemID][path]
-	return modTime.After(prev), modTime, nil
-}
-
-func updateTimestamp(ts systemTimestamps, systemID, path string, modTime time.Time) systemTimestamps {
-	if ts[systemID] == nil {
-		ts[systemID] = make(map[string]time.Time)
-	}
-	ts[systemID][path] = modTime
-	return ts
-}
-
-// SavedTimestamp holds last modified time of a system path.
 type SavedTimestamp struct {
 	SystemID string    `json:"system_id"`
 	Path     string    `json:"path"`
 	ModTime  time.Time `json:"mod_time"`
 }
 
-// saveTimestamps writes all tracked system path modtimes to disk.
 func saveTimestamps(gamelistDir string, timestamps []SavedTimestamp) error {
 	data, err := json.MarshalIndent(timestamps, "", "  ")
 	if err != nil {
@@ -572,8 +528,6 @@ func saveTimestamps(gamelistDir string, timestamps []SavedTimestamp) error {
 	return nil
 }
 
-// loadSavedTimestamps loads all saved modtimes from disk.
-// Returns an empty slice if no file exists.
 func loadSavedTimestamps(gamelistDir string) ([]SavedTimestamp, error) {
 	path := filepath.Join(gamelistDir, "Modtime")
 	data, err := os.ReadFile(path)
@@ -590,14 +544,11 @@ func loadSavedTimestamps(gamelistDir string) ([]SavedTimestamp, error) {
 	return timestamps, nil
 }
 
-// isFolderModified checks if a folder or any subfolder was modified
-// since the last saved timestamp. Only considers directories, not files.
 func isFolderModified(systemID, path string, saved []SavedTimestamp) (bool, time.Time, error) {
 	var latestMod time.Time
 
 	err := filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
-			// skip problematic subdirs
 			return nil
 		}
 		if !d.IsDir() {
@@ -620,18 +571,15 @@ func isFolderModified(systemID, path string, saved []SavedTimestamp) (bool, time
 		return false, time.Time{}, fmt.Errorf("[Modtime] Walk failed for %s: %w", path, err)
 	}
 
-	// Compare against saved record
 	for _, ts := range saved {
 		if ts.SystemID == systemID && ts.Path == path {
 			return latestMod.After(ts.ModTime), latestMod, nil
 		}
 	}
 
-	// No record yet → treat as modified
 	return true, latestMod, nil
 }
 
-// updateTimestamp updates or inserts a system path record with the given modtime.
 func updateTimestamp(list []SavedTimestamp, systemID, path string, mod time.Time) []SavedTimestamp {
 	for i, ts := range list {
 		if ts.SystemID == systemID && ts.Path == path {
