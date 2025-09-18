@@ -395,4 +395,3 @@ func Run(cfg *config.UserConfig, args []string) {
 		cache.SetList(listKey, lines)
 	}
 }
-
