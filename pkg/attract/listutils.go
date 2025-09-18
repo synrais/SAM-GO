@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/synrais/SAM-GO/pkg/cache"
-	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 // gamelistFilename returns the standard filename for a system's gamelist.
