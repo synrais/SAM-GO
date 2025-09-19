@@ -31,7 +31,7 @@ import (
 //    - If all games exhausted, refresh from cache
 //
 // The loop continues indefinitely until killed (Ctrl+C).
-func RunAttract(cfg *config.SAMConfig, args []string) {
+func RunAttract(cfg *config.UserConfig, args []string) {
 	attractCfg := cfg.Attract
 
 	// 1. Ensure gamelists are built (or refreshed).
