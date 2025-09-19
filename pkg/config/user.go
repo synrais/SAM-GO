@@ -18,6 +18,13 @@ type PlayLogConfig struct {
 	OnGameStop  string `ini:"on_game_stop,omitempty"`
 }
 type RandomConfig struct{}
+type LastPlayedConfig struct {
+	Name                string `ini:"name,omitempty"`
+	LastPlayedName      string `ini:"last_played_name,omitempty"`
+	DisableLastPlayed   bool   `ini:"disable_last_played,omitempty"`
+	RecentFolderName    string `ini:"recent_folder_name,omitempty"`
+	DisableRecentFolder bool   `ini:"disable_recent_folder,omitempty"`
+}
 type SearchConfig struct {
 	Filter []string `ini:"filter,omitempty" delim:","`
 	Sort   string   `ini:"sort,omitempty"`
@@ -107,6 +114,7 @@ type UserConfig struct {
 	PlayLog        PlayLogConfig           `ini:"playlog,omitempty"`
 	Random         RandomConfig            `ini:"random,omitempty"`
 	Search         SearchConfig            `ini:"search,omitempty"`
+	LastPlayed     LastPlayedConfig        `ini:"lastplayed,omitempty"`
 	Remote         RemoteConfig            `ini:"remote,omitempty"`
 	Nfc            NfcConfig               `ini:"nfc,omitempty"`
 	Systems        SystemsConfig           `ini:"systems,omitempty"`
