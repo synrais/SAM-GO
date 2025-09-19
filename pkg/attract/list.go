@@ -37,7 +37,7 @@ import (
 // 8. Print summary of build results.
 //
 // Returns the total number of games indexed across all systems.
-func CreateGamelists(cfg *config.SAMConfig,
+func CreateGamelists(cfg *config.UserConfig,
 	gamelistDir string,
 	systemPaths []games.PathResult,
 	quiet bool) int {
