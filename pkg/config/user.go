@@ -1,13 +1,8 @@
-
 package config
 
-import (
-	"os"
-	"path/filepath"
+import "path/filepath"
 
-	"gopkg.in/ini.v1"
-)
-
+// --- Config Structs (original) ---
 type LaunchSyncConfig struct{}
 
 type PlayLogConfig struct {
@@ -23,14 +18,6 @@ type RandomConfig struct{}
 type SearchConfig struct {
 	Filter []string `ini:"filter,omitempty" delim:","`
 	Sort   string   `ini:"sort,omitempty"`
-}
-
-type LastPlayedConfig struct {
-	Name                string `ini:"name,omitempty"`
-	LastPlayedName      string `ini:"last_played_name,omitempty"`
-	DisableLastPlayed   bool   `ini:"disable_last_played,omitempty"`
-	RecentFolderName    string `ini:"recent_folder_name,omitempty"`
-	DisableRecentFolder bool   `ini:"disable_recent_folder,omitempty"`
 }
 
 type RemoteConfig struct {
@@ -52,52 +39,95 @@ type SystemsConfig struct {
 	SetCore     []string `ini:"set_core,omitempty,allowshadow"`
 }
 
+// --- SAM-Specific Config Structs ---
+type AttractConfig struct {
+	PlayTime          string   `ini:"playtime,omitempty"`
+	Random            bool     `ini:"random,omitempty"`
+	Include           []string `ini:"include,omitempty" delim:","`
+	Exclude           []string `ini:"exclude,omitempty" delim:","`
+	UseStaticDetector bool     `ini:"usestaticdetector,omitempty"`
+}
+
+type ListConfig struct {
+	RamOnly           bool     `ini:"ramonly,omitempty"`
+	Exclude           []string `ini:"exclude,omitempty" delim:","`
+
+	UseBlacklist      bool     `ini:"useblacklist,omitempty"`
+	BlacklistInclude  []string `ini:"blacklist_include,omitempty" delim:","`
+	BlacklistExclude  []string `ini:"blacklist_exclude,omitempty" delim:","`
+
+	UseStaticlist     bool     `ini:"usestaticlist,omitempty"`
+	StaticlistInclude []string `ini:"staticlist_include,omitempty" delim:","`
+	StaticlistExclude []string `ini:"staticlist_exclude,omitempty" delim:","`
+	SkipafterStatic   int      `ini:"skipafterstatic,omitempty"`
+
+	UseWhitelist      bool     `ini:"usewhitelist,omitempty"`
+	WhitelistInclude  []string `ini:"whitelist_include,omitempty" delim:","`
+	WhitelistExclude  []string `ini:"whitelist_exclude,omitempty" delim:","`
+}
+
+type DisableRules struct {
+	Folders    []string `ini:"folders,omitempty" delim:","`
+	Files      []string `ini:"files,omitempty" delim:","`
+	Extensions []string `ini:"extensions,omitempty" delim:","`
+}
+
+type StaticDetectorOverride struct {
+	BlackThreshold  *float64 `ini:"blackthreshold,omitempty"`
+	StaticThreshold *float64 `ini:"staticthreshold,omitempty"`
+	SkipBlack       *bool    `ini:"skipblack,omitempty"`
+	WriteBlackList  *bool    `ini:"writeblacklist,omitempty"`
+	SkipStatic      *bool    `ini:"skipstatic,omitempty"`
+	WriteStaticList *bool    `ini:"writestaticlist,omitempty"`
+	Grace           *float64 `ini:"grace,omitempty"`
+}
+
+type StaticDetectorConfig struct {
+	BlackThreshold  float64                           `ini:"blackthreshold,omitempty"`
+	StaticThreshold float64                           `ini:"staticthreshold,omitempty"`
+	SkipBlack       bool                              `ini:"skipblack,omitempty"`
+	WriteBlackList  bool                              `ini:"writeblacklist,omitempty"`
+	SkipStatic      bool                              `ini:"skipstatic,omitempty"`
+	WriteStaticList bool                              `ini:"writestaticlist,omitempty"`
+	Grace           float64                           `ini:"grace,omitempty"`
+	Systems         map[string]StaticDetectorOverride `ini:"-"`
+}
+
+type InputDetectorConfig struct {
+	Mouse       bool              `ini:"mouse,omitempty"`
+	Keyboard    bool              `ini:"keyboard,omitempty"`
+	Joystick    bool              `ini:"joystick,omitempty"`
+	KeyboardMap map[string]string `ini:"-"`
+	MouseMap    map[string]string `ini:"-"`
+	JoystickMap map[string]string `ini:"-"`
+}
+
+// --- Root Config ---
 type UserConfig struct {
-	AppPath    string
-	IniPath    string
-	LaunchSync LaunchSyncConfig `ini:"launchsync,omitempty"`
-	PlayLog    PlayLogConfig    `ini:"playlog,omitempty"`
-	Random     RandomConfig     `ini:"random,omitempty"`
-	Search     SearchConfig     `ini:"search,omitempty"`
-	LastPlayed LastPlayedConfig `ini:"lastplayed,omitempty"`
-	Remote     RemoteConfig     `ini:"remote,omitempty"`
-	Nfc        NfcConfig        `ini:"nfc,omitempty"`
-	Systems    SystemsConfig    `ini:"systems,omitempty"`
+	AppPath        string
+	IniPath        string
+	LaunchSync     LaunchSyncConfig        `ini:"launchsync,omitempty"`
+	PlayLog        PlayLogConfig           `ini:"playlog,omitempty"`
+	Random         RandomConfig            `ini:"random,omitempty"`
+	Search         SearchConfig            `ini:"search,omitempty"`
+	Remote         RemoteConfig            `ini:"remote,omitempty"`
+	Nfc            NfcConfig               `ini:"nfc,omitempty"`
+	Systems        SystemsConfig           `ini:"systems,omitempty"`
+	Attract        AttractConfig           `ini:"attract,omitempty"`
+	StaticDetector StaticDetectorConfig    `ini:"staticdetector,omitempty"`
+	InputDetector  InputDetectorConfig     `ini:"inputdetector,omitempty"`
+	List           ListConfig              `ini:"list,omitempty"`
+	Disable        map[string]DisableRules `ini:"-"`
 }
 
-func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error) {
-	iniPath := os.Getenv(UserConfigEnv)
-
-	exePath, err := os.Executable()
+// --- Directory Helpers ---
+func BaseDir() string {
+	exe, err := os.Executable()
 	if err != nil {
-		return defaultConfig, err
+		cwd, _ := os.Getwd()
+		return cwd
 	}
-
-	appPath := os.Getenv(UserAppPathEnv)
-	if appPath != "" {
-		exePath = appPath
-	}
-
-	if iniPath == "" {
-		iniPath = filepath.Join(filepath.Dir(exePath), name+".ini")
-	}
-
-	defaultConfig.AppPath = exePath
-	defaultConfig.IniPath = iniPath
-
-	if _, err := os.Stat(iniPath); os.IsNotExist(err) {
-		return defaultConfig, nil
-	}
-
-	cfg, err := ini.ShadowLoad(iniPath)
-	if err != nil {
-		return defaultConfig, err
-	}
-
-	err = cfg.StrictMapTo(defaultConfig)
-	if err != nil {
-		return defaultConfig, err
-	}
-
-	return defaultConfig, nil
+	return filepath.Dir(exe)
 }
+func GamelistDir() string   { return filepath.Join(BaseDir(), "SAM_Gamelists") }
+func FilterlistDir() string { return filepath.Join(GamelistDir(), "SAM_Filterlists") }
