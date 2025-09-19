@@ -15,7 +15,7 @@ import (
 // configuration. When a configured event is seen the matching action is
 // executed. If no custom action is configured the default behaviour uses the
 // provided back and next callbacks for left and right events respectively.
-func RelayInputs(cfg *config.SAMConfig, back func(), next func()) {
+func RelayInputs(cfg *config.UserConfig, back func(), next func()) {
 	if cfg == nil {
 		return
 	}
