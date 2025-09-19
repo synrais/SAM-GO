@@ -8,8 +8,8 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-// LoadUserConfig loads SAM.ini into a UserConfig, falling back to defaults.
-func LoadUserConfig(name string, defaults *UserConfig) (*UserConfig, error) {
+// LoadSAMConfig loads SAM.ini into a SAMConfig, falling back to defaults.
+func LoadSAMConfig(name string, defaults *SAMConfig) (*SAMConfig, error) {
 	iniPath := os.Getenv(UserConfigEnv)
 
 	exePath, err := os.Executable()
@@ -24,7 +24,7 @@ func LoadUserConfig(name string, defaults *UserConfig) (*UserConfig, error) {
 		iniPath = filepath.Join(filepath.Dir(exePath), name+".ini")
 	}
 
-	// Seed defaults
+	// Seed with defaults
 	defaults.AppPath = exePath
 	defaults.IniPath = iniPath
 
