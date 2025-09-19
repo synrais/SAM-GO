@@ -65,7 +65,7 @@ type InputDetectorConfig struct {
 }
 
 // --- Root SAM Config Struct ---
-type UserConfig struct {
+type SAMConfig struct {
 	AppPath        string
 	IniPath        string
 	Attract        AttractConfig           `ini:"attract,omitempty"`
@@ -76,8 +76,8 @@ type UserConfig struct {
 }
 
 // --- Default Config Constructor ---
-func NewDefaultConfig() *UserConfig {
-	return &UserConfig{
+func NewDefaultSAMConfig() *SAMConfig {
+	return &SAMConfig{
 		Attract: AttractConfig{
 			PlayTime: "40",
 			Random:   true,
