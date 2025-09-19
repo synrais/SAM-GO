@@ -1,4 +1,4 @@
-package bgm
+package attract
 
 import (
 	"bufio"
