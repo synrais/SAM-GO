@@ -191,7 +191,7 @@ func ParsePlayTime(value string, r *rand.Rand) time.Duration {
 }
 
 // Disabled checks if a game should be blocked by rules
-func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
+func Disabled(systemID string, gamePath string, cfg *config.SAMConfig) bool {
 	rules, ok := cfg.Disable[systemID]
 	if !ok {
 		return false
@@ -306,7 +306,7 @@ func FilterUniqueWithMGL(files []string) []string {
 	return result
 }
 
-func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConfig) []string {
+func FilterFoldersAndFiles(files []string, systemID string, cfg *config.SAMConfig) []string {
 	var folders, patterns []string
 
 	if global, ok := cfg.Disable["all"]; ok {
@@ -360,7 +360,7 @@ func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConf
 	return filtered
 }
 
-func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) []string {
+func FilterExtensions(files []string, systemID string, cfg *config.SAMConfig) []string {
 	var rules []string
 	sysKey := strings.ToLower(systemID)
 
@@ -401,7 +401,7 @@ func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) [
 // -----------------------------
 
 // Apply Filterlists with per-category counts
-func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
+func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.SAMConfig) ([]string, map[string]int, bool) {
 	filterBase := config.FilterlistDir()
 	hadLists := false
 	counts := map[string]int{"White": 0, "Black": 0, "Static": 0, "Folder": 0, "File": 0}
