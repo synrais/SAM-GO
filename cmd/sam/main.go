@@ -53,7 +53,7 @@ func main() {
 	iniPath := ensureIni()
 
 	// Load config (with defaults)
-	cfg, err := config.LoadUserConfig("SAM", config.NewDefaultConfig())
+	cfg, err := config.LoadUserConfig("SAM", config.UserConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[MAIN] Config load error:", err)
 		os.Exit(1)
