@@ -8,13 +8,13 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-// LoadSAMConfig loads SAM.ini into a SAMConfig, falling back to defaults.
-func LoadSAMConfig(name string, defaults *SAMConfig) (*SAMConfig, error) {
+// LoadUserConfig loads SAM.ini into a UserConfig, applying defaults.
+func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error) {
 	iniPath := os.Getenv(UserConfigEnv)
 
 	exePath, err := os.Executable()
 	if err != nil {
-		return defaults, err
+		return defaultConfig, err
 	}
 	appPath := os.Getenv(UserAppPathEnv)
 	if appPath != "" {
@@ -24,17 +24,52 @@ func LoadSAMConfig(name string, defaults *SAMConfig) (*SAMConfig, error) {
 		iniPath = filepath.Join(filepath.Dir(exePath), name+".ini")
 	}
 
-	// Seed with defaults
-	defaults.AppPath = exePath
-	defaults.IniPath = iniPath
+	// Defaults
+	defaultConfig.AppPath = exePath
+	defaultConfig.IniPath = iniPath
+	if defaultConfig.Disable == nil {
+		defaultConfig.Disable = make(map[string]DisableRules)
+	}
+	if defaultConfig.StaticDetector.Systems == nil {
+		defaultConfig.StaticDetector.Systems = make(map[string]StaticDetectorOverride)
+	}
+	if defaultConfig.InputDetector.KeyboardMap == nil {
+		defaultConfig.InputDetector.KeyboardMap = map[string]string{"left": "back", "right": "next", "`": "search"}
+	}
+	if defaultConfig.InputDetector.MouseMap == nil {
+		defaultConfig.InputDetector.MouseMap = map[string]string{"swipeleft": "back", "swiperight": "next"}
+	}
+	if defaultConfig.InputDetector.JoystickMap == nil {
+		defaultConfig.InputDetector.JoystickMap = map[string]string{"dpleft": "back", "dpright": "next", "leftx-": "back", "leftx+": "next"}
+	}
+	if defaultConfig.StaticDetector.BlackThreshold == 0 {
+		defaultConfig.StaticDetector.BlackThreshold = 30
+	}
+	if defaultConfig.StaticDetector.StaticThreshold == 0 {
+		defaultConfig.StaticDetector.StaticThreshold = 30
+	}
+	if defaultConfig.StaticDetector.Grace == 0 {
+		defaultConfig.StaticDetector.Grace = 25
+	}
+	if defaultConfig.Attract.PlayTime == "" {
+		defaultConfig.Attract.PlayTime = "40"
+	}
+	if defaultConfig.List.SkipafterStatic == 0 {
+		defaultConfig.List.SkipafterStatic = 10
+	}
+	defaultConfig.Attract.Random = true
+	defaultConfig.StaticDetector.SkipBlack = true
+	defaultConfig.StaticDetector.WriteBlackList = true
+	defaultConfig.StaticDetector.SkipStatic = true
+	defaultConfig.StaticDetector.WriteStaticList = true
 
-	// Load INI
+	// Parse INI
 	cfg, err := ini.ShadowLoad(iniPath)
 	if err != nil {
-		return defaults, err
+		return defaultConfig, err
 	}
 
-	// Normalize keys/sections to lowercase
+	// Normalize case-insensitive keys
 	for _, section := range cfg.Sections() {
 		origName := section.Name()
 		lowerName := strings.ToLower(origName)
@@ -52,9 +87,8 @@ func LoadSAMConfig(name string, defaults *SAMConfig) (*SAMConfig, error) {
 		}
 	}
 
-	// Overlay INI values onto defaults
-	if err := cfg.MapTo(defaults); err != nil {
-		return defaults, err
+	if err := cfg.MapTo(defaultConfig); err != nil {
+		return defaultConfig, err
 	}
 
 	// Normalize include/exclude lists
@@ -69,34 +103,34 @@ func LoadSAMConfig(name string, defaults *SAMConfig) (*SAMConfig, error) {
 		}
 		return result
 	}
-	defaults.Attract.Include = normalizeList(defaults.Attract.Include)
-	defaults.Attract.Exclude = normalizeList(defaults.Attract.Exclude)
-	defaults.List.Exclude = normalizeList(defaults.List.Exclude)
-	defaults.List.BlacklistInclude = normalizeList(defaults.List.BlacklistInclude)
-	defaults.List.BlacklistExclude = normalizeList(defaults.List.BlacklistExclude)
-	defaults.List.StaticlistInclude = normalizeList(defaults.List.StaticlistInclude)
-	defaults.List.StaticlistExclude = normalizeList(defaults.List.StaticlistExclude)
-	defaults.List.WhitelistInclude = normalizeList(defaults.List.WhitelistInclude)
-	defaults.List.WhitelistExclude = normalizeList(defaults.List.WhitelistExclude)
+	defaultConfig.Attract.Include = normalizeList(defaultConfig.Attract.Include)
+	defaultConfig.Attract.Exclude = normalizeList(defaultConfig.Attract.Exclude)
+	defaultConfig.List.Exclude = normalizeList(defaultConfig.List.Exclude)
+	defaultConfig.List.BlacklistInclude = normalizeList(defaultConfig.List.BlacklistInclude)
+	defaultConfig.List.BlacklistExclude = normalizeList(defaultConfig.List.BlacklistExclude)
+	defaultConfig.List.StaticlistInclude = normalizeList(defaultConfig.List.StaticlistInclude)
+	defaultConfig.List.StaticlistExclude = normalizeList(defaultConfig.List.StaticlistExclude)
+	defaultConfig.List.WhitelistInclude = normalizeList(defaultConfig.List.WhitelistInclude)
+	defaultConfig.List.WhitelistExclude = normalizeList(defaultConfig.List.WhitelistExclude)
 
-	// Input device overrides
+	// Device-specific overrides
 	if sec, err := cfg.GetSection("inputdetector.keyboard"); err == nil {
 		for _, key := range sec.Keys() {
-			defaults.InputDetector.KeyboardMap[strings.ToLower(key.Name())] = key.Value()
+			defaultConfig.InputDetector.KeyboardMap[strings.ToLower(key.Name())] = key.Value()
 		}
 	}
 	if sec, err := cfg.GetSection("inputdetector.mouse"); err == nil {
 		for _, key := range sec.Keys() {
-			defaults.InputDetector.MouseMap[strings.ToLower(key.Name())] = key.Value()
+			defaultConfig.InputDetector.MouseMap[strings.ToLower(key.Name())] = key.Value()
 		}
 	}
 	if sec, err := cfg.GetSection("inputdetector.joystick"); err == nil {
 		for _, key := range sec.Keys() {
-			defaults.InputDetector.JoystickMap[strings.ToLower(key.Name())] = key.Value()
+			defaultConfig.InputDetector.JoystickMap[strings.ToLower(key.Name())] = key.Value()
 		}
 	}
 
-	// Parse disable.* and staticdetector.* overrides
+	// Disable.* and staticdetector.* overrides
 	for _, section := range cfg.Sections() {
 		secName := strings.ToLower(section.Name())
 		switch {
@@ -104,7 +138,7 @@ func LoadSAMConfig(name string, defaults *SAMConfig) (*SAMConfig, error) {
 			sys := strings.TrimPrefix(secName, "disable.")
 			var rules DisableRules
 			_ = section.MapTo(&rules)
-			defaults.Disable[sys] = rules
+			defaultConfig.Disable[sys] = rules
 		case strings.HasPrefix(secName, "staticdetector."):
 			sys := strings.TrimPrefix(secName, "staticdetector.")
 			var sc StaticDetectorOverride
@@ -136,23 +170,9 @@ func LoadSAMConfig(name string, defaults *SAMConfig) (*SAMConfig, error) {
 				v, _ := section.Key("grace").Float64()
 				sc.Grace = &v
 			}
-			defaults.StaticDetector.Systems[sys] = sc
+			defaultConfig.StaticDetector.Systems[sys] = sc
 		}
 	}
 
-	return defaults, nil
+	return defaultConfig, nil
 }
-
-// --- Directory helpers ---
-
-func BaseDir() string {
-	exe, err := os.Executable()
-	if err != nil {
-		cwd, _ := os.Getwd()
-		return cwd
-	}
-	return filepath.Dir(exe)
-}
-
-func GamelistDir() string   { return filepath.Join(BaseDir(), "SAM_Gamelists") }
-func FilterlistDir() string { return filepath.Join(GamelistDir(), "SAM_Filterlists") }
