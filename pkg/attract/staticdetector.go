@@ -183,7 +183,7 @@ func (e StaticEvent) String() string {
 }
 
 // Stream launches the static screen detector and streams events (singleton).
-func Stream(cfg *config.SAMConfig, skipChan chan<- struct{}) <-chan StaticEvent {
+func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent {
 	streamOnce.Do(func() {
 		streamCh = make(chan StaticEvent, 1)
 		skipCh = skipChan
