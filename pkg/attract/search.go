@@ -21,58 +21,18 @@ func SearchAndPlay(inputCh <-chan string) {
 	var candidates []GameEntry
 	idx := -1
 
+	// get input map
+	inputMap := SearchInputMap(&sb, &candidates, &idx, index)
+
 	for ev := range inputCh {
-		switch ev {
-		case "SPACE":
-			sb.WriteRune(' ')
-			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
-
-		case "ENTER":
-			qn, qext := utils.NormalizeEntry(sb.String())
-			if qext != "" {
-				fmt.Printf("[SEARCH] Looking for: %q (.%s)\n", sb.String(), qext)
-			} else {
-				fmt.Printf("[SEARCH] Looking for: %q\n", sb.String())
+		evLower := strings.ToLower(ev)
+		if action, ok := inputMap[evLower]; ok {
+			// mapped input → run action
+			if exit := action(); exit {
+				// ESC exits search, return to attract loop
+				return
 			}
-
-			if qn != "" {
-				fmt.Printf("[SEARCH] Searching... (%d titles)\n", len(index))
-				candidates = findMatches(qn, qext, index)
-				if len(candidates) > 0 {
-					idx = 0
-					launchGame(candidates[idx])
-				} else {
-					fmt.Println("[SEARCH] No match found")
-				}
-			}
-			sb.Reset()
-			fmt.Println("[SEARCH] Ready. Use ←/→ to browse, ESC to exit.")
-
-		case "ESC":
-			fmt.Println("[SEARCH] Exiting search mode (Attract resumed).")
-			return
-
-		case "BACKSPACE":
-			s := sb.String()
-			if len(s) > 0 {
-				sb.Reset()
-				sb.WriteString(s[:len(s)-1])
-			}
-			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
-
-		case "LEFT":
-			if len(candidates) > 0 && idx > 0 {
-				idx--
-				launchGame(candidates[idx])
-			}
-
-		case "RIGHT":
-			if len(candidates) > 0 && idx < len(candidates)-1 {
-				idx++
-				launchGame(candidates[idx])
-			}
-
-		default:
+		} else {
 			// handle single-character inputs like a–z, 0–9, punctuation
 			if len(ev) == 1 {
 				sb.WriteString(ev)
