@@ -85,6 +85,15 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 	// Input map
 	inputMap := AttractInputMap(cfg, r, timer, inputCh)
 
+	// Static detector skip channel
+	skipCh := make(chan struct{}, 1)
+	go func() {
+		events := Stream(cfg, skipCh)
+		for e := range events {
+			fmt.Printf("[StaticDetector] %s\n", e.String())
+		}
+	}()
+
 	// Event loop
 	for {
 		select {
@@ -92,6 +101,13 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 			// Advance automatically
 			if _, ok := Next(timer, cfg, r); !ok {
 				fmt.Println("[Attract] Failed to pick next game.")
+			}
+			timer.Reset(ParsePlayTime(cfg.Attract.PlayTime, r))
+
+		case <-skipCh:
+			// Static detector requested skip
+			if _, ok := Next(timer, cfg, r); ok {
+				fmt.Println("[Attract] StaticDetector -> skipped to next game.")
 			}
 			timer.Reset(ParsePlayTime(cfg.Attract.PlayTime, r))
 
