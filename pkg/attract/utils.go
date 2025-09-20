@@ -18,18 +18,6 @@ import (
 )
 
 // -----------------------------
-// Types
-// -----------------------------
-
-// GameEntry represents one indexed game file.
-type GameEntry struct {
-	SystemID string `json:"system_id"`
-	Name     string `json:"name"`
-	Ext      string `json:"ext"`
-	Path     string `json:"path"`
-}
-
-// -----------------------------
 // Case-insensitive helpers
 // -----------------------------
 
@@ -185,7 +173,6 @@ func matchRule(rule, candidate string) bool {
 // Extra helpers from attract.go
 // -----------------------------
 
-// ParsePlayTime handles "40" or "40-130".
 func ParsePlayTime(value string, r *rand.Rand) time.Duration {
 	if strings.Contains(value, "-") {
 		parts := strings.SplitN(value, "-", 2)
@@ -200,7 +187,6 @@ func ParsePlayTime(value string, r *rand.Rand) time.Duration {
 	return time.Duration(secs) * time.Second
 }
 
-// Disabled checks if a game should be blocked by rules.
 func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 	rules, ok := cfg.Disable[systemID]
 	if !ok {
@@ -229,7 +215,6 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 	return false
 }
 
-// GetSystemsByCategory retrieves systems by category (Console, Handheld, Arcade, etc.).
 func GetSystemsByCategory(category string) ([]string, error) {
 	var systemIDs []string
 	for _, systemID := range games.AllSystems() {
@@ -243,7 +228,6 @@ func GetSystemsByCategory(category string) ([]string, error) {
 	return systemIDs, nil
 }
 
-// ExpandGroups expands category/group names into system IDs.
 func ExpandGroups(systemIDs []string) ([]string, error) {
 	var expanded []string
 	for _, systemID := range systemIDs {
@@ -271,7 +255,6 @@ func ExpandGroups(systemIDs []string) ([]string, error) {
 	return expanded, nil
 }
 
-// FilterAllowed applies include/exclude restrictions case-insensitively.
 func FilterAllowed(all []string, include, exclude []string) []string {
 	var filtered []string
 	for _, sys := range all {
@@ -410,7 +393,6 @@ func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) [
 // Filterlist runners
 // -----------------------------
 
-// ApplyFilterlists with per-category counts.
 func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
 	filterBase := config.FilterlistDir()
 	hadLists := false
@@ -532,7 +514,6 @@ func countGames(master []string) int {
 	return count
 }
 
-// updateGameIndex builds GameEntry objects and appends them into the cache.
 func updateGameIndex(systemID string, files []string) {
 	unique := utils.DedupeFiles(files)
 	for _, f := range unique {
