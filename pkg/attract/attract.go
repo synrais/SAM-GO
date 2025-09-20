@@ -81,7 +81,7 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 		fmt.Printf("[Attract] %s - %s <%s>\n",
 			time.Now().Format("15:04:05"), name, gamePath)
 
-		// ✅ Record in history only for attract-driven launches
+		// Record history + run game
 		Play(gamePath)
 		Run([]string{gamePath})
 
@@ -94,20 +94,48 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 			select {
 			case <-timer.C:
 				break loop // natural advance
+
 			case ev := <-inputCh:
 				switch strings.ToLower(ev) {
 				case "esc":
 					fmt.Println("[Attract] Exiting attract mode.")
 					return
-				case "space", "right", "button1":
+
+				case "space":
 					fmt.Println("[Attract] Skipped current game.")
 					break loop
+
+				case "right", "button1":
+					if next, ok := Next(); ok {
+						fmt.Println("[Attract] Going forward in history.")
+						Run([]string{next})
+
+						// reset timer
+						if !timer.Stop() {
+							select {
+							case <-timer.C:
+							default:
+							}
+						}
+						timer.Reset(ParsePlayTime(cfg.Attract.PlayTime, r))
+					} else {
+						fmt.Println("[Attract] Skipped current game.")
+						break loop
+					}
+
 				case "left", "button2":
 					if prev, ok := PlayBack(); ok {
 						fmt.Println("[Attract] Going back to previous game.")
-						Play(prev)            // ✅ record in history
-						Run([]string{prev})   // launch previous
-						break loop
+						Run([]string{prev})
+
+						// reset timer
+						if !timer.Stop() {
+							select {
+							case <-timer.C:
+							default:
+							}
+						}
+						timer.Reset(ParsePlayTime(cfg.Attract.PlayTime, r))
 					}
 				}
 			}
