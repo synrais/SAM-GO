@@ -16,16 +16,17 @@ import (
 )
 
 // RunAttract is the main entrypoint for Attract Mode.
+// It cycles through random games indefinitely until interrupted.
 func RunAttract(cfg *config.UserConfig, args []string) {
 	attractCfg := cfg.Attract
 
-	// 1. Ensure gamelists are built (or refreshed).
+	// 1. Ensure gamelists exist
 	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
 	if CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
 		fmt.Fprintln(os.Stderr, "[Attract] List build failed: no games indexed")
 	}
 
-	// 2. Load lists into cache memory for quick access.
+	// 2. Load gamelists into cache
 	for _, system := range games.AllSystems() {
 		files, _ := filepath.Glob(filepath.Join(config.GamelistDir(), "*_"+system.Id+"_gamelist.txt"))
 		for _, f := range files {
@@ -37,11 +38,11 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		}
 	}
 
-	// 3. Channels for navigation (skip/next/back).
+	// 3. Channels for skip/back
 	skipCh := make(chan struct{}, 1)
 	backCh := make(chan struct{}, 1)
 
-	// Optional silent flag for less logging.
+	// Silent flag
 	silent := false
 	for _, a := range args {
 		if a == "-s" || a == "--silent" {
@@ -49,18 +50,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		}
 	}
 
-	// 4a. Static detector watches for inactivity and pushes Skip events.
-	if attractCfg.UseStaticDetector {
-		go func() {
-			for ev := range Stream(cfg, skipCh) {
-				if !silent {
-					fmt.Printf("[Attract] %s\n", ev)
-				}
-			}
-		}()
-	}
-
-	// 4b. Input listeners (keyboard/mouse/joystick) for Skip/Back actions.
+	// 4. Input listeners
 	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
 		input.RelayInputs(cfg,
 			func() { select { case backCh <- struct{}{}: default: } },
@@ -68,7 +58,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		)
 	}
 
-	// 5. Collect gamelists in cache, apply include/exclude filters.
+	// 5. Collect gamelists
 	allKeys := cache.ListKeys()
 	var allFiles []string
 	for _, k := range allKeys {
@@ -99,7 +89,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		fmt.Println("[Attract] Running. Ctrl-C to exit.")
 	}
 
-	// Helper: play one game and handle skip/back/timer/search state.
+	// --- Helper: play one game ---
 	playGame := func(gamePath string, ts float64) {
 	Launch:
 		for {
@@ -111,7 +101,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 			}
 			Run([]string{gamePath})
 
-			// Decide how long to keep game running.
+			// How long to play
 			wait := ParsePlayTime(attractCfg.PlayTime, r)
 			if ts > 0 {
 				skipDuration := time.Duration(ts*float64(time.Second)) +
@@ -120,18 +110,17 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 					wait = skipDuration
 				}
 			}
-
 			timer := time.NewTimer(wait)
 
 			for {
-				// --- PAUSED (search) state handling ---
-				if utils.GetState() == utils.StateAttractPaused {
+				// If paused (search mode, etc.) → stall
+				if utils.AttractPaused {
 					timer.Stop()
 					time.Sleep(100 * time.Millisecond)
-					continue
+					continue Launch
 				}
 
-				// --- NORMAL ATTRACT LOOP ---
+				// Normal loop
 				select {
 				case <-timer.C:
 					if next, ok := PlayNext(); ok {
@@ -163,8 +152,9 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		}
 	}
 
-	// 6. Main attract loop: forever cycle.
+	// --- Main loop ---
 	for {
+		// Handle back/skip
 		select {
 		case <-backCh:
 			if prev, ok := PlayBack(); ok {
@@ -179,6 +169,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		default:
 		}
 
+		// Refill lists if empty
 		if len(files) == 0 {
 			if !silent {
 				fmt.Println("[Attract] All systems exhausted — refreshing from cache")
@@ -200,6 +191,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 			}
 		}
 
+		// Pick random system + game
 		listKey := files[r.Intn(len(files))]
 		lines := cache.GetList(listKey)
 		if len(lines) == 0 {
@@ -222,6 +214,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		Play(gamePath)
 		playGame(gamePath, ts)
 
+		// Remove from list
 		lines = append(lines[:index], lines[index+1:]...)
 		cache.SetList(listKey, lines)
 	}
