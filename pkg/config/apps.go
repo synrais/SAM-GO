@@ -21,4 +21,4 @@ const NfcLastScanFile = TempFolder + "/NFCSCAN"
 
 const GamesDb = SAMConfigFolder + "/games.db"
 
-const LastLaunchFile = SdFolder + "/.LASTLAUNCH.mgl"
+const LastLaunchFile = "/tmp/.LASTLAUNCH.mgl"
