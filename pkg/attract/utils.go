@@ -11,42 +11,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/mister"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-//
 // -----------------------------
-// Local Game Index (no pkg/input)
+// Types
 // -----------------------------
 
-// GameEntry describes a single game in the index.
+// GameEntry represents one indexed game file.
 type GameEntry struct {
 	Name string `json:"name"`
 	Ext  string `json:"ext"`
 	Path string `json:"path"`
 }
 
-// GameIndex is the global list of all games, built by attract.
-var GameIndex []GameEntry
-
-func updateGameIndex(systemID string, files []string) {
-	unique := utils.DedupeFiles(files)
-	for _, f := range unique {
-		name, ext := utils.NormalizeEntry(f)
-		entry := GameEntry{
-			Name: name,
-			Ext:  ext,
-			Path: f,
-		}
-		GameIndex = append(GameIndex, entry)
-	}
-}
-
-//
 // -----------------------------
 // Case-insensitive helpers
 // -----------------------------
@@ -74,7 +55,6 @@ func AllowedFor(system string, include, exclude []string) bool {
 	return true
 }
 
-//
 // -----------------------------
 // Filterlist readers
 // -----------------------------
@@ -124,7 +104,6 @@ func ReadStaticMap(path string) map[string]string {
 	return m
 }
 
-//
 // -----------------------------
 // Line helpers
 // -----------------------------
@@ -171,7 +150,6 @@ func ReadStaticTimestamp(systemID, game string) float64 {
 	return 0
 }
 
-//
 // -----------------------------
 // Matching helper
 // -----------------------------
@@ -202,12 +180,11 @@ func matchRule(rule, candidate string) bool {
 	return candidate == rule
 }
 
-//
 // -----------------------------
 // Extra helpers from attract.go
 // -----------------------------
 
-// ParsePlayTime handles "40" or "40-130"
+// ParsePlayTime handles "40" or "40-130".
 func ParsePlayTime(value string, r *rand.Rand) time.Duration {
 	if strings.Contains(value, "-") {
 		parts := strings.SplitN(value, "-", 2)
@@ -222,7 +199,7 @@ func ParsePlayTime(value string, r *rand.Rand) time.Duration {
 	return time.Duration(secs) * time.Second
 }
 
-// Disabled checks if a game should be blocked by rules
+// Disabled checks if a game should be blocked by rules.
 func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 	rules, ok := cfg.Disable[systemID]
 	if !ok {
@@ -251,7 +228,7 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 	return false
 }
 
-// GetSystemsByCategory retrieves systems by category (Console, Handheld, Arcade, etc.)
+// GetSystemsByCategory retrieves systems by category (Console, Handheld, Arcade, etc.).
 func GetSystemsByCategory(category string) ([]string, error) {
 	var systemIDs []string
 	for _, systemID := range games.AllSystems() {
@@ -311,7 +288,6 @@ func FilterAllowed(all []string, include, exclude []string) []string {
 	return filtered
 }
 
-//
 // -----------------------------
 // Filters
 // -----------------------------
@@ -429,11 +405,11 @@ func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) [
 	return filtered
 }
 
-//
 // -----------------------------
 // Filterlist runners
 // -----------------------------
 
+// ApplyFilterlists with per-category counts.
 func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
 	filterBase := config.FilterlistDir()
 	hadLists := false
@@ -498,11 +474,10 @@ func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.
 	lines = FilterUniqueWithMGL(lines)
 	counts["File"] = before - len(lines)
 
-	cache.SetList(systemID+"_gamelist.txt", lines)
+	SetList(systemID+"_gamelist.txt", lines)
 	return lines, counts, hadLists
 }
 
-//
 // -----------------------------
 // List + Masterlist helpers
 // -----------------------------
@@ -556,7 +531,20 @@ func countGames(master []string) int {
 	return count
 }
 
-//
+// updateGameIndex builds GameEntry objects and appends them into the cache.
+func updateGameIndex(systemID string, files []string) {
+	unique := utils.DedupeFiles(files)
+	for _, f := range unique {
+		name, ext := utils.NormalizeEntry(f)
+		entry := GameEntry{
+			Name: name,
+			Ext:  ext,
+			Path: f,
+		}
+		AppendGameIndex(entry)
+	}
+}
+
 // -----------------------------
 // Timestamp helpers
 // -----------------------------
@@ -645,7 +633,6 @@ func updateTimestamp(list []SavedTimestamp, systemID, path string, mod time.Time
 	})
 }
 
-//
 // -----------------------------
 // History navigation
 // -----------------------------
@@ -653,14 +640,14 @@ func updateTimestamp(list []SavedTimestamp, systemID, path string, mod time.Time
 var currentIndex int = -1
 
 func Play(path string) {
-	hist := cache.GetList("History.txt")
+	hist := GetList("History.txt")
 	hist = append(hist, path)
-	cache.SetList("History.txt", hist)
+	SetList("History.txt", hist)
 	currentIndex = len(hist) - 1
 }
 
 func Next() (string, bool) {
-	hist := cache.GetList("History.txt")
+	hist := GetList("History.txt")
 	if currentIndex >= 0 && currentIndex < len(hist)-1 {
 		currentIndex++
 		return hist[currentIndex], true
@@ -669,7 +656,7 @@ func Next() (string, bool) {
 }
 
 func Back() (string, bool) {
-	hist := cache.GetList("History.txt")
+	hist := GetList("History.txt")
 	if currentIndex > 0 {
 		currentIndex--
 		return hist[currentIndex], true
@@ -680,7 +667,6 @@ func Back() (string, bool) {
 func PlayNext() (string, bool) { return Next() }
 func PlayBack() (string, bool) { return Back() }
 
-//
 // -----------------------------
 // Game Runner / Now Playing
 // -----------------------------
@@ -723,6 +709,7 @@ func Run(args []string) error {
 	runPath := args[0]
 
 	system, _ := games.BestSystemMatch(&config.UserConfig{}, runPath)
+
 	setLastPlayed(system, runPath)
 
 	if err := writeNowPlayingFile(); err != nil {
@@ -730,5 +717,6 @@ func Run(args []string) error {
 	}
 
 	fmt.Printf("[RUN] Now Playing %s: %s\n", system.Name, LastPlayedName)
+
 	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
 }
