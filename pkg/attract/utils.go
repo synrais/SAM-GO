@@ -700,14 +700,14 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 
 //
 // -----------------------------
-// History navigation + Timer reset
+// History navigation + Ticker reset
 // -----------------------------
 //
 
 var currentIndex int = -1
 
 // Next moves forward in history if possible, otherwise picks a random game.
-// Always resets the global attract timer.
+// Always resets the global attract ticker.
 func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
 
@@ -716,7 +716,7 @@ func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 		currentIndex++
 		path := hist[currentIndex]
 		Run([]string{path})
-		resetGlobalTimer(cfg, r)
+		resetGlobalTicker(cfg, r)
 		return path, true
 	}
 
@@ -732,12 +732,12 @@ func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	currentIndex = len(hist) - 1
 
 	Run([]string{path})
-	resetGlobalTimer(cfg, r)
+	resetGlobalTicker(cfg, r)
 	return path, true
 }
 
 // Back moves backward in history if possible.
-// Always resets the global attract timer.
+// Always resets the global attract ticker.
 func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
 
@@ -745,7 +745,7 @@ func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 		currentIndex--
 		path := hist[currentIndex]
 		Run([]string{path})
-		resetGlobalTimer(cfg, r)
+		resetGlobalTicker(cfg, r)
 		return path, true
 	}
 
@@ -753,44 +753,49 @@ func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	return "", false
 }
 
-// resetGlobalTimer resets the singleton attract timer.
-func resetGlobalTimer(cfg *config.UserConfig, r *rand.Rand) {
+// resetGlobalTicker resets the singleton attract ticker.
+func resetGlobalTicker(cfg *config.UserConfig, r *rand.Rand) {
 	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
-	ResetAttractTimer(wait) // no utils. prefix anymore
+	ResetAttractTicker(wait)
 }
 
 //
 // -----------------------------
-// Global Attract Timer
+// Global Attract Ticker
 // -----------------------------
 //
 
-var attractTimer *time.Timer
-var attractTimerMu sync.Mutex
+var (
+	attractTicker     *time.Ticker
+	attractTickerStop chan struct{}
+	attractTickerMu   sync.Mutex
+)
 
-// ResetAttractTimer resets the global attract timer to the given duration.
-func ResetAttractTimer(d time.Duration) {
-	attractTimerMu.Lock()
-	defer attractTimerMu.Unlock()
+// ResetAttractTicker stops any existing ticker and starts a new one.
+func ResetAttractTicker(d time.Duration) {
+	attractTickerMu.Lock()
+	defer attractTickerMu.Unlock()
 
-	if attractTimer == nil {
-		attractTimer = time.NewTimer(d)
-	} else {
-		if !attractTimer.Stop() {
-			select {
-			case <-attractTimer.C:
-			default:
-			}
+	// Stop old ticker if running
+	if attractTicker != nil {
+		attractTicker.Stop()
+		if attractTickerStop != nil {
+			close(attractTickerStop)
 		}
-		attractTimer.Reset(d)
 	}
+
+	attractTicker = time.NewTicker(d)
+	attractTickerStop = make(chan struct{})
 }
 
-// GetAttractTimer safely returns the global attract timer.
-func GetAttractTimer() *time.Timer {
-	attractTimerMu.Lock()
-	defer attractTimerMu.Unlock()
-	return attractTimer
+// AttractTickerChan returns the current ticker channel.
+func AttractTickerChan() <-chan time.Time {
+	attractTickerMu.Lock()
+	defer attractTickerMu.Unlock()
+	if attractTicker != nil {
+		return attractTicker.C
+	}
+	return nil
 }
 
 //
