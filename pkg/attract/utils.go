@@ -235,6 +235,29 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 	return false
 }
 
+// PickRandomGame chooses a random game from the available files.
+func PickRandomGame(cfg *config.UserConfig, files []string, r *rand.Rand) string {
+    if len(files) == 0 {
+        return ""
+    }
+
+    // Pick random gamelist
+    listKey := files[r.Intn(len(files))]
+    lines, err := utils.ReadLines(listKey)
+    if err != nil || len(lines) == 0 {
+        return ""
+    }
+
+    // Pick random entry
+    index := 0
+    if cfg.Attract.Random {
+        index = r.Intn(len(lines))
+    }
+    _, gamePath := utils.ParseLine(lines[index])
+
+    return gamePath
+}
+
 //
 // -----------------------------
 // System/group helpers
