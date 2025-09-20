@@ -62,41 +62,24 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 	fmt.Println("[Attract] Running. Press ESC to exit.")
 
 	for {
-		// Pick random gamelist
-		listKey := files[r.Intn(len(files))]
-		lines, err := utils.ReadLines(listKey)
-		if err != nil || len(lines) == 0 {
+		// First pick / next pick handled by Next()
+		path, ok := Next(nil, cfg, r)
+		if !ok {
 			continue
 		}
-
-		// Pick random entry
-		index := 0
-		if cfg.Attract.Random {
-			index = r.Intn(len(lines))
-		}
-		_, gamePath := utils.ParseLine(lines[index])
-
-		name := filepath.Base(gamePath)
-		name = strings.TrimSuffix(name, filepath.Ext(name))
-		fmt.Printf("[Attract] %s - %s <%s>\n",
-			time.Now().Format("15:04:05"), name, gamePath)
-
-		// Record history + run game
-		Play(gamePath, nil, cfg, r) // first call, timer will be set later
-		Run([]string{gamePath})
 
 		// Start timer for this game
 		wait := ParsePlayTime(cfg.Attract.PlayTime, r)
 		timer := time.NewTimer(wait)
 
-		// Load input map (actions only, no resets)
+		// Load input map
 		inputMap := AttractInputMap(cfg, r, timer, inputCh)
 
 	loop:
 		for {
 			select {
 			case <-timer.C:
-				break loop // natural advance
+				break loop // auto-advance
 
 			case ev := <-inputCh:
 				evLower := strings.ToLower(ev)
