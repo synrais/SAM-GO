@@ -1,8 +1,8 @@
 package attract
 
 import (
-	"encoding/json"
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -14,11 +14,39 @@ import (
 	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
-	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/mister"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
+//
+// -----------------------------
+// Local Game Index (no pkg/input)
+// -----------------------------
+
+// GameEntry describes a single game in the index.
+type GameEntry struct {
+	Name string `json:"name"`
+	Ext  string `json:"ext"`
+	Path string `json:"path"`
+}
+
+// GameIndex is the global list of all games, built by attract.
+var GameIndex []GameEntry
+
+func updateGameIndex(systemID string, files []string) {
+	unique := utils.DedupeFiles(files)
+	for _, f := range unique {
+		name, ext := utils.NormalizeEntry(f)
+		entry := GameEntry{
+			Name: name,
+			Ext:  ext,
+			Path: f,
+		}
+		GameIndex = append(GameIndex, entry)
+	}
+}
+
+//
 // -----------------------------
 // Case-insensitive helpers
 // -----------------------------
@@ -46,6 +74,7 @@ func AllowedFor(system string, include, exclude []string) bool {
 	return true
 }
 
+//
 // -----------------------------
 // Filterlist readers
 // -----------------------------
@@ -95,6 +124,7 @@ func ReadStaticMap(path string) map[string]string {
 	return m
 }
 
+//
 // -----------------------------
 // Line helpers
 // -----------------------------
@@ -141,6 +171,7 @@ func ReadStaticTimestamp(systemID, game string) float64 {
 	return 0
 }
 
+//
 // -----------------------------
 // Matching helper
 // -----------------------------
@@ -171,6 +202,7 @@ func matchRule(rule, candidate string) bool {
 	return candidate == rule
 }
 
+//
 // -----------------------------
 // Extra helpers from attract.go
 // -----------------------------
@@ -279,6 +311,7 @@ func FilterAllowed(all []string, include, exclude []string) []string {
 	return filtered
 }
 
+//
 // -----------------------------
 // Filters
 // -----------------------------
@@ -396,11 +429,11 @@ func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) [
 	return filtered
 }
 
+//
 // -----------------------------
 // Filterlist runners
 // -----------------------------
 
-// Apply Filterlists with per-category counts
 func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
 	filterBase := config.FilterlistDir()
 	hadLists := false
@@ -469,6 +502,7 @@ func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.
 	return lines, counts, hadLists
 }
 
+//
 // -----------------------------
 // List + Masterlist helpers
 // -----------------------------
@@ -522,21 +556,9 @@ func countGames(master []string) int {
 	return count
 }
 
-func updateGameIndex(systemID string, files []string) {
-	unique := utils.DedupeFiles(files)
-	for _, f := range unique {
-		name, ext := utils.NormalizeEntry(f)
-		entry := input.GameEntry{
-			Name: name,
-			Ext:  ext,
-			Path: f,
-		}
-		input.GameIndex = append(input.GameIndex, entry)
-	}
-}
-
+//
 // -----------------------------
-// Timestamp helpers (modtime version only)
+// Timestamp helpers
 // -----------------------------
 
 type SavedTimestamp struct {
@@ -623,20 +645,13 @@ func updateTimestamp(list []SavedTimestamp, systemID, path string, mod time.Time
 	})
 }
 
+//
 // -----------------------------
 // History navigation
 // -----------------------------
-//
-// Provides a minimal forward/backward timeline of played
-// games. The history is persisted in cache, and this local
-// pointer (currentIndex) tracks where we are inside it.
-// -----------------------------
 
-// currentIndex points into the History timeline (in cache).
-// -1 means "no history yet".
 var currentIndex int = -1
 
-// Play records a game into history and sets the index to it.
 func Play(path string) {
 	hist := cache.GetList("History.txt")
 	hist = append(hist, path)
@@ -644,7 +659,6 @@ func Play(path string) {
 	currentIndex = len(hist) - 1
 }
 
-// Next moves forward in the history timeline.
 func Next() (string, bool) {
 	hist := cache.GetList("History.txt")
 	if currentIndex >= 0 && currentIndex < len(hist)-1 {
@@ -654,7 +668,6 @@ func Next() (string, bool) {
 	return "", false
 }
 
-// Back moves backward in the history timeline.
 func Back() (string, bool) {
 	hist := cache.GetList("History.txt")
 	if currentIndex > 0 {
@@ -664,37 +677,27 @@ func Back() (string, bool) {
 	return "", false
 }
 
-// PlayNext is a convenient alias for Next.
 func PlayNext() (string, bool) { return Next() }
-
-// PlayBack is a convenient alias for Back.
 func PlayBack() (string, bool) { return Back() }
 
+//
 // -----------------------------
 // Game Runner / Now Playing
-// -----------------------------
-//
-// Responsible for launching games via MiSTer,
-// updating the "Now Playing" file, and tracking
-// the last played system/game info.
 // -----------------------------
 
 const nowPlayingFile = "/tmp/Now_Playing.txt"
 
-// Globals for last played info
 var (
 	LastPlayedSystem games.System
 	LastPlayedPath   string
-	LastPlayedName   string // basename without extension
+	LastPlayedName   string
 	LastStartTime    time.Time
 )
 
-// GetLastPlayed returns the last system, path, clean name, and start time.
 func GetLastPlayed() (system games.System, path, name string, start time.Time) {
 	return LastPlayedSystem, LastPlayedPath, LastPlayedName, LastStartTime
 }
 
-// internal helper to update globals
 func setLastPlayed(system games.System, path string) {
 	LastPlayedSystem = system
 	LastPlayedPath = path
@@ -704,46 +707,28 @@ func setLastPlayed(system games.System, path string) {
 	LastPlayedName = strings.TrimSuffix(base, filepath.Ext(base))
 }
 
-// writeNowPlayingFile writes Now_Playing.txt with 3 lines:
-// [System Name] GameName
-// SystemID GameName.ext
-// /full/path/to/GameName.ext
 func writeNowPlayingFile() error {
-	// Line 1: Pretty system name + clean game name
 	line1 := fmt.Sprintf("[%s] %s", LastPlayedSystem.Name, LastPlayedName)
-
-	// Line 2: System ID + original file basename (with extension)
 	base := filepath.Base(LastPlayedPath)
 	line2 := fmt.Sprintf("%s %s", LastPlayedSystem.Id, base)
-
-	// Line 3: Full absolute path
 	line3 := LastPlayedPath
-
 	content := strings.Join([]string{line1, line2, line3}, "\n")
 	return os.WriteFile(nowPlayingFile, []byte(content), 0644)
 }
 
-// Run launches a game (normal file path).
 func Run(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("Usage: SAM -run <path>")
 	}
 	runPath := args[0]
 
-	// Match system based on path
 	system, _ := games.BestSystemMatch(&config.UserConfig{}, runPath)
-
-	// Update globals
 	setLastPlayed(system, runPath)
 
-	// Write Now_Playing.txt
 	if err := writeNowPlayingFile(); err != nil {
 		fmt.Printf("[RUN] Failed to write Now_Playing.txt: %v\n", err)
 	}
 
-	// Log "Now Playing"
 	fmt.Printf("[RUN] Now Playing %s: %s\n", system.Name, LastPlayedName)
-
-	// Launch game
 	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
 }
