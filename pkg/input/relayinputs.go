@@ -11,10 +11,10 @@ import (
 	"github.com/synrais/SAM-GO/pkg/config"
 )
 
-// RelayInputs starts listeners for keyboard, mouse and joystick input based on
-// configuration. When a configured event is seen the matching action is
-// executed. If no custom action is configured the default behaviour uses the
-// provided back and next callbacks for left and right events respectively.
+// RelayInputs starts listeners for keyboard, mouse and joystick input
+// based on configuration. When a configured event is seen the matching
+// action is executed. If no custom action is configured, the default
+// behaviour uses the provided back and next callbacks.
 func RelayInputs(cfg *config.UserConfig, back func(), next func()) {
 	if cfg == nil {
 		return
@@ -25,16 +25,15 @@ func RelayInputs(cfg *config.UserConfig, back func(), next func()) {
 		go func() {
 			re := regexp.MustCompile(`<([^>]+)>`)
 			for line := range StreamKeyboards() {
-				// Log exactly what StreamKeyboards gives us
-				fmt.Println("[KEY]", line)
+				fmt.Println("[KEY]", line) // raw debug
 
-				// Extract <tokens> like <enter>, <escape>, <f9>, etc.
+				// Extract <tokens> like <enter>, <escape>, etc.
 				for _, m := range re.FindAllStringSubmatch(line, -1) {
 					key := strings.ToLower(m[1])
 					performAction(cfg.InputDetector.KeyboardMap, key, back, next)
 				}
 
-				// Also forward any plain characters (a, b, c…) into actions
+				// Plain characters (a, b, c…)
 				clean := re.ReplaceAllString(line, "")
 				for _, r := range clean {
 					if r == '\n' || r == '\r' || r == ' ' {
@@ -123,21 +122,23 @@ func parseAxisValue(s string) int {
 }
 
 func performAction(m map[string]string, key string, back, next func()) {
-	if searching.Load() {
-		return
-	}
+	// Backtick always (re)starts search mode
 	if key == "`" {
 		fmt.Println("[INFO] Starting search mode…")
 		SearchAndPlay()
 		fmt.Println("[INFO] Exited search mode.")
 		return
 	}
+
+	// Mapped commands
 	if m != nil {
 		if cmd, ok := m[key]; ok {
 			runCommand(cmd, back, next)
 			return
 		}
 	}
+
+	// Defaults: left/back, right/next
 	switch key {
 	case "left", "dpleft", "leftx-", "rightx-":
 		if back != nil {
@@ -160,31 +161,14 @@ func runCommand(cmd string, back, next func()) {
 		if back != nil {
 			back()
 		}
-		return
 	case "next":
 		if next != nil {
 			next()
 		}
-		return
 	case "search":
 		fmt.Println("[INFO] Starting search mode (via runCommand)…")
 		SearchAndPlay()
 		fmt.Println("[INFO] Exited search mode (via runCommand).")
-		return
-	case "history":
-		if len(parts) > 1 {
-			switch parts[1] {
-			case "-back":
-				if back != nil {
-					back()
-				}
-			case "-next":
-				if next != nil {
-					next()
-				}
-			}
-		}
-		return
 	}
 	c := exec.Command(parts[0], parts[1:]...)
 	c.Stdout = os.Stdout
