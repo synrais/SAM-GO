@@ -20,25 +20,25 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// ----------------------------
 		// Keyboard
 		// ----------------------------
-		"ESC": func() {
+		"<ESC>": func() {
 			fmt.Println("[Attract] Exiting attract mode.")
 			os.Exit(0)
 		},
-		"SPACE": func() {
+		"<SPACE>": func() {
 			fmt.Println("[Attract] Skipped current game.")
 		},
-		"`": func() {
+		"<`>": func() {
 			fmt.Println("[Attract] Entering search mode...")
 			SearchAndPlay(inputCh)
 			fmt.Println("[Attract] Resuming attract mode.")
 		},
-		"LEFT": func() {
+		"<LEFT>": func() {
 			if prev, ok := PlayBack(timer, cfg, r); ok {
 				fmt.Println("[Attract] Keyboard ← back in history.")
 				Run([]string{prev})
 			}
 		},
-		"RIGHT": func() {
+		"<RIGHT>": func() {
 			if next, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Keyboard → forward in history.")
 				Run([]string{next})
@@ -102,11 +102,11 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 		// ----------------------------
 		// Keyboard
 		// ----------------------------
-		"SPACE": func() {
+		"<SPACE>": func() {
 			sb.WriteRune(' ')
 			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
 		},
-		"BACKSPACE": func() {
+		"<BACKSPACE>": func() {
 			s := sb.String()
 			if len(s) > 0 {
 				sb.Reset()
@@ -114,7 +114,7 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 			}
 			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
 		},
-		"ENTER": func() {
+		"<ENTER>": func() {
 			query := sb.String()
 			if query != "" {
 				fmt.Printf("[SEARCH] Searching for: %q (%d titles)\n", query, len(index))
@@ -127,22 +127,22 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 				}
 			}
 			sb.Reset()
-			fmt.Println("[SEARCH] Ready. Use LEFT/RIGHT to browse, ESC to exit.")
+			fmt.Println("[SEARCH] Ready. Use ←/→ to browse, ESC to exit.")
 		},
-		"ESC": func() {
+		"<ESC>": func() {
 			fmt.Println("[SEARCH] Exiting search mode (Attract resumed).")
 		},
 
 		// ----------------------------
 		// Navigation
 		// ----------------------------
-		"LEFT": func() {
+		"<LEFT>": func() {
 			if len(*candidates) > 0 && *idx > 0 {
 				*idx--
 				launchGame((*candidates)[*idx])
 			}
 		},
-		"RIGHT": func() {
+		"<RIGHT>": func() {
 			if len(*candidates) > 0 && *idx < len(*candidates)-1 {
 				*idx++
 				launchGame((*candidates)[*idx])
