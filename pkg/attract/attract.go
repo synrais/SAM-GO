@@ -15,12 +15,24 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// States for attract mode
+// --- State markers ---
+type AttractState string
+
 const (
-	StatePlaying = iota
-	StateSearching
-	StateResume
+	StateIdle      AttractState = "IDLE"
+	StatePlaying   AttractState = "PLAYING"
+	StateSearching AttractState = "SEARCHING"
+	StateResuming  AttractState = "RESUME"
 )
+
+var currentState AttractState = StateIdle
+
+func setState(newState AttractState) {
+	if currentState != newState {
+		fmt.Printf("[STATE] %s → %s\n", currentState, newState)
+		currentState = newState
+	}
+}
 
 // RunAttract is the main entrypoint for Attract Mode.
 func RunAttract(cfg *config.UserConfig, args []string) {
@@ -56,7 +68,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		}
 	}
 
-	// 4a. Static detector → pushes Skip events.
+	// 4a. Static detector watches for inactivity and pushes Skip events.
 	if attractCfg.UseStaticDetector {
 		go func() {
 			for ev := range Stream(cfg, skipCh) {
@@ -67,7 +79,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		}()
 	}
 
-	// 4b. Input listeners (keyboard/mouse/joystick).
+	// 4b. Input listeners (keyboard/mouse/joystick) for Skip/Back actions.
 	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
 		input.RelayInputs(cfg,
 			func() { select { case backCh <- struct{}{}: default: } },
@@ -113,13 +125,14 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 			name := filepath.Base(gamePath)
 			name = strings.TrimSuffix(name, filepath.Ext(name))
 			if !silent {
-				fmt.Printf("[Attract] ▶ PLAYING: %s <%s>\n",
-					name, gamePath)
+				fmt.Printf("[Attract] %s - %s <%s>\n",
+					time.Now().Format("15:04:05"), name, gamePath)
 			}
 			Run([]string{gamePath})
+			setState(StatePlaying)
 
 			// Decide how long to keep game running.
-			wait := utils.ParsePlayTime(attractCfg.PlayTime, r)
+			wait := ParsePlayTime(attractCfg.PlayTime, r)
 			if ts > 0 {
 				skipDuration := time.Duration(ts*float64(time.Second)) +
 					time.Duration(cfg.List.SkipafterStatic)*time.Second
@@ -129,79 +142,59 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 			}
 
 			timer := time.NewTimer(wait)
-			state := StatePlaying
+			wasSearching := false
 
 			for {
-				switch state {
-
-				case StatePlaying:
-					select {
-					case <-timer.C:
-						if next, ok := PlayNext(); ok {
-							if !silent {
-								fmt.Println("[Attract] ⏭ Timer expired → advancing")
-							}
-							gamePath = next
-							ts = 0
-							wait = utils.ParsePlayTime(attractCfg.PlayTime, r)
-							timer = time.NewTimer(wait)
-							continue Launch
-						}
-						return
-
-					case <-skipCh:
-						if !silent {
-							fmt.Println("[Attract] ⏭ SKIPPED")
-						}
-						if next, ok := PlayNext(); ok {
-							gamePath = next
-							ts = 0
-							wait = utils.ParsePlayTime(attractCfg.PlayTime, r)
-							timer = time.NewTimer(wait)
-							continue Launch
-						}
-						return
-
-					case <-backCh:
-						if !silent {
-							fmt.Println("[Attract] ⏮ BACK")
-						}
-						if prev, ok := PlayBack(); ok {
-							gamePath = prev
-							ts = 0
-							wait = utils.ParsePlayTime(attractCfg.PlayTime, r)
-							timer = time.NewTimer(wait)
-							continue Launch
-						}
-
-					default:
-						if input.IsSearching() {
-							if !silent {
-								fmt.Println("[Attract] ⏸ ENTERING SEARCH MODE")
-							}
-							if !timer.Stop() {
-								select { case <-timer.C: default: }
-							}
-							state = StateSearching
-						}
+				// --- SEARCH MODE HANDLING ---
+				if input.IsSearching() {
+					if !wasSearching {
+						setState(StateSearching)
+						timer.Stop()
+						wasSearching = true
 					}
-
-				case StateSearching:
-					if !silent {
-						fmt.Println("[Attract] 🔍 SEARCHING… (Attract paused)")
+					time.Sleep(100 * time.Millisecond)
+					continue
+				} else if wasSearching {
+					// Exited search → instantly advance
+					setState(StateResuming)
+					wasSearching = false
+					if next, ok := PlayNext(); ok {
+						gamePath = next
+						ts = 0
+						continue Launch
 					}
-					for input.IsSearching() {
-						time.Sleep(100 * time.Millisecond)
-					}
-					if !silent {
-						fmt.Println("[Attract] ✅ Search finished → resuming")
-					}
-					state = StateResume
-
-				case StateResume:
-					wait = utils.ParsePlayTime(attractCfg.PlayTime, r)
+					// restart timer if nothing to advance to
 					timer = time.NewTimer(wait)
-					state = StatePlaying
+					setState(StatePlaying)
+				}
+
+				// --- NORMAL ATTRACT LOOP ---
+				select {
+				case <-timer.C:
+					if next, ok := PlayNext(); ok {
+						gamePath = next
+						ts = 0
+						continue Launch
+					}
+					return
+
+				case <-skipCh:
+					if !silent {
+						fmt.Println("[Attract] Skipped")
+					}
+					if next, ok := PlayNext(); ok {
+						gamePath = next
+						ts = 0
+						continue Launch
+					}
+					return
+
+				case <-backCh:
+					if prev, ok := PlayBack(); ok {
+						gamePath = prev
+						ts = 0
+						continue Launch
+					}
 				}
 			}
 		}
