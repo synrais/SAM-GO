@@ -35,8 +35,8 @@ func SearchAndPlay() {
 	fmt.Println("Attract mode paused, press ESC to resume")
 	fmt.Println("Search: type your game and press Enter")
 
+	// Mark search mode active until ESC
 	searching.Store(true)
-	defer searching.Store(false)
 
 	// Debug: show how many games are indexed
 	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(GameIndex))
@@ -87,7 +87,7 @@ func SearchAndPlay() {
 
 			case "ESC":
 				fmt.Println("[SEARCH] Exiting search mode")
-				searching.Store(false)
+				searching.Store(false) // <-- only clear here
 				fmt.Println("Attract mode resumed")
 				return
 
