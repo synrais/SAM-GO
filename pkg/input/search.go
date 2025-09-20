@@ -22,20 +22,15 @@ type GameEntry struct {
 	Path string // original line from Search.txt
 }
 
-// IsSearching reports whether SAM is currently in search mode.
-func IsSearching() bool {
-	return utils.GetState() == utils.StateAttractPaused
-}
-
-// SearchAndPlay enters search mode and allows filtering + launching games.
+// SearchAndPlay enters search mode.
 func SearchAndPlay() {
-	fmt.Println("Attract mode paused, press ESC to resume")
-	fmt.Println("Search: type your game and press Enter")
+	fmt.Println("[SEARCH] 🔍 Entered search mode (Attract paused).")
+	fmt.Println("[SEARCH] Type to filter, ENTER to launch, ESC to exit.")
 
-	// Mark search mode active until ESC.
+	// Set global state → Attract paused
 	utils.SetState(utils.StateAttractPaused)
 
-	// Debug: show how many games are indexed.
+	// Debug: show how many games are indexed
 	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(GameIndex))
 
 	ch := StreamKeyboards()
@@ -50,7 +45,7 @@ func SearchAndPlay() {
 		matches := re.FindAllStringSubmatch(line, -1)
 
 		for _, m := range matches {
-			key := strings.ToUpper(m[1]) // normalize to uppercase
+			key := strings.ToUpper(m[1]) // force uppercase for all special keys
 
 			switch key {
 			case "SPACE":
@@ -84,7 +79,7 @@ func SearchAndPlay() {
 			case "ESC":
 				fmt.Println("[SEARCH] Exiting search mode")
 				utils.SetState(utils.StateAttract) // resume attract mode
-				fmt.Println("Attract mode resumed")
+				fmt.Println("[SEARCH] Attract mode resumed")
 				return
 
 			case "BACKSPACE":
@@ -111,7 +106,7 @@ func SearchAndPlay() {
 			}
 		}
 
-		// Regular text input → query buffer
+		// Regular text input goes into buffer
 		l := re.ReplaceAllString(line, "")
 		for _, r := range l {
 			if r == '\n' || r == '\r' {
@@ -135,6 +130,7 @@ func findMatches(qn, qext string) []string {
 		if qext != "" && qext != e.Ext {
 			continue
 		}
+
 		if strings.HasPrefix(e.Name, qn) {
 			prefix = append(prefix, e.Path)
 		} else if strings.Contains(e.Name, qn) {
@@ -147,16 +143,13 @@ func findMatches(qn, qext string) []string {
 		}
 	}
 
-	// Sort for stability
 	sort.Strings(prefix)
 	sort.Strings(substring)
 	sort.Strings(fuzzy)
 
-	// Merge results: prefix > substring > fuzzy
 	out := append(prefix, substring...)
 	out = append(out, fuzzy...)
 
-	// Limit for safety
 	if len(out) > 200 {
 		out = out[:200]
 	}
