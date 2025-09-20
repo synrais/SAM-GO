@@ -11,6 +11,7 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
+// --- Search state ---
 // GameIndex holds all indexed game entries for search.
 var GameIndex []GameEntry
 
@@ -21,18 +22,12 @@ type GameEntry struct {
 	Path string // original line from Search.txt
 }
 
-// SearchAndPlay enters search mode.
+// SearchAndPlay enters search mode and blocks until the user exits.
 func SearchAndPlay() {
 	fmt.Println("[SEARCH] 🔍 Entered search mode (Attract paused).")
 	fmt.Println("[SEARCH] Type to filter, ENTER to launch, ESC to exit.")
 
-	// Pause attract globally
-	utils.AttractPaused = true
-	defer func() {
-		utils.AttractPaused = false
-		fmt.Println("[SEARCH] Exiting search mode → Attract resumed.")
-	}()
-
+	// Debug: show how many games are indexed
 	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(GameIndex))
 
 	ch := StreamKeyboards()
@@ -45,8 +40,9 @@ func SearchAndPlay() {
 	for line := range ch {
 		// Look for <TOKENS>
 		matches := re.FindAllStringSubmatch(line, -1)
+
 		for _, m := range matches {
-			key := strings.ToUpper(m[1])
+			key := strings.ToUpper(m[1]) // normalize
 
 			switch key {
 			case "SPACE":
@@ -55,9 +51,11 @@ func SearchAndPlay() {
 
 			case "ENTER":
 				qn, qext := utils.NormalizeEntry(sb.String())
+
 				if qn != "" {
 					fmt.Printf("[SEARCH] Looking for: %q\n", sb.String())
 					fmt.Printf("[SEARCH] Searching... (%d titles)\n", len(GameIndex))
+
 					candidates = findMatches(qn, qext)
 					if len(candidates) > 0 {
 						idx = 0
@@ -67,11 +65,14 @@ func SearchAndPlay() {
 						fmt.Println("[SEARCH] No match found")
 					}
 				}
+
+				// Reset after enter
 				sb.Reset()
 				fmt.Println("[SEARCH] Ready. Use ←/→ to browse, ESC to exit.")
 
 			case "ESC":
-				return // defer unpauses attract
+				fmt.Println("[SEARCH] Exiting search mode (Attract resumes).")
+				return
 
 			case "BACKSPACE":
 				s := sb.String()
@@ -84,20 +85,20 @@ func SearchAndPlay() {
 			case "LEFT":
 				if len(candidates) > 0 && idx > 0 {
 					idx--
-					fmt.Printf("[SEARCH] ◀ Launching: %s\n", candidates[idx])
+					fmt.Printf("[SEARCH] ▶ Launching (prev): %s\n", candidates[idx])
 					launchGame(candidates[idx])
 				}
 
 			case "RIGHT":
 				if len(candidates) > 0 && idx < len(candidates)-1 {
 					idx++
-					fmt.Printf("[SEARCH] ▶ Launching: %s\n", candidates[idx])
+					fmt.Printf("[SEARCH] ▶ Launching (next): %s\n", candidates[idx])
 					launchGame(candidates[idx])
 				}
 			}
 		}
 
-		// Plain text input
+		// Regular text input → buffer
 		l := re.ReplaceAllString(line, "")
 		for _, r := range l {
 			if r == '\n' || r == '\r' {
@@ -110,33 +111,42 @@ func SearchAndPlay() {
 }
 
 // --- Matching ---
+
 func findMatches(qn, qext string) []string {
 	var prefix, substring, fuzzy []string
 
 	for _, e := range GameIndex {
+		// Skip separators
 		if strings.HasPrefix(e.Name, "# SYSTEM:") {
 			continue
 		}
+
 		if qext != "" && qext != e.Ext {
 			continue
 		}
+
 		if strings.HasPrefix(e.Name, qn) {
 			prefix = append(prefix, e.Path)
 		} else if strings.Contains(e.Name, qn) {
 			substring = append(substring, e.Path)
 		} else {
-			if levenshtein(qn, e.Name) <= 3 {
+			dist := levenshtein(qn, e.Name)
+			if dist <= 3 {
 				fuzzy = append(fuzzy, e.Path)
 			}
 		}
 	}
 
+	// Sort for consistency
 	sort.Strings(prefix)
 	sort.Strings(substring)
 	sort.Strings(fuzzy)
 
+	// Priority: prefix > substring > fuzzy
 	out := append(prefix, substring...)
 	out = append(out, fuzzy...)
+
+	// Limit
 	if len(out) > 200 {
 		out = out[:200]
 	}
@@ -146,6 +156,7 @@ func findMatches(qn, qext string) []string {
 }
 
 // --- Helpers ---
+
 func launchGame(path string) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -178,8 +189,7 @@ func levenshtein(a, b string) int {
 			if a[i-1] != b[j-1] {
 				cost = 1
 			}
-			d[i][j] = min(d[i-1][j]+1,
-				min(d[i][j-1]+1, d[i-1][j-1]+cost))
+			d[i][j] = min(d[i-1][j]+1, min(d[i][j-1]+1, d[i-1][j-1]+cost))
 		}
 	}
 	return d[la][lb]
