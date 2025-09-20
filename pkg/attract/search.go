@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
@@ -17,7 +18,7 @@ func SearchAndPlay(inputCh <-chan string) {
 	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(index))
 
 	var sb strings.Builder
-	var candidates []string
+	var candidates []GameEntry
 	idx := -1
 
 	for ev := range inputCh {
@@ -39,7 +40,6 @@ func SearchAndPlay(inputCh <-chan string) {
 				candidates = findMatches(qn, qext, index)
 				if len(candidates) > 0 {
 					idx = 0
-					fmt.Printf("[SEARCH] ▶ Launching: %s\n", candidates[idx])
 					launchGame(candidates[idx])
 				} else {
 					fmt.Println("[SEARCH] No match found")
@@ -63,19 +63,17 @@ func SearchAndPlay(inputCh <-chan string) {
 		case "left":
 			if len(candidates) > 0 && idx > 0 {
 				idx--
-				fmt.Printf("[SEARCH] ▶ Launching (prev): %s\n", candidates[idx])
 				launchGame(candidates[idx])
 			}
 
 		case "right":
 			if len(candidates) > 0 && idx < len(candidates)-1 {
 				idx++
-				fmt.Printf("[SEARCH] ▶ Launching (next): %s\n", candidates[idx])
 				launchGame(candidates[idx])
 			}
 
 		default:
-			// treat as regular character
+			// treat single characters as regular input
 			if len(ev) == 1 {
 				sb.WriteString(ev)
 				fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
@@ -86,8 +84,8 @@ func SearchAndPlay(inputCh <-chan string) {
 
 // --- Matching ---
 
-func findMatches(qn, qext string, index []GameEntry) []string {
-	var prefix, substring, fuzzy []string
+func findMatches(qn, qext string, index []GameEntry) []GameEntry {
+	var prefix, substring, fuzzy []GameEntry
 
 	for _, e := range index {
 		if strings.HasPrefix(e.Name, "# SYSTEM:") {
@@ -98,19 +96,19 @@ func findMatches(qn, qext string, index []GameEntry) []string {
 		}
 
 		if strings.HasPrefix(e.Name, qn) {
-			prefix = append(prefix, e.Path)
+			prefix = append(prefix, e)
 		} else if strings.Contains(e.Name, qn) {
-			substring = append(substring, e.Path)
+			substring = append(substring, e)
 		} else {
 			if levenshtein(qn, e.Name) <= 3 {
-				fuzzy = append(fuzzy, e.Path)
+				fuzzy = append(fuzzy, e)
 			}
 		}
 	}
 
-	sort.Strings(prefix)
-	sort.Strings(substring)
-	sort.Strings(fuzzy)
+	sort.Slice(prefix, func(i, j int) bool { return prefix[i].Name < prefix[j].Name })
+	sort.Slice(substring, func(i, j int) bool { return substring[i].Name < substring[j].Name })
+	sort.Slice(fuzzy, func(i, j int) bool { return fuzzy[i].Name < fuzzy[j].Name })
 
 	out := append(prefix, substring...)
 	out = append(out, fuzzy...)
@@ -124,9 +122,15 @@ func findMatches(qn, qext string, index []GameEntry) []string {
 
 // --- Helpers ---
 
-func launchGame(path string) {
-	fmt.Printf("[SEARCH] ▶ Running game: %s\n", path)
-	Run([]string{path})
+func launchGame(entry GameEntry) {
+	name := strings.TrimSuffix(entry.Name, entry.Ext)
+	fmt.Printf("[SEARCH] %s %s - %s <%s>\n",
+		time.Now().Format("15:04:05"),
+		entry.SystemID,
+		name,
+		entry.Path,
+	)
+	Run([]string{entry.Path})
 }
 
 func levenshtein(a, b string) int {
