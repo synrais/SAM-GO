@@ -20,25 +20,25 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// ----------------------------
 		// Keyboard
 		// ----------------------------
-		"<ESC>": func() {
+		"esc": func() {
 			fmt.Println("[Attract] Exiting attract mode.")
 			os.Exit(0)
 		},
-		"<SPACE>": func() {
+		"space": func() {
 			fmt.Println("[Attract] Skipped current game.")
 		},
-		"<`>": func() {
+		"`": func() {
 			fmt.Println("[Attract] Entering search mode...")
 			SearchAndPlay(inputCh)
 			fmt.Println("[Attract] Resuming attract mode.")
 		},
-		"<LEFT>": func() {
+		"left": func() {
 			if prev, ok := PlayBack(timer, cfg, r); ok {
 				fmt.Println("[Attract] Keyboard ← back in history.")
 				Run([]string{prev})
 			}
 		},
-		"<RIGHT>": func() {
+		"right": func() {
 			if next, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Keyboard → forward in history.")
 				Run([]string{next})
@@ -48,13 +48,13 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// ----------------------------
 		// Controller Buttons
 		// ----------------------------
-		"BUTTON1": func() {
+		"button1": func() {
 			if next, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Button1 → forward in history.")
 				Run([]string{next})
 			}
 		},
-		"BUTTON2": func() {
+		"button2": func() {
 			if prev, ok := PlayBack(timer, cfg, r); ok {
 				fmt.Println("[Attract] Button2 ← back in history.")
 				Run([]string{prev})
@@ -64,13 +64,13 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// ----------------------------
 		// Touch / Gestures
 		// ----------------------------
-		"SWIPE-RIGHT": func() {
+		"swipe-right": func() {
 			if next, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Swipe → forward in history.")
 				Run([]string{next})
 			}
 		},
-		"SWIPE-LEFT": func() {
+		"swipe-left": func() {
 			if prev, ok := PlayBack(timer, cfg, r); ok {
 				fmt.Println("[Attract] Swipe ← back in history.")
 				Run([]string{prev})
@@ -80,13 +80,13 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// ----------------------------
 		// Analog Axis
 		// ----------------------------
-		"AXIS-RIGHT": func() {
+		"axis-right": func() {
 			if next, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Axis → forward in history.")
 				Run([]string{next})
 			}
 		},
-		"AXIS-LEFT": func() {
+		"axis-left": func() {
 			if prev, ok := PlayBack(timer, cfg, r); ok {
 				fmt.Println("[Attract] Axis ← back in history.")
 				Run([]string{prev})
@@ -102,11 +102,11 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 		// ----------------------------
 		// Keyboard
 		// ----------------------------
-		"<SPACE>": func() {
+		"space": func() {
 			sb.WriteRune(' ')
 			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
 		},
-		"<BACKSPACE>": func() {
+		"backspace": func() {
 			s := sb.String()
 			if len(s) > 0 {
 				sb.Reset()
@@ -114,7 +114,7 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 			}
 			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
 		},
-		"<ENTER>": func() {
+		"enter": func() {
 			query := sb.String()
 			if query != "" {
 				fmt.Printf("[SEARCH] Searching for: %q (%d titles)\n", query, len(index))
@@ -127,22 +127,22 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 				}
 			}
 			sb.Reset()
-			fmt.Println("[SEARCH] Ready. Use <LEFT>/<RIGHT> to browse, <ESC> to exit.")
+			fmt.Println("[SEARCH] Ready. Use left/right to browse, esc to exit.")
 		},
-		"<ESC>": func() {
+		"esc": func() {
 			fmt.Println("[SEARCH] Exiting search mode (Attract resumed).")
 		},
 
 		// ----------------------------
 		// Navigation
 		// ----------------------------
-		"<LEFT>": func() {
+		"left": func() {
 			if len(*candidates) > 0 && *idx > 0 {
 				*idx--
 				launchGame((*candidates)[*idx])
 			}
 		},
-		"<RIGHT>": func() {
+		"right": func() {
 			if len(*candidates) > 0 && *idx < len(*candidates)-1 {
 				*idx++
 				launchGame((*candidates)[*idx])
