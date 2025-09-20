@@ -33,18 +33,15 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 			fmt.Println("[Attract] Resuming attract mode.")
 		},
 		"left": func() {
-			if prev, ok := PlayBack(timer, cfg, r); ok {
+			if prev, ok := Back(timer, cfg, r); ok {
 				fmt.Println("[Attract] Keyboard ← back in history.")
 				Run([]string{prev})
 			}
 		},
 		"right": func() {
 			if next, ok := Next(timer, cfg, r); ok {
-				fmt.Println("[Attract] Keyboard → forward in history.")
+				fmt.Println("[Attract] Keyboard → forward/new game.")
 				Run([]string{next})
-			} else {
-				fmt.Println("[Attract] No forward entry, starting new attract pick.")
-				Play("", timer, cfg, r)
 			}
 		},
 
@@ -53,15 +50,12 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// ----------------------------
 		"button1": func() {
 			if next, ok := Next(timer, cfg, r); ok {
-				fmt.Println("[Attract] Button1 → forward in history.")
+				fmt.Println("[Attract] Button1 → forward/new game.")
 				Run([]string{next})
-			} else {
-				fmt.Println("[Attract] No forward entry, starting new attract pick.")
-				Play("", timer, cfg, r)
 			}
 		},
 		"button2": func() {
-			if prev, ok := PlayBack(timer, cfg, r); ok {
+			if prev, ok := Back(timer, cfg, r); ok {
 				fmt.Println("[Attract] Button2 ← back in history.")
 				Run([]string{prev})
 			}
@@ -72,15 +66,12 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// ----------------------------
 		"swipe-right": func() {
 			if next, ok := Next(timer, cfg, r); ok {
-				fmt.Println("[Attract] Swipe → forward in history.")
+				fmt.Println("[Attract] Swipe → forward/new game.")
 				Run([]string{next})
-			} else {
-				fmt.Println("[Attract] No forward entry, starting new attract pick.")
-				Play("", timer, cfg, r)
 			}
 		},
 		"swipe-left": func() {
-			if prev, ok := PlayBack(timer, cfg, r); ok {
+			if prev, ok := Back(timer, cfg, r); ok {
 				fmt.Println("[Attract] Swipe ← back in history.")
 				Run([]string{prev})
 			}
@@ -91,15 +82,12 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// ----------------------------
 		"axis-right": func() {
 			if next, ok := Next(timer, cfg, r); ok {
-				fmt.Println("[Attract] Axis → forward in history.")
+				fmt.Println("[Attract] Axis → forward/new game.")
 				Run([]string{next})
-			} else {
-				fmt.Println("[Attract] No forward entry, starting new attract pick.")
-				Play("", timer, cfg, r)
 			}
 		},
 		"axis-left": func() {
-			if prev, ok := PlayBack(timer, cfg, r); ok {
+			if prev, ok := Back(timer, cfg, r); ok {
 				fmt.Println("[Attract] Axis ← back in history.")
 				Run([]string{prev})
 			}
