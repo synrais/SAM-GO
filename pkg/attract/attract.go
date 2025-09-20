@@ -99,10 +99,17 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		fmt.Println("[Attract] Running. Ctrl-C to exit.")
 	}
 
-	// Helper: play one game and handle skip/back/timer/search.
+	// Helper: play one game and handle skip/back/timer.
 	playGame := func(gamePath string, ts float64) {
 	Launch:
 		for {
+			// --- Skip everything if paused ---
+			if utils.GetState() == utils.StateAttractPaused {
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+
+			// Log + launch
 			name := filepath.Base(gamePath)
 			name = strings.TrimSuffix(name, filepath.Ext(name))
 			if !silent {
@@ -110,6 +117,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 					time.Now().Format("15:04:05"), name, gamePath)
 			}
 			Run([]string{gamePath})
+			utils.SetState(utils.StateAttract)
 
 			// Decide how long to keep game running.
 			wait := ParsePlayTime(attractCfg.PlayTime, r)
@@ -124,14 +132,22 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 			timer := time.NewTimer(wait)
 
 			for {
-				// --- STATE HANDLING ---
-				if GetState() == StateSearch {
-					timer.Stop() // freeze while searching
-					time.Sleep(200 * time.Millisecond)
-					continue
+				// If paused mid-game → drop timer, wait for resume.
+				if utils.GetState() == utils.StateAttractPaused {
+					timer.Stop()
+					// Block until state flips back
+					for utils.GetState() == utils.StateAttractPaused {
+						time.Sleep(200 * time.Millisecond)
+					}
+					// On resume: instantly advance
+					if next, ok := PlayNext(); ok {
+						gamePath = next
+						ts = 0
+						continue Launch
+					}
+					timer = time.NewTimer(wait)
 				}
 
-				// --- NORMAL ATTRACT LOOP ---
 				select {
 				case <-timer.C:
 					if next, ok := PlayNext(); ok {
@@ -165,8 +181,8 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 
 	// 6. Main attract loop: forever cycle.
 	for {
-		if GetState() == StateSearch {
-			// freeze entire loop while in search mode
+		// Respect paused state in outer loop too.
+		if utils.GetState() == utils.StateAttractPaused {
 			time.Sleep(200 * time.Millisecond)
 			continue
 		}
@@ -206,9 +222,11 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 			}
 		}
 
+		// Pick random system/game
 		listKey := files[r.Intn(len(files))]
 		lines := cache.GetList(listKey)
 		if len(lines) == 0 {
+			// Drop empty list
 			var newFiles []string
 			for _, f := range files {
 				if f != listKey {
@@ -228,6 +246,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		Play(gamePath)
 		playGame(gamePath, ts)
 
+		// Remove from rotation until reset
 		lines = append(lines[:index], lines[index+1:]...)
 		cache.SetList(listKey, lines)
 	}
