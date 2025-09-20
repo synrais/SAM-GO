@@ -760,6 +760,40 @@ func resetGlobalTimer(cfg *config.UserConfig, r *rand.Rand) {
 
 //
 // -----------------------------
+// Global Attract Timer
+// -----------------------------
+//
+
+var attractTimer *time.Timer
+var attractTimerMu sync.Mutex
+
+// ResetAttractTimer resets the global attract timer to the given duration.
+func ResetAttractTimer(d time.Duration) {
+	attractTimerMu.Lock()
+	defer attractTimerMu.Unlock()
+
+	if attractTimer == nil {
+		attractTimer = time.NewTimer(d)
+	} else {
+		if !attractTimer.Stop() {
+			select {
+			case <-attractTimer.C:
+			default:
+			}
+		}
+		attractTimer.Reset(d)
+	}
+}
+
+// GetAttractTimer safely returns the global attract timer.
+func GetAttractTimer() *time.Timer {
+	attractTimerMu.Lock()
+	defer attractTimerMu.Unlock()
+	return attractTimer
+}
+
+//
+// -----------------------------
 // Game Runner / Now Playing
 // -----------------------------
 //
