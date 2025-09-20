@@ -5,8 +5,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 // SearchAndPlay enters search mode and launches matching games.
