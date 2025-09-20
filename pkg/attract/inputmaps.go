@@ -33,12 +33,12 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 			fmt.Println("[Attract] Resuming attract mode.")
 		},
 		"left": func() {
-			if _, ok := Back(timer, cfg, r); ok {
+			if _, ok := Back(cfg, r); ok {
 				fmt.Println("[Attract] Keyboard ← back in history.")
 			}
 		},
 		"right": func() {
-			if _, ok := Next(timer, cfg, r); ok {
+			if _, ok := Next(cfg, r); ok {
 				fmt.Println("[Attract] Keyboard → forward/new game.")
 			}
 		},
@@ -47,12 +47,12 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// Controller Buttons
 		// ----------------------------
 		"button1": func() {
-			if _, ok := Next(timer, cfg, r); ok {
+			if _, ok := Next(cfg, r); ok {
 				fmt.Println("[Attract] Button1 → forward/new game.")
 			}
 		},
 		"button2": func() {
-			if _, ok := Back(timer, cfg, r); ok {
+			if _, ok := Back(cfg, r); ok {
 				fmt.Println("[Attract] Button2 ← back in history.")
 			}
 		},
@@ -61,12 +61,12 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// Touch / Gestures
 		// ----------------------------
 		"swipe-right": func() {
-			if _, ok := Next(timer, cfg, r); ok {
+			if _, ok := Next(cfg, r); ok {
 				fmt.Println("[Attract] Swipe → forward/new game.")
 			}
 		},
 		"swipe-left": func() {
-			if _, ok := Back(timer, cfg, r); ok {
+			if _, ok := Back(cfg, r); ok {
 				fmt.Println("[Attract] Swipe ← back in history.")
 			}
 		},
@@ -75,12 +75,12 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// Analog Axis
 		// ----------------------------
 		"axis-right": func() {
-			if _, ok := Next(timer, cfg, r); ok {
+			if _, ok := Next(cfg, r); ok {
 				fmt.Println("[Attract] Axis → forward/new game.")
 			}
 		},
 		"axis-left": func() {
-			if _, ok := Back(timer, cfg, r); ok {
+			if _, ok := Back(cfg, r); ok {
 				fmt.Println("[Attract] Axis ← back in history.")
 			}
 		},
