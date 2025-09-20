@@ -8,11 +8,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/synrais/SAM-GO/pkg/config"
-	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/utils"
 	"golang.org/x/sys/unix"
 )
@@ -30,13 +28,7 @@ var (
 	streamOnce sync.Once
 	streamCh   chan StaticEvent
 	skipCh     chan<- struct{}
-	paused     atomic.Bool
 )
-
-// Pause toggles the static detector's paused state.
-func Pause(p bool) {
-	paused.Store(p)
-}
 
 // NamedColor represents a well known color and its RGB components.
 type NamedColor struct {
@@ -256,15 +248,6 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 			currRGB := make([]uint32, maxSamples)
 
 			for {
-				if paused.Load() || input.IsSearching() {
-					lastFrameTime = time.Now()
-					staticScreenRun = 0
-					staticStartTime = 0
-					firstFrame = true
-					time.Sleep(time.Second / targetFPS)
-					continue
-				}
-
 				t1 := time.Now()
 
 				displayGame := fmt.Sprintf("[%s] %s", LastPlayedSystem.Id, LastPlayedName)
