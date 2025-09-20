@@ -13,6 +13,9 @@ import (
 	"github.com/synrais/SAM-GO/pkg/input"
 )
 
+// Global timer reference for attract mode
+var AttractTimer *time.Timer
+
 //
 // -----------------------------
 // Prepare + Init
@@ -71,38 +74,28 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 	fmt.Println("[Attract] Running. Press ESC to exit.")
 
 	// Pick first game using Next()
-	if first, ok := Next(nil, cfg, r); ok {
+	if first, ok := Next(cfg, r); ok {
 		fmt.Printf("[Attract] First pick -> %s\n", filepath.Base(first))
 	} else {
 		fmt.Println("[Attract] No game available to start attract mode.")
 		return
 	}
 
-	// Start static detector in background (skip is wired internally)
-	go func() {
-    	events := Stream(cfg)
-    	for range events {
-        	// just drain the channel, no per-frame printing
-        	// skip logic still runs inside Stream
-    	}
-	}()
-
 	// Timer for automatic switching
 	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
-	timer := time.NewTimer(wait)
+	AttractTimer = time.NewTimer(wait)
 
 	// Input map
-	inputMap := AttractInputMap(cfg, r, timer, inputCh)
+	inputMap := AttractInputMap(cfg, r, AttractTimer, inputCh)
 
 	// Event loop
 	for {
 		select {
-		case <-timer.C:
+		case <-AttractTimer.C:
 			// Advance automatically
-			if _, ok := Next(timer, cfg, r); !ok {
+			if _, ok := Next(cfg, r); !ok {
 				fmt.Println("[Attract] Failed to pick next game.")
 			}
-			timer.Reset(ParsePlayTime(cfg.Attract.PlayTime, r))
 
 		case ev := <-inputCh:
 			evLower := strings.ToLower(ev)
