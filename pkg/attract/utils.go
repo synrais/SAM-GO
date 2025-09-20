@@ -696,7 +696,16 @@ func updateTimestamp(list []SavedTimestamp, systemID, path string, mod time.Time
 	})
 }
 
-//
+package attract
+
+import (
+	"fmt"
+	"math/rand"
+	"time"
+
+	"github.com/synrais/SAM-GO/pkg/config"
+)
+
 // -----------------------------
 // History navigation + Timer reset
 // -----------------------------
@@ -706,7 +715,7 @@ var currentIndex int = -1
 // resetTimer safely stops and resets a timer, ignoring nil.
 func resetTimer(timer *time.Timer, d time.Duration) {
 	if timer == nil {
-		return // no timer yet, nothing to do
+		return
 	}
 	if !timer.Stop() {
 		select {
@@ -717,9 +726,12 @@ func resetTimer(timer *time.Timer, d time.Duration) {
 	timer.Reset(d)
 }
 
-// Next moves forward in history; if none, picks a new attract game.
-func Next(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand, files []string) (string, bool) {
+// Next moves forward in history if possible, otherwise picks a random game.
+// Always runs the game and resets timer.
+func Next(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
+
+	// Forward in history
 	if currentIndex >= 0 && currentIndex < len(hist)-1 {
 		currentIndex++
 		path := hist[currentIndex]
@@ -728,19 +740,20 @@ func Next(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand, files []strin
 		return path, true
 	}
 
-	// no forward history → pick fresh attract game
-	newPath := PickRandomGame(cfg, files, r)
-	if newPath != "" {
-		hist = append(hist, newPath)
-		SetList("History.txt", hist)
-		currentIndex = len(hist) - 1
-
-		Run([]string{newPath})
-		resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
-		fmt.Println("[Attract] No forward entry, starting new attract pick.")
-		return newPath, true
+	// Otherwise pick a fresh random game
+	path := PickRandomGame(cfg, r)
+	if path == "" {
+		fmt.Println("[Attract] No game available to play.")
+		return "", false
 	}
-	return "", false
+
+	hist = append(hist, path)
+	SetList("History.txt", hist)
+	currentIndex = len(hist) - 1
+
+	Run([]string{path})
+	resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
+	return path, true
 }
 
 // Back moves backward in history, runs game, resets timer.
@@ -757,8 +770,8 @@ func Back(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool
 }
 
 // Aliases for consistency
-func PlayNext(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand, files []string) (string, bool) {
-	return Next(timer, cfg, r, files)
+func PlayNext(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
+	return Next(timer, cfg, r)
 }
 
 func PlayBack(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
