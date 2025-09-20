@@ -3,7 +3,6 @@ package attract
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 )
@@ -11,55 +10,88 @@ import (
 // Generic function type for mapped inputs
 type InputAction func()
 
-// --- Attract Mode Input Map ---
+// --- Attract Mode Input Map (grouped by device type) ---
 func AttractInputMap(cfg *config.UserConfig, inputCh <-chan string) map[string]InputAction {
 	return map[string]InputAction{
+
+		// ----------------------------
+		// Keyboard
+		// ----------------------------
 		"esc": func() {
 			fmt.Println("[Attract] Exiting attract mode.")
 			os.Exit(0)
 		},
 		"space": func() {
 			fmt.Println("[Attract] Skipped current game.")
-			// handled in RunAttractLoop by breaking loop
 		},
 		"`": func() {
 			fmt.Println("[Attract] Entering search mode...")
 			SearchAndPlay(inputCh)
 			fmt.Println("[Attract] Resuming attract mode.")
-			// timer reset handled in RunAttractLoop
-		},
-		"right": func() {
-			if next, ok := Next(); ok {
-				fmt.Println("[Attract] Going forward in history.")
-				Run([]string{next})
-				// timer reset handled in RunAttractLoop
-			} else {
-				fmt.Println("[Attract] No next game in history.")
-			}
-		},
-		"button1": func() { // alias for right
-			if next, ok := Next(); ok {
-				fmt.Println("[Attract] Going forward in history.")
-				Run([]string{next})
-			}
 		},
 		"left": func() {
 			if prev, ok := PlayBack(); ok {
-				fmt.Println("[Attract] Going back in history.")
+				fmt.Println("[Attract] Keyboard ← back in history.")
 				Run([]string{prev})
-				// timer reset handled in RunAttractLoop
-			} else {
-				fmt.Println("[Attract] No previous game in history.")
 			}
 		},
-		"button2": func() { // alias for left
+		"right": func() {
+			if next, ok := Next(); ok {
+				fmt.Println("[Attract] Keyboard → forward in history.")
+				Run([]string{next})
+			}
+		},
+
+		// ----------------------------
+		// Controller Buttons
+		// ----------------------------
+		"button1": func() {
+			if next, ok := Next(); ok {
+				fmt.Println("[Attract] Button1 → forward in history.")
+				Run([]string{next})
+			}
+		},
+		"button2": func() {
 			if prev, ok := PlayBack(); ok {
-				fmt.Println("[Attract] Going back in history.")
+				fmt.Println("[Attract] Button2 ← back in history.")
+				Run([]string{prev})
+			}
+		},
+
+		// ----------------------------
+		// Touch / Gestures
+		// ----------------------------
+		"swipe-right": func() {
+			if next, ok := Next(); ok {
+				fmt.Println("[Attract] Swipe → forward in history.")
+				Run([]string{next})
+			}
+		},
+		"swipe-left": func() {
+			if prev, ok := PlayBack(); ok {
+				fmt.Println("[Attract] Swipe ← back in history.")
+				Run([]string{prev})
+			}
+		},
+
+		// ----------------------------
+		// Analog Axis
+		// ----------------------------
+		"axis-right": func() {
+			if next, ok := Next(); ok {
+				fmt.Println("[Attract] Axis → forward in history.")
+				Run([]string{next})
+			}
+		},
+		"axis-left": func() {
+			if prev, ok := PlayBack(); ok {
+				fmt.Println("[Attract] Axis ← back in history.")
 				Run([]string{prev})
 			}
 		},
 	}
 }
+
 
 // --- Search Mode Input Map ---
 func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, index []GameEntry, inputCh <-chan string) map[string]InputAction {
