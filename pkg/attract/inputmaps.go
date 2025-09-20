@@ -33,15 +33,13 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 			fmt.Println("[Attract] Resuming attract mode.")
 		},
 		"left": func() {
-			if prev, ok := Back(timer, cfg, r); ok {
+			if _, ok := Back(timer, cfg, r); ok {
 				fmt.Println("[Attract] Keyboard ← back in history.")
-				Run([]string{prev})
 			}
 		},
 		"right": func() {
-			if next, ok := Next(timer, cfg, r); ok {
+			if _, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Keyboard → forward/new game.")
-				Run([]string{next})
 			}
 		},
 
@@ -49,15 +47,13 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// Controller Buttons
 		// ----------------------------
 		"button1": func() {
-			if next, ok := Next(timer, cfg, r); ok {
+			if _, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Button1 → forward/new game.")
-				Run([]string{next})
 			}
 		},
 		"button2": func() {
-			if prev, ok := Back(timer, cfg, r); ok {
+			if _, ok := Back(timer, cfg, r); ok {
 				fmt.Println("[Attract] Button2 ← back in history.")
-				Run([]string{prev})
 			}
 		},
 
@@ -65,15 +61,13 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// Touch / Gestures
 		// ----------------------------
 		"swipe-right": func() {
-			if next, ok := Next(timer, cfg, r); ok {
+			if _, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Swipe → forward/new game.")
-				Run([]string{next})
 			}
 		},
 		"swipe-left": func() {
-			if prev, ok := Back(timer, cfg, r); ok {
+			if _, ok := Back(timer, cfg, r); ok {
 				fmt.Println("[Attract] Swipe ← back in history.")
-				Run([]string{prev})
 			}
 		},
 
@@ -81,15 +75,13 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// Analog Axis
 		// ----------------------------
 		"axis-right": func() {
-			if next, ok := Next(timer, cfg, r); ok {
+			if _, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Axis → forward/new game.")
-				Run([]string{next})
 			}
 		},
 		"axis-left": func() {
-			if prev, ok := Back(timer, cfg, r); ok {
+			if _, ok := Back(timer, cfg, r); ok {
 				fmt.Println("[Attract] Axis ← back in history.")
-				Run([]string{prev})
 			}
 		},
 	}
