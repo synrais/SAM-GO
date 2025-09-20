@@ -2,80 +2,163 @@ package attract
 
 import (
 	"fmt"
-	"math/rand"
+	"os"
+	"strings"
 	"time"
+	"math/rand"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 )
 
-// -----------------------------
-// History navigation + Timer reset
-// -----------------------------
+// Generic function type for mapped inputs
+type InputAction func()
 
-var currentIndex int = -1
+// --- Attract Mode Input Map (grouped by device type) ---
+func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, inputCh <-chan string) map[string]InputAction {
+	return map[string]InputAction{
 
-// resetTimer safely stops and resets a timer, ignoring nil.
-func resetTimer(timer *time.Timer, d time.Duration) {
-	if timer == nil {
-		return
+		// ----------------------------
+		// Keyboard
+		// ----------------------------
+		"esc": func() {
+			fmt.Println("[Attract] Exiting attract mode.")
+			os.Exit(0)
+		},
+		"space": func() {
+			fmt.Println("[Attract] Skipped current game.")
+		},
+		"`": func() {
+			fmt.Println("[Attract] Entering search mode...")
+			SearchAndPlay(inputCh)
+			fmt.Println("[Attract] Resuming attract mode.")
+		},
+		"left": func() {
+			if prev, ok := PlayBack(timer, cfg, r); ok {
+				fmt.Println("[Attract] Keyboard ← back in history.")
+				Run([]string{prev})
+			}
+		},
+		"right": func() {
+			if next, ok := Next(timer, cfg, r); ok {
+				fmt.Println("[Attract] Keyboard → forward in history.")
+				Run([]string{next})
+			} else {
+				fmt.Println("[Attract] No forward entry, starting new attract pick.")
+				Play("", timer, cfg, r)
+			}
+		},
+
+		// ----------------------------
+		// Controller Buttons
+		// ----------------------------
+		"button1": func() {
+			if next, ok := Next(timer, cfg, r); ok {
+				fmt.Println("[Attract] Button1 → forward in history.")
+				Run([]string{next})
+			} else {
+				fmt.Println("[Attract] No forward entry, starting new attract pick.")
+				Play("", timer, cfg, r)
+			}
+		},
+		"button2": func() {
+			if prev, ok := PlayBack(timer, cfg, r); ok {
+				fmt.Println("[Attract] Button2 ← back in history.")
+				Run([]string{prev})
+			}
+		},
+
+		// ----------------------------
+		// Touch / Gestures
+		// ----------------------------
+		"swipe-right": func() {
+			if next, ok := Next(timer, cfg, r); ok {
+				fmt.Println("[Attract] Swipe → forward in history.")
+				Run([]string{next})
+			} else {
+				fmt.Println("[Attract] No forward entry, starting new attract pick.")
+				Play("", timer, cfg, r)
+			}
+		},
+		"swipe-left": func() {
+			if prev, ok := PlayBack(timer, cfg, r); ok {
+				fmt.Println("[Attract] Swipe ← back in history.")
+				Run([]string{prev})
+			}
+		},
+
+		// ----------------------------
+		// Analog Axis
+		// ----------------------------
+		"axis-right": func() {
+			if next, ok := Next(timer, cfg, r); ok {
+				fmt.Println("[Attract] Axis → forward in history.")
+				Run([]string{next})
+			} else {
+				fmt.Println("[Attract] No forward entry, starting new attract pick.")
+				Play("", timer, cfg, r)
+			}
+		},
+		"axis-left": func() {
+			if prev, ok := PlayBack(timer, cfg, r); ok {
+				fmt.Println("[Attract] Axis ← back in history.")
+				Run([]string{prev})
+			}
+		},
 	}
-	if !timer.Stop() {
-		select {
-		case <-timer.C:
-		default:
-		}
-	}
-	timer.Reset(d)
 }
 
-// Next moves forward in history if possible, otherwise picks a random game.
-// Always runs the game and resets timer.
-func Next(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
-	hist := GetList("History.txt")
+// --- Search Mode Input Map (grouped by device type) ---
+func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, index []GameEntry, inputCh <-chan string) map[string]InputAction {
+	return map[string]InputAction{
 
-	// Forward in history
-	if currentIndex >= 0 && currentIndex < len(hist)-1 {
-		currentIndex++
-		path := hist[currentIndex]
-		Run([]string{path})
-		resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
-		return path, true
+		// ----------------------------
+		// Keyboard
+		// ----------------------------
+		"space": func() {
+			sb.WriteRune(' ')
+			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
+		},
+		"backspace": func() {
+			s := sb.String()
+			if len(s) > 0 {
+				sb.Reset()
+				sb.WriteString(s[:len(s)-1])
+			}
+			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
+		},
+		"enter": func() {
+			query := sb.String()
+			if query != "" {
+				fmt.Printf("[SEARCH] Searching for: %q (%d titles)\n", query, len(index))
+				*candidates = findMatches(query, "", index) // raw query
+				if len(*candidates) > 0 {
+					*idx = 0
+					launchGame((*candidates)[*idx])
+				} else {
+					fmt.Println("[SEARCH] No match found")
+				}
+			}
+			sb.Reset()
+			fmt.Println("[SEARCH] Ready. Use left/right to browse, esc to exit.")
+		},
+		"esc": func() {
+			fmt.Println("[SEARCH] Exiting search mode (Attract resumed).")
+		},
+
+		// ----------------------------
+		// Navigation
+		// ----------------------------
+		"left": func() {
+			if len(*candidates) > 0 && *idx > 0 {
+				*idx--
+				launchGame((*candidates)[*idx])
+			}
+		},
+		"right": func() {
+			if len(*candidates) > 0 && *idx < len(*candidates)-1 {
+				*idx++
+				launchGame((*candidates)[*idx])
+			}
+		},
 	}
-
-	// Otherwise pick a fresh random game
-	path := PickRandomGame(cfg, r)
-	if path == "" {
-		fmt.Println("[Attract] No game available to play.")
-		return "", false
-	}
-
-	hist = append(hist, path)
-	SetList("History.txt", hist)
-	currentIndex = len(hist) - 1
-
-	Run([]string{path})
-	resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
-	return path, true
-}
-
-// Back moves backward in history, runs game, resets timer.
-func Back(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
-	hist := GetList("History.txt")
-	if currentIndex > 0 {
-		currentIndex--
-		path := hist[currentIndex]
-		Run([]string{path})
-		resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
-		return path, true
-	}
-	return "", false
-}
-
-// Aliases for consistency
-func PlayNext(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
-	return Next(timer, cfg, r)
-}
-
-func PlayBack(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
-	return Back(timer, cfg, r)
 }
