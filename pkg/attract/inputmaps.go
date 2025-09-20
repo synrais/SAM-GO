@@ -150,17 +150,3 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 		},
 	}
 }
-
-// --- Attract Loop with Debug Print ---
-func RunAttractLoop(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, inputCh <-chan string) {
-	inputMap := AttractInputMap(cfg, r, timer, inputCh)
-
-	for ev := range inputCh {
-		evLower := strings.ToLower(ev)
-		fmt.Printf("[DEBUG] Event received: %q\n", evLower) // DEBUG LINE
-
-		if action, ok := inputMap[evLower]; ok {
-			action()
-		}
-	}
-}
