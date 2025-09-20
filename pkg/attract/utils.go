@@ -696,13 +696,256 @@ func updateTimestamp(list []SavedTimestamp, systemID, path string, mod time.Time
 	})
 }
 
+//
+// -----------------------------
+// Case-insensitive helpers
+// -----------------------------
+//
+
+// ContainsInsensitive checks if list contains item, ignoring case/whitespace.
+func ContainsInsensitive(list []string, item string) bool {
+	for _, v := range list {
+		if strings.EqualFold(strings.TrimSpace(v), item) {
+			return true
+		}
+	}
+	return false
+}
+
+// MatchesSystem is a wrapper for ContainsInsensitive, for system IDs.
+func MatchesSystem(list []string, system string) bool {
+	return ContainsInsensitive(list, system)
+}
+
+// AllowedFor checks include/exclude rules for a system ID.
+func AllowedFor(system string, include, exclude []string) bool {
+	if len(include) > 0 && !MatchesSystem(include, system) {
+		return false
+	}
+	if MatchesSystem(exclude, system) {
+		return false
+	}
+	return true
+}
+
+//
+// -----------------------------
+// Filterlist readers
+// -----------------------------
+//
+
+// ReadNameSet loads a filterlist file into a set of normalized names.
+func ReadNameSet(path string) map[string]struct{} {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	set := make(map[string]struct{})
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		name, _ := utils.NormalizeEntry(line)
+		set[name] = struct{}{}
+	}
+	return set
+}
+
+// ReadStaticMap loads staticlist.txt into a name→timestamp map.
+func ReadStaticMap(path string) map[string]string {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	m := make(map[string]string)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		ts := strings.Trim(parts[0], "<>")
+		name, _ := utils.NormalizeEntry(parts[1])
+		m[name] = ts
+	}
+	return m
+}
+
+//
+// -----------------------------
+// Line helpers
+// -----------------------------
+//
+
+// ParseLine extracts <timestamp> prefix and remainder.
+func ParseLine(line string) (float64, string) {
+	if strings.HasPrefix(line, "<") {
+		if idx := strings.Index(line, ">"); idx > 1 {
+			tsStr := line[1:idx]
+			rest := line[idx+1:]
+			ts, _ := strconv.ParseFloat(tsStr, 64)
+			return ts, rest
+		}
+	}
+	return 0, line
+}
+
+// ReadStaticTimestamp returns the static timestamp for a game if present.
+func ReadStaticTimestamp(systemID, game string) float64 {
+	filterBase := config.FilterlistDir()
+	path := filepath.Join(filterBase, systemID+"_staticlist.txt")
+
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		tsStr := strings.Trim(parts[0], "<>")
+		name, _ := utils.NormalizeEntry(parts[1])
+		if name == game {
+			ts, _ := strconv.ParseFloat(tsStr, 64)
+			return ts
+		}
+	}
+	return 0
+}
+
+//
+// -----------------------------
+// Matching helper
+// -----------------------------
+//
+
+// matchRule applies glob-like rules (*foo*, foo*, *bar).
+func matchRule(rule, candidate string) bool {
+	rule = strings.ToLower(strings.TrimSpace(rule))
+	candidate = strings.ToLower(strings.TrimSpace(candidate))
+
+	if rule == "" || candidate == "" {
+		return false
+	}
+
+	if strings.HasPrefix(rule, "*") && strings.HasSuffix(rule, "*") && len(rule) > 2 {
+		sub := strings.Trim(rule, "*")
+		return strings.Contains(candidate, sub)
+	}
+	if strings.HasSuffix(rule, "*") {
+		prefix := strings.TrimSuffix(rule, "*")
+		return strings.HasPrefix(candidate, prefix)
+	}
+	if strings.HasPrefix(rule, "*") {
+		suffix := strings.TrimPrefix(rule, "*")
+		return strings.HasSuffix(candidate, suffix)
+	}
+	if !strings.Contains(rule, ".") {
+		candidate = strings.TrimSuffix(candidate, filepath.Ext(candidate))
+	}
+	return candidate == rule
+}
+
+//
+// -----------------------------
+// Extra helpers from attract.go
+// -----------------------------
+//
+
+// ParsePlayTime handles "40" or "40-130" style configs.
+func ParsePlayTime(value string, r *rand.Rand) time.Duration {
+	if strings.Contains(value, "-") {
+		parts := strings.SplitN(value, "-", 2)
+		min, _ := strconv.Atoi(strings.TrimSpace(parts[0]))
+		max, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if max > min {
+			return time.Duration(r.Intn(max-min+1)+min) * time.Second
+		}
+		return time.Duration(min) * time.Second
+	}
+	secs, _ := strconv.Atoi(value)
+	return time.Duration(secs) * time.Second
+}
+
+// Disabled checks if a game should be blocked by disable rules.
+func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
+	rules, ok := cfg.Disable[systemID]
+	if !ok {
+		return false
+	}
+
+	base := filepath.Base(gamePath)
+	ext := filepath.Ext(gamePath)
+	dir := filepath.Base(filepath.Dir(gamePath))
+
+	for _, f := range rules.Folders {
+		if matchRule(f, dir) {
+			return true
+		}
+	}
+	for _, f := range rules.Files {
+		if matchRule(f, base) {
+			return true
+		}
+	}
+	for _, e := range rules.Extensions {
+		if strings.EqualFold(ext, e) {
+			return true
+		}
+	}
+	return false
+}
+
+// PickRandomGame chooses a random game from the available files.
+func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
+	files, _ := filepath.Glob(filepath.Join(config.GamelistDir(), "*_gamelist.txt"))
+	if len(files) == 0 {
+		return ""
+	}
+
+	// Pick random gamelist
+	listKey := files[r.Intn(len(files))]
+	lines, err := utils.ReadLines(listKey)
+	if err != nil || len(lines) == 0 {
+		return ""
+	}
+
+	// Pick random entry
+	index := 0
+	if cfg.Attract.Random {
+		index = r.Intn(len(lines))
+	}
+	_, gamePath := utils.ParseLine(lines[index])
+
+	return gamePath
+}
+
+//
 // -----------------------------
 // History navigation + Timer reset
 // -----------------------------
+//
 
 var currentIndex int = -1
 
-// resetTimer safely stops and resets a timer, ignoring nil.
 func resetTimer(timer *time.Timer, d time.Duration) {
 	if timer == nil {
 		return
@@ -717,11 +960,9 @@ func resetTimer(timer *time.Timer, d time.Duration) {
 }
 
 // Next moves forward in history if possible, otherwise picks a random game.
-// Always runs the game and resets timer.
 func Next(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
 
-	// Forward in history
 	if currentIndex >= 0 && currentIndex < len(hist)-1 {
 		currentIndex++
 		path := hist[currentIndex]
@@ -730,7 +971,6 @@ func Next(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool
 		return path, true
 	}
 
-	// Otherwise pick a fresh random game
 	path := PickRandomGame(cfg, r)
 	if path == "" {
 		fmt.Println("[Attract] No game available to play.")
@@ -746,7 +986,7 @@ func Next(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool
 	return path, true
 }
 
-// Back moves backward in history, runs game, resets timer.
+// Back moves backward in history.
 func Back(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
 	if currentIndex > 0 {
@@ -757,15 +997,6 @@ func Back(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool
 		return path, true
 	}
 	return "", false
-}
-
-// Aliases for consistency
-func PlayNext(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
-	return Next(timer, cfg, r)
-}
-
-func PlayBack(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
-	return Back(timer, cfg, r)
 }
 
 //
@@ -783,12 +1014,10 @@ var (
 	LastStartTime    time.Time
 )
 
-// GetLastPlayed returns info about last launched game.
 func GetLastPlayed() (system games.System, path, name string, start time.Time) {
 	return LastPlayedSystem, LastPlayedPath, LastPlayedName, LastStartTime
 }
 
-// setLastPlayed updates in-memory state for last played game.
 func setLastPlayed(system games.System, path string) {
 	LastPlayedSystem = system
 	LastPlayedPath = path
@@ -798,7 +1027,6 @@ func setLastPlayed(system games.System, path string) {
 	LastPlayedName = strings.TrimSuffix(base, filepath.Ext(base))
 }
 
-// writeNowPlayingFile saves details to /tmp/Now_Playing.txt.
 func writeNowPlayingFile() error {
 	line1 := fmt.Sprintf("[%s] %s", LastPlayedSystem.Name, LastPlayedName)
 	base := filepath.Base(LastPlayedPath)
@@ -808,7 +1036,6 @@ func writeNowPlayingFile() error {
 	return os.WriteFile(nowPlayingFile, []byte(content), 0644)
 }
 
-// Run launches a game through MiSTer.
 func Run(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("Usage: SAM -run <path>")
@@ -816,7 +1043,6 @@ func Run(args []string) error {
 	runPath := args[0]
 
 	system, _ := games.BestSystemMatch(&config.UserConfig{}, runPath)
-
 	setLastPlayed(system, runPath)
 
 	if err := writeNowPlayingFile(); err != nil {
@@ -824,6 +1050,5 @@ func Run(args []string) error {
 	}
 
 	fmt.Printf("[RUN] Now Playing %s: %s\n", system.Name, LastPlayedName)
-
 	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
 }
