@@ -105,6 +105,20 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 					fmt.Println("[Attract] Skipped current game.")
 					break loop
 
+				case "`": // <-- backtick enters search
+					fmt.Println("[Attract] Entering search mode...")
+					SearchAndPlay(inputCh)
+					fmt.Println("[Attract] Resuming attract mode.")
+
+					// reset timer after search
+					if !timer.Stop() {
+						select {
+						case <-timer.C:
+						default:
+						}
+					}
+					timer.Reset(ParsePlayTime(cfg.Attract.PlayTime, r))
+
 				case "right", "button1":
 					if next, ok := Next(); ok {
 						fmt.Println("[Attract] Going forward in history.")
