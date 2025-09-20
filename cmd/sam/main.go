@@ -42,5 +42,5 @@ func main() {
 	fmt.Println("[MAIN] Loaded config from:", cfg.IniPath)
 
 	// Hand off directly to attract mode
-	attract.PrepareAttract(cfg)
+	attract.PrepareAttractLists(cfg)
 }
