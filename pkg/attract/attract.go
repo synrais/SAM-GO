@@ -89,8 +89,8 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 		wait := ParsePlayTime(cfg.Attract.PlayTime, r)
 		timer := time.NewTimer(wait)
 
-		// Load input map (actions only, no resets)
-		inputMap := AttractInputMap(cfg, inputCh)
+		// Load input map (all actions, including timer resets)
+		inputMap := AttractInputMap(cfg, r, timer, inputCh)
 
 	loop:
 		for {
@@ -99,35 +99,8 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 				break loop // natural advance
 
 			case ev := <-inputCh:
-				ev = strings.ToLower(ev)
-
-				switch ev {
-				case "right", "button1":
-					if next, ok := Next(); ok {
-						fmt.Println("[Attract] Going forward in history.")
-						Run([]string{next})
-
-						// Reset timer explicitly here
-						resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
-					} else {
-						fmt.Println("[Attract] Skipped current game.")
-						timer.Stop()
-					}
-
-				case "left", "button2":
-					if prev, ok := PlayBack(); ok {
-						fmt.Println("[Attract] Going back in history.")
-						Run([]string{prev})
-
-						// Reset timer explicitly here
-						resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
-					}
-
-				default:
-					// Delegate other mapped actions (esc, space, search, etc.)
-					if action, ok := inputMap[ev]; ok {
-						action()
-					}
+				if action, ok := inputMap[strings.ToLower(ev)]; ok {
+					action()
 				}
 			}
 		}
