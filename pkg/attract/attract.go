@@ -16,21 +16,6 @@ import (
 )
 
 // RunAttract is the main entrypoint for Attract Mode.
-// Timeline overview:
-//
-// 1. Build gamelists (CreateGamelists)
-// 2. Load gamelists into cache
-// 3. Setup channels for Skip / Back actions
-// 4. Start static detector + input listeners
-// 5. Gather allowed system gamelists (respect include/exclude groups)
-// 6. Enter the main Attract loop:
-//    - Pick a system list and game
-//    - Play game for configured time
-//    - React to Skip / Back / Timer events
-//    - Remove the game from the active list
-//    - If all games exhausted, refresh from cache
-//
-// The loop continues indefinitely until killed (Ctrl+C).
 func RunAttract(cfg *config.UserConfig, args []string) {
 	attractCfg := cfg.Attract
 
@@ -56,7 +41,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 	skipCh := make(chan struct{}, 1)
 	backCh := make(chan struct{}, 1)
 
-	// Optional silent flag for less logging.
+	// Optional silent flag.
 	silent := false
 	for _, a := range args {
 		if a == "-s" || a == "--silent" {
@@ -64,7 +49,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		}
 	}
 
-	// 4a. Static detector watches for inactivity and pushes Skip events.
+	// 4a. Static detector -> Skip.
 	if attractCfg.UseStaticDetector {
 		go func() {
 			for ev := range Stream(cfg, skipCh) {
@@ -75,7 +60,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		}()
 	}
 
-	// 4b. Input listeners (keyboard/mouse/joystick) for Skip/Back actions.
+	// 4b. Input listeners (keyboard/mouse/joystick).
 	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
 		input.RelayInputs(cfg,
 			func() { select { case backCh <- struct{}{}: default: } },
@@ -83,7 +68,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		)
 	}
 
-	// 5. Collect gamelists in cache, apply include/exclude filters.
+	// 5. Collect gamelists in cache, apply include/exclude.
 	allKeys := cache.ListKeys()
 	var allFiles []string
 	for _, k := range allKeys {
@@ -114,7 +99,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		fmt.Println("[Attract] Running. Ctrl-C to exit.")
 	}
 
-	// Helper: play one game and handle skip/back/timer.
+	// --- Play loop helper (ticker-based) ---
 	playGame := func(gamePath string, ts float64) {
 	Launch:
 		for {
@@ -124,31 +109,32 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 				fmt.Printf("[Attract] %s - %s <%s>\n",
 					time.Now().Format("15:04:05"), name, gamePath)
 			}
-			Run([]string{gamePath}) // now local Run from utils.go
+			Run([]string{gamePath}) // launch game
 
-			// Decide how long to keep game running.
+			// Pick timer from ini (respects X-Y).
 			wait := ParsePlayTime(attractCfg.PlayTime, r)
 			if ts > 0 {
-				// Staticlist timestamp may shorten duration.
-				skipDuration := time.Duration(ts*float64(time.Second)) +
+				// staticlist timestamps may reduce time.
+				skipDur := time.Duration(ts*float64(time.Second)) +
 					time.Duration(cfg.List.SkipafterStatic)*time.Second
-				if skipDuration < wait {
-					wait = skipDuration
+				if skipDur < wait {
+					wait = skipDur
 				}
 			}
 
-			// Loop until timer expires, Skip pressed, or Back pressed.
-			deadline := time.Now().Add(wait)
-			for time.Now().Before(deadline) {
+			ticker := time.NewTicker(wait)
+			defer ticker.Stop()
+
+			for {
 				if input.IsSearching() {
-					// Pause timer if in search mode.
-					time.Sleep(100 * time.Millisecond)
-					deadline = deadline.Add(100 * time.Millisecond)
+					// Pause ticker until search ends.
+					ticker.Stop()
+					time.Sleep(200 * time.Millisecond)
 					continue
 				}
-				remaining := time.Until(deadline)
+
 				select {
-				case <-time.After(remaining):
+				case <-ticker.C:
 					if next, ok := PlayNext(); ok {
 						gamePath = next
 						ts = 0
@@ -173,19 +159,12 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 					}
 				}
 			}
-			// Timer ran out → auto advance.
-			if next, ok := PlayNext(); ok {
-				gamePath = next
-				ts = 0
-				continue Launch
-			}
-			return
 		}
 	}
 
-	// 6. Main attract loop: forever cycle.
+	// 6. Main attract loop: forever.
 	for {
-		// Handle instant Back/Skip requests outside main play loop.
+		// Check instant Back/Skip first.
 		select {
 		case <-backCh:
 			if prev, ok := PlayBack(); ok {
@@ -200,13 +179,12 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		default:
 		}
 
-		// If exhausted, reset cache and start fresh.
+		// Reset if exhausted.
 		if len(files) == 0 {
 			if !silent {
 				fmt.Println("[Attract] All systems exhausted — refreshing from cache")
 			}
 			cache.ResetAll()
-
 			allKeys = cache.ListKeys()
 			allFiles = nil
 			for _, k := range allKeys {
@@ -215,40 +193,37 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 				}
 			}
 			files = FilterAllowed(allFiles, include, exclude)
-
 			if len(files) == 0 {
 				fmt.Println("[Attract] No gamelists even after reset, exiting.")
 				return
 			}
 		}
 
-		// Pick random system and game from its list.
+		// Pick random list and entry.
 		listKey := files[r.Intn(len(files))]
 		lines := cache.GetList(listKey)
 		if len(lines) == 0 {
 			// Drop empty list from rotation.
-			var newFiles []string
+			var nf []string
 			for _, f := range files {
 				if f != listKey {
-					newFiles = append(newFiles, f)
+					nf = append(nf, f)
 				}
 			}
-			files = newFiles
+			files = nf
 			continue
 		}
 
-		// Pick one entry (first or random).
 		index := 0
 		if attractCfg.Random {
 			index = r.Intn(len(lines))
 		}
 		ts, gamePath := utils.ParseLine(lines[index])
 
-		// Mark in history and run.
 		Play(gamePath)
 		playGame(gamePath, ts)
 
-		// Remove game from list so it won’t repeat until refresh.
+		// Remove played game from list.
 		lines = append(lines[:index], lines[index+1:]...)
 		cache.SetList(listKey, lines)
 	}
