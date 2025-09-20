@@ -43,8 +43,8 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 				fmt.Println("[Attract] Keyboard → forward in history.")
 				Run([]string{next})
 			} else {
-				fmt.Println("[Attract] No forward entry, picking random game.")
-				RunAttractOnce(cfg, r, inputCh)
+				fmt.Println("[Attract] No forward entry, starting new attract pick.")
+				Play("", timer, cfg, r)
 			}
 		},
 
@@ -56,8 +56,8 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 				fmt.Println("[Attract] Button1 → forward in history.")
 				Run([]string{next})
 			} else {
-				fmt.Println("[Attract] No forward entry, picking random game.")
-				RunAttractOnce(cfg, r, inputCh)
+				fmt.Println("[Attract] No forward entry, starting new attract pick.")
+				Play("", timer, cfg, r)
 			}
 		},
 		"button2": func() {
@@ -75,8 +75,8 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 				fmt.Println("[Attract] Swipe → forward in history.")
 				Run([]string{next})
 			} else {
-				fmt.Println("[Attract] No forward entry, picking random game.")
-				RunAttractOnce(cfg, r, inputCh)
+				fmt.Println("[Attract] No forward entry, starting new attract pick.")
+				Play("", timer, cfg, r)
 			}
 		},
 		"swipe-left": func() {
@@ -94,8 +94,8 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 				fmt.Println("[Attract] Axis → forward in history.")
 				Run([]string{next})
 			} else {
-				fmt.Println("[Attract] No forward entry, picking random game.")
-				RunAttractOnce(cfg, r, inputCh)
+				fmt.Println("[Attract] No forward entry, starting new attract pick.")
+				Play("", timer, cfg, r)
 			}
 		},
 		"axis-left": func() {
