@@ -10,12 +10,13 @@ import (
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
+	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// PrepareAttract builds gamelists, applies filters,
-// then immediately launches the attract loop.
-func PrepareAttract(cfg *config.UserConfig) {
+// PrepareAttractLists builds gamelists, applies filters,
+// then starts InitAttract to handle input and launch the main loop.
+func PrepareAttractLists(cfg *config.UserConfig) {
 	// 1. Ensure gamelists are built.
 	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
 	if CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
@@ -49,14 +50,41 @@ func PrepareAttract(cfg *config.UserConfig) {
 		os.Exit(1)
 	}
 
-	// 4. Start the main loop right away.
-	RunAttractLoop(cfg, files)
+	// 4. Hand over to InitAttract.
+	InitAttract(cfg, files)
+}
+
+// InitAttract sets up input relay and hands off to RunAttractLoop.
+func InitAttract(cfg *config.UserConfig, files []string) {
+	// Skip/back channels
+	skipCh := make(chan struct{}, 1)
+	backCh := make(chan struct{}, 1)
+
+	// Relay keyboard/mouse/joystick input
+	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
+		input.RelayInputs(cfg,
+			func() { select { case backCh <- struct{}{}: default: } },
+			func() { select { case skipCh <- struct{}{}: default: } },
+		)
+	}
+
+	// Now start the attract loop
+	RunAttractLoop(cfg, files, skipCh, backCh)
 }
 
 // RunAttractLoop runs the attract mode loop until interrupted.
-func RunAttractLoop(cfg *config.UserConfig, files []string) {
+func RunAttractLoop(cfg *config.UserConfig, files []string, skipCh, backCh chan struct{}) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	fmt.Println("[Attract] Running. Ctrl-C to exit.")
+
+	// Start static detector here, so it’s tied to the attract loop
+	if cfg.Attract.UseStaticDetector {
+		go func() {
+			for ev := range Stream(cfg, skipCh) {
+				fmt.Printf("[Attract] %s\n", ev)
+			}
+		}()
+	}
 
 	for {
 		// Pick random gamelist
@@ -90,7 +118,21 @@ func RunAttractLoop(cfg *config.UserConfig, files []string) {
 			}
 		}
 
-		// Wait until next game
-		time.Sleep(wait)
+		// Wait or respond to skip/back
+		timer := time.NewTimer(wait)
+		select {
+		case <-timer.C:
+			// natural advance
+		case <-skipCh:
+			fmt.Println("[Attract] Skipped")
+		case <-backCh:
+			if prev, ok := PlayBack(); ok {
+				gamePath = prev
+				ts = 0
+				timer.Stop()
+				// jump straight to next iteration
+				continue
+			}
+		}
 	}
 }
