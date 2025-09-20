@@ -3,6 +3,7 @@ package attract
 import (
 	"bufio"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -27,7 +28,6 @@ const (
 var (
 	streamOnce sync.Once
 	streamCh   chan StaticEvent
-	skipCh     chan<- struct{}
 )
 
 // NamedColor represents a well known color and its RGB components.
@@ -175,10 +175,9 @@ func (e StaticEvent) String() string {
 }
 
 // Stream launches the static screen detector and streams events (singleton).
-func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent {
+func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 	streamOnce.Do(func() {
 		streamCh = make(chan StaticEvent, 1)
-		skipCh = skipChan
 
 		baseCfg := cfg.StaticDetector
 		overrides := cfg.StaticDetector.Systems
@@ -359,7 +358,8 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 							addToFile(LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
 						}
 						if currCfg.SkipBlack {
-							select { case skipCh <- struct{}{}: default: }
+							Next(nil, cfg, rand.New(rand.NewSource(time.Now().UnixNano())))
+							fmt.Println("[StaticDetector] Auto-skip (black screen)")
 						}
 						handledBlack = true
 					}
@@ -369,7 +369,8 @@ func Stream(cfg *config.UserConfig, skipChan chan<- struct{}) <-chan StaticEvent
 							addToFile(LastPlayedSystem.Id, entry, "_staticlist.txt")
 						}
 						if currCfg.SkipStatic {
-							select { case skipCh <- struct{}{}: default: }
+							Next(nil, cfg, rand.New(rand.NewSource(time.Now().UnixNano())))
+							fmt.Println("[StaticDetector] Auto-skip (static screen)")
 						}
 						handledStatic = true
 					}
