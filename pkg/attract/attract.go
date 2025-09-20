@@ -11,8 +11,12 @@ import (
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/input"
-	"github.com/synrais/SAM-GO/pkg/utils"
 )
+
+//
+// -----------------------------
+// Prepare + Init
+// -----------------------------
 
 // PrepareAttractLists builds gamelists, applies filters, then starts InitAttract.
 func PrepareAttractLists(cfg *config.UserConfig) {
@@ -56,38 +60,47 @@ func InitAttract(cfg *config.UserConfig, files []string) {
 	RunAttractLoop(cfg, files, inputCh)
 }
 
+//
+// -----------------------------
+// Main Attract Loop
+// -----------------------------
+
 // RunAttractLoop runs the attract mode loop until interrupted.
 func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan string) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	fmt.Println("[Attract] Running. Press ESC to exit.")
 
+	// Pick first game using Next()
+	if first, ok := Next(nil, cfg, r); ok {
+		fmt.Printf("[Attract] First pick -> %s\n", filepath.Base(first))
+	} else {
+		fmt.Println("[Attract] No game available to start attract mode.")
+		return
+	}
+
+	// Timer for automatic switching
+	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
+	timer := time.NewTimer(wait)
+
+	// Input map
+	inputMap := AttractInputMap(cfg, r, timer, inputCh)
+
+	// Event loop
 	for {
-		// First pick / next pick handled by Next()
-		path, ok := Next(nil, cfg, r)
-		if !ok {
-			continue
-		}
+		select {
+		case <-timer.C:
+			// Advance automatically
+			if _, ok := Next(timer, cfg, r); !ok {
+				fmt.Println("[Attract] Failed to pick next game.")
+			}
+			timer.Reset(ParsePlayTime(cfg.Attract.PlayTime, r))
 
-		// Start timer for this game
-		wait := ParsePlayTime(cfg.Attract.PlayTime, r)
-		timer := time.NewTimer(wait)
+		case ev := <-inputCh:
+			evLower := strings.ToLower(ev)
+			fmt.Printf("[DEBUG] Event received: %q\n", evLower)
 
-		// Load input map
-		inputMap := AttractInputMap(cfg, r, timer, inputCh)
-
-	loop:
-		for {
-			select {
-			case <-timer.C:
-				break loop // auto-advance
-
-			case ev := <-inputCh:
-				evLower := strings.ToLower(ev)
-				fmt.Printf("[DEBUG] Event received: %q\n", evLower)
-
-				if action, ok := inputMap[evLower]; ok {
-					action()
-				}
+			if action, ok := inputMap[evLower]; ok {
+				action()
 			}
 		}
 	}
