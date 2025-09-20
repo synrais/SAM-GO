@@ -9,22 +9,13 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// --- Search state ---
-// GameIndex holds all indexed game entries for search.
-var GameIndex []GameEntry
-
-// GameEntry is one normalized entry in the index.
-type GameEntry struct {
-	Name string // normalized name
-	Ext  string // extension (smd, nes, zip, …)
-	Path string // original line from Search.txt
-}
-
 // SearchAndPlay enters search mode and launches matching games.
 func SearchAndPlay() {
 	fmt.Println("[SEARCH] 🔍 Entered search mode (Attract paused).")
 	fmt.Println("[SEARCH] Type to filter, ENTER to launch, ESC to exit.")
-	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(GameIndex))
+
+	index := GetGameIndex()
+	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(index))
 
 	ch := StreamKeyboards()
 	re := regexp.MustCompile(`<([^>]+)>`)
@@ -56,8 +47,8 @@ func SearchAndPlay() {
 				}
 
 				if qn != "" {
-					fmt.Printf("[SEARCH] Searching... (%d titles)\n", len(GameIndex))
-					candidates = findMatches(qn, qext)
+					fmt.Printf("[SEARCH] Searching... (%d titles)\n", len(index))
+					candidates = findMatches(qn, qext, index)
 					if len(candidates) > 0 {
 						idx = 0
 						fmt.Printf("[SEARCH] ▶ Launching: %s\n", candidates[idx])
@@ -112,11 +103,11 @@ func SearchAndPlay() {
 
 // --- Matching ---
 
-func findMatches(qn, qext string) []string {
+func findMatches(qn, qext string, index []GameEntry) []string {
 	var prefix, substring, fuzzy []string
 
-	for _, e := range GameIndex {
-		// Skip entries that are separators (e.g., # SYSTEM: systemId #)
+	for _, e := range index {
+		// Skip entries that are separators
 		if strings.HasPrefix(e.Name, "# SYSTEM:") {
 			continue
 		}
@@ -151,9 +142,7 @@ func findMatches(qn, qext string) []string {
 		out = out[:200]
 	}
 
-	// Show just summary info
 	fmt.Printf("[SEARCH] Matches found: %d\n", len(out))
-
 	return out
 }
 
