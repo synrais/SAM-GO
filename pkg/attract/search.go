@@ -2,7 +2,6 @@ package attract
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -10,93 +9,77 @@ import (
 )
 
 // SearchAndPlay enters search mode and launches matching games.
-func SearchAndPlay() {
+func SearchAndPlay(inputCh <-chan string) {
 	fmt.Println("[SEARCH] 🔍 Entered search mode (Attract paused).")
 	fmt.Println("[SEARCH] Type to filter, ENTER to launch, ESC to exit.")
 
 	index := GetGameIndex()
 	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(index))
 
-	ch := StreamKeyboards()
-	re := regexp.MustCompile(`<([^>]+)>`)
-
 	var sb strings.Builder
 	var candidates []string
 	idx := -1
 
-	for line := range ch {
-		// Look for <TOKENS>
-		matches := re.FindAllStringSubmatch(line, -1)
-
-		for _, m := range matches {
-			key := strings.ToUpper(m[1]) // force uppercase for all special keys
-
-			switch key {
-			case "SPACE":
-				sb.WriteRune(' ')
-				fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
-
-			case "ENTER":
-				qn, qext := utils.NormalizeEntry(sb.String())
-
-				// Friendlier search log
-				if qext != "" {
-					fmt.Printf("[SEARCH] Looking for: %q (.%s)\n", sb.String(), qext)
-				} else {
-					fmt.Printf("[SEARCH] Looking for: %q\n", sb.String())
-				}
-
-				if qn != "" {
-					fmt.Printf("[SEARCH] Searching... (%d titles)\n", len(index))
-					candidates = findMatches(qn, qext, index)
-					if len(candidates) > 0 {
-						idx = 0
-						fmt.Printf("[SEARCH] ▶ Launching: %s\n", candidates[idx])
-						launchGame(candidates[idx])
-					} else {
-						fmt.Println("[SEARCH] No match found")
-					}
-				}
-				// Reset buffer after enter
-				sb.Reset()
-				fmt.Println("[SEARCH] Ready. Use ←/→ to browse, ESC to exit.")
-
-			case "ESC":
-				fmt.Println("[SEARCH] Exiting search mode (Attract resumed).")
-				return
-
-			case "BACKSPACE":
-				s := sb.String()
-				if len(s) > 0 {
-					sb.Reset()
-					sb.WriteString(s[:len(s)-1])
-				}
-				fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
-
-			case "LEFT":
-				if len(candidates) > 0 && idx > 0 {
-					idx--
-					fmt.Printf("[SEARCH] ▶ Launching (prev): %s\n", candidates[idx])
-					launchGame(candidates[idx])
-				}
-
-			case "RIGHT":
-				if len(candidates) > 0 && idx < len(candidates)-1 {
-					idx++
-					fmt.Printf("[SEARCH] ▶ Launching (next): %s\n", candidates[idx])
-					launchGame(candidates[idx])
-				}
-			}
-		}
-
-		// Regular text input goes into buffer
-		l := re.ReplaceAllString(line, "")
-		for _, r := range l {
-			if r == '\n' || r == '\r' {
-				continue
-			}
-			sb.WriteRune(r)
+	for ev := range inputCh {
+		switch strings.ToLower(ev) {
+		case "space":
+			sb.WriteRune(' ')
 			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
+
+		case "enter":
+			qn, qext := utils.NormalizeEntry(sb.String())
+			if qext != "" {
+				fmt.Printf("[SEARCH] Looking for: %q (.%s)\n", sb.String(), qext)
+			} else {
+				fmt.Printf("[SEARCH] Looking for: %q\n", sb.String())
+			}
+
+			if qn != "" {
+				fmt.Printf("[SEARCH] Searching... (%d titles)\n", len(index))
+				candidates = findMatches(qn, qext, index)
+				if len(candidates) > 0 {
+					idx = 0
+					fmt.Printf("[SEARCH] ▶ Launching: %s\n", candidates[idx])
+					launchGame(candidates[idx])
+				} else {
+					fmt.Println("[SEARCH] No match found")
+				}
+			}
+			sb.Reset()
+			fmt.Println("[SEARCH] Ready. Use ←/→ to browse, ESC to exit.")
+
+		case "esc":
+			fmt.Println("[SEARCH] Exiting search mode (Attract resumed).")
+			return
+
+		case "backspace":
+			s := sb.String()
+			if len(s) > 0 {
+				sb.Reset()
+				sb.WriteString(s[:len(s)-1])
+			}
+			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
+
+		case "left":
+			if len(candidates) > 0 && idx > 0 {
+				idx--
+				fmt.Printf("[SEARCH] ▶ Launching (prev): %s\n", candidates[idx])
+				launchGame(candidates[idx])
+			}
+
+		case "right":
+			if len(candidates) > 0 && idx < len(candidates)-1 {
+				idx++
+				fmt.Printf("[SEARCH] ▶ Launching (next): %s\n", candidates[idx])
+				launchGame(candidates[idx])
+			}
+
+		default:
+			// treat as regular character
+			if len(ev) == 1 {
+				sb.WriteString(ev)
+				fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
+			}
 		}
 	}
 }
@@ -107,11 +90,9 @@ func findMatches(qn, qext string, index []GameEntry) []string {
 	var prefix, substring, fuzzy []string
 
 	for _, e := range index {
-		// Skip entries that are separators
 		if strings.HasPrefix(e.Name, "# SYSTEM:") {
 			continue
 		}
-
 		if qext != "" && qext != e.Ext {
 			continue
 		}
@@ -121,27 +102,22 @@ func findMatches(qn, qext string, index []GameEntry) []string {
 		} else if strings.Contains(e.Name, qn) {
 			substring = append(substring, e.Path)
 		} else {
-			dist := levenshtein(qn, e.Name)
-			if dist <= 3 {
+			if levenshtein(qn, e.Name) <= 3 {
 				fuzzy = append(fuzzy, e.Path)
 			}
 		}
 	}
 
-	// Sort for consistency
 	sort.Strings(prefix)
 	sort.Strings(substring)
 	sort.Strings(fuzzy)
 
-	// Concatenate with priority
 	out := append(prefix, substring...)
 	out = append(out, fuzzy...)
 
-	// Restrict to top 200
 	if len(out) > 200 {
 		out = out[:200]
 	}
-
 	fmt.Printf("[SEARCH] Matches found: %d\n", len(out))
 	return out
 }
@@ -149,14 +125,12 @@ func findMatches(qn, qext string, index []GameEntry) []string {
 // --- Helpers ---
 
 func launchGame(path string) {
-	// Use the same runner as Attract so behavior is consistent.
 	fmt.Printf("[SEARCH] ▶ Running game: %s\n", path)
 	Run([]string{path})
 }
 
 func levenshtein(a, b string) int {
-	la := len(a)
-	lb := len(b)
+	la, lb := len(a), len(b)
 	d := make([][]int, la+1)
 	for i := range d {
 		d[i] = make([]int, lb+1)
