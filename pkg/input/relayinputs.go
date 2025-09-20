@@ -2,8 +2,6 @@ package input
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -11,35 +9,33 @@ import (
 	"github.com/synrais/SAM-GO/pkg/config"
 )
 
-// RelayInputs starts listeners for keyboard, mouse and joystick input
-// based on configuration. When a configured event is seen the matching
-// action is executed. If no custom action is configured, the default
-// behaviour uses the provided back and next callbacks.
-func RelayInputs(cfg *config.UserConfig, back func(), next func()) {
-	if cfg == nil {
-		return
-	}
+// InputEvent is a normalized string event (like "left", "`", "enter").
+type InputEvent string
+
+// StreamEvents relays inputs (keyboard/mouse/joystick) into a channel of normalized InputEvents.
+func StreamEvents(cfg *config.UserConfig) <-chan InputEvent {
+	out := make(chan InputEvent, 10)
 
 	// ---------------- KEYBOARD ----------------
 	if cfg.InputDetector.Keyboard {
 		go func() {
 			re := regexp.MustCompile(`<([^>]+)>`)
 			for line := range StreamKeyboards() {
-				fmt.Println("[KEY]", line) // raw debug
+				fmt.Println("[KEY]", line)
 
-				// Extract <tokens> like <enter>, <escape>, etc.
+				// Extract <tokens> like <enter>, <escape>, <f9>, etc.
 				for _, m := range re.FindAllStringSubmatch(line, -1) {
 					key := strings.ToLower(m[1])
-					performAction(cfg.InputDetector.KeyboardMap, key, back, next)
+					out <- InputEvent(key)
 				}
 
-				// Plain characters (a, b, c…)
+				// Also forward any plain characters (a, b, c…) as events
 				clean := re.ReplaceAllString(line, "")
 				for _, r := range clean {
 					if r == '\n' || r == '\r' || r == ' ' {
 						continue
 					}
-					performAction(cfg.InputDetector.KeyboardMap, string(r), back, next)
+					out <- InputEvent(string(r))
 				}
 			}
 		}()
@@ -50,23 +46,23 @@ func RelayInputs(cfg *config.UserConfig, back func(), next func()) {
 		go func() {
 			for ev := range StreamMouse() {
 				if ev.DX < 0 {
-					performAction(cfg.InputDetector.MouseMap, "swipeleft", back, next)
+					out <- "swipeleft"
 				} else if ev.DX > 0 {
-					performAction(cfg.InputDetector.MouseMap, "swiperight", back, next)
+					out <- "swiperight"
 				}
 				if ev.DY < 0 {
-					performAction(cfg.InputDetector.MouseMap, "swipedown", back, next)
+					out <- "swipedown"
 				} else if ev.DY > 0 {
-					performAction(cfg.InputDetector.MouseMap, "swipeup", back, next)
+					out <- "swipeup"
 				}
 				for _, b := range ev.Buttons {
 					switch b {
 					case "L":
-						performAction(cfg.InputDetector.MouseMap, "left", back, next)
+						out <- "left"
 					case "M":
-						performAction(cfg.InputDetector.MouseMap, "middle", back, next)
+						out <- "middle"
 					case "R":
-						performAction(cfg.InputDetector.MouseMap, "right", back, next)
+						out <- "right"
 					}
 				}
 			}
@@ -85,7 +81,7 @@ func RelayInputs(cfg *config.UserConfig, back func(), next func()) {
 						for _, item := range strings.Split(part, ",") {
 							kv := strings.Split(strings.TrimSpace(item), "=")
 							if len(kv) == 2 && kv[1] == "p" {
-								performAction(cfg.InputDetector.JoystickMap, kv[0], back, next)
+								out <- InputEvent(kv[0]) // e.g. "a", "b"
 							}
 						}
 					}
@@ -99,9 +95,9 @@ func RelayInputs(cfg *config.UserConfig, back func(), next func()) {
 							if len(kv) == 2 {
 								v := parseAxisValue(kv[1])
 								if v < -20000 {
-									performAction(cfg.InputDetector.JoystickMap, kv[0]+"-", back, next)
+									out <- InputEvent(kv[0] + "-")
 								} else if v > 20000 {
-									performAction(cfg.InputDetector.JoystickMap, kv[0]+"+", back, next)
+									out <- InputEvent(kv[0] + "+")
 								}
 							}
 						}
@@ -110,8 +106,11 @@ func RelayInputs(cfg *config.UserConfig, back func(), next func()) {
 			}
 		}()
 	}
+
+	return out
 }
 
+// parseAxisValue extracts an int from joystick axis string.
 func parseAxisValue(s string) int {
 	end := strings.IndexAny(s, ", ")
 	if end >= 0 {
@@ -119,59 +118,4 @@ func parseAxisValue(s string) int {
 	}
 	v, _ := strconv.Atoi(strings.TrimSpace(s))
 	return v
-}
-
-func performAction(m map[string]string, key string, back, next func()) {
-	// Backtick always (re)starts search mode
-	if key == "`" {
-		fmt.Println("[INFO] Starting search mode…")
-		SearchAndPlay()
-		fmt.Println("[INFO] Exited search mode.")
-		return
-	}
-
-	// Mapped commands
-	if m != nil {
-		if cmd, ok := m[key]; ok {
-			runCommand(cmd, back, next)
-			return
-		}
-	}
-
-	// Defaults: left/back, right/next
-	switch key {
-	case "left", "dpleft", "leftx-", "rightx-":
-		if back != nil {
-			back()
-		}
-	case "right", "dpright", "leftx+", "rightx+":
-		if next != nil {
-			next()
-		}
-	}
-}
-
-func runCommand(cmd string, back, next func()) {
-	parts := strings.Fields(cmd)
-	if len(parts) == 0 {
-		return
-	}
-	switch parts[0] {
-	case "back":
-		if back != nil {
-			back()
-		}
-	case "next":
-		if next != nil {
-			next()
-		}
-	case "search":
-		fmt.Println("[INFO] Starting search mode (via runCommand)…")
-		SearchAndPlay()
-		fmt.Println("[INFO] Exited search mode (via runCommand).")
-	}
-	c := exec.Command(parts[0], parts[1:]...)
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-	_ = c.Start()
 }
