@@ -82,14 +82,14 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 			time.Now().Format("15:04:05"), name, gamePath)
 
 		// Record history + run game
-		Play(gamePath, nil, cfg, r) // <- first launch, timer comes later
+		Play(gamePath, nil, cfg, r)
 		Run([]string{gamePath})
 
 		// Start timer for this game
 		wait := ParsePlayTime(cfg.Attract.PlayTime, r)
 		timer := time.NewTimer(wait)
 
-		// ✅ Load input map with timer + rand
+		// Load input map
 		inputMap := AttractInputMap(cfg, r, timer, inputCh)
 
 	loop:
@@ -99,9 +99,7 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 				break loop // natural advance
 
 			case ev := <-inputCh:
-				ev = strings.ToLower(ev)
-
-				// Delegate to mapped actions
+				// no strings.ToLower — match raw tokens like <RIGHT>, <ESC>
 				if action, ok := inputMap[ev]; ok {
 					action()
 				}
@@ -109,4 +107,3 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 		}
 	}
 }
-
