@@ -90,7 +90,7 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 		timer := time.NewTimer(wait)
 
 		// Load input map (actions only, no resets)
-		inputMap := AttractInputMap(cfg, r, timer, inputCh)
+		inputMap := AttractInputMap(cfg, inputCh)
 
 	loop:
 		for {
