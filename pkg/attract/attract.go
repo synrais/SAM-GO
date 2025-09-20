@@ -125,7 +125,7 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 
 				case "left", "button2":
 					if prev, ok := PlayBack(); ok {
-						fmt.Println("[Attract] Going back to previous game.")
+						fmt.Println("[Attract] Going back in history.")
 						Run([]string{prev})
 
 						// reset timer
