@@ -22,12 +22,12 @@ func SearchAndPlay(inputCh <-chan string) {
 	idx := -1
 
 	for ev := range inputCh {
-		switch strings.ToLower(ev) {
-		case "space":
+		switch ev {
+		case "SPACE":
 			sb.WriteRune(' ')
 			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
 
-		case "enter":
+		case "ENTER":
 			qn, qext := utils.NormalizeEntry(sb.String())
 			if qext != "" {
 				fmt.Printf("[SEARCH] Looking for: %q (.%s)\n", sb.String(), qext)
@@ -48,11 +48,11 @@ func SearchAndPlay(inputCh <-chan string) {
 			sb.Reset()
 			fmt.Println("[SEARCH] Ready. Use ←/→ to browse, ESC to exit.")
 
-		case "esc":
+		case "ESC":
 			fmt.Println("[SEARCH] Exiting search mode (Attract resumed).")
 			return
 
-		case "backspace":
+		case "BACKSPACE":
 			s := sb.String()
 			if len(s) > 0 {
 				sb.Reset()
@@ -60,20 +60,20 @@ func SearchAndPlay(inputCh <-chan string) {
 			}
 			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
 
-		case "left":
+		case "LEFT":
 			if len(candidates) > 0 && idx > 0 {
 				idx--
 				launchGame(candidates[idx])
 			}
 
-		case "right":
+		case "RIGHT":
 			if len(candidates) > 0 && idx < len(candidates)-1 {
 				idx++
 				launchGame(candidates[idx])
 			}
 
 		default:
-			// treat single characters as regular input
+			// handle single-character inputs like a–z, 0–9, punctuation
 			if len(ev) == 1 {
 				sb.WriteString(ev)
 				fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
