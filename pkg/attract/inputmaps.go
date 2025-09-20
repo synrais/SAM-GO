@@ -104,11 +104,19 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 			sb.WriteRune(' ')
 			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
 		},
+		"backspace": func() {
+			s := sb.String()
+			if len(s) > 0 {
+				sb.Reset()
+				sb.WriteString(s[:len(s)-1])
+			}
+			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
+		},
 		"enter": func() {
 			query := sb.String()
 			if query != "" {
 				fmt.Printf("[SEARCH] Searching for: %q (%d titles)\n", query, len(index))
-				*candidates = findMatches(query, "", index)
+				*candidates = findMatches(query, "", index) // raw query
 				if len(*candidates) > 0 {
 					*idx = 0
 					launchGame((*candidates)[*idx])
@@ -122,78 +130,9 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 		"esc": func() {
 			fmt.Println("[SEARCH] Exiting search mode (Attract resumed).")
 		},
-		"backspace": func() {
-			s := sb.String()
-			if len(s) > 0 {
-				sb.Reset()
-				sb.WriteString(s[:len(s)-1])
-			}
-			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
-		},
 
 		// ----------------------------
-		// Navigation (shared keys)
-		// ----------------------------
-		"left": func() {
-			if len(*candidates) > 0 && *idx > 0 {
-				*idx--
-				launchGame((*candidates)[*idx])
-			}
-		},
-		"right": func() {
-			if len(*candidates) > 0 && *idx < len(*candidates)-1 {
-				*idx++
-				launchGame((*candidates)[*idx])
-			}
-		},
-	}
-}
-
-// --- Search Mode Input Map ---
-func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, index []GameEntry, inputCh <-chan string) map[string]InputAction {
-	return map[string]InputAction{
-
-		// ----------------------------
-		// Keyboard text entry
-		// ----------------------------
-		"space": func() {
-			sb.WriteRune(' ')
-			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
-		},
-		"backspace": func() {
-			s := sb.String()
-			if len(s) > 0 {
-				sb.Reset()
-				sb.WriteString(s[:len(s)-1])
-			}
-			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
-		},
-		"enter": func() {
-			query := sb.String()
-			if query != "" {
-				fmt.Printf("[SEARCH] Searching for %q (%d titles)\n", query, len(index))
-				*candidates = findMatches(query, "", index) // no normalize, raw query
-				if len(*candidates) > 0 {
-					*idx = 0
-					launchGame((*candidates)[*idx])
-				} else {
-					fmt.Println("[SEARCH] No match found")
-				}
-			}
-			sb.Reset()
-			fmt.Println("[SEARCH] Ready. Use ←/→ to browse, ESC to exit.")
-		},
-
-		// ----------------------------
-		// Mode control
-		// ----------------------------
-		"esc": func() {
-			fmt.Println("[SEARCH] Exiting search mode (Attract resumed).")
-			// caller breaks loop
-		},
-
-		// ----------------------------
-		// Navigation (browse results)
+		// Navigation
 		// ----------------------------
 		"left": func() {
 			if len(*candidates) > 0 && *idx > 0 {
