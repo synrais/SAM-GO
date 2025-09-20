@@ -696,26 +696,6 @@ func updateTimestamp(list []SavedTimestamp, systemID, path string, mod time.Time
 	})
 }
 
-package attract
-
-import (
-	"fmt"
-	"math/rand"
-	"time"
-
-	"github.com/synrais/SAM-GO/pkg/config"
-)
-
-package attract
-
-import (
-	"fmt"
-	"math/rand"
-	"time"
-
-	"github.com/synrais/SAM-GO/pkg/config"
-)
-
 // -----------------------------
 // History navigation + Timer reset
 // -----------------------------
