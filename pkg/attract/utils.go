@@ -17,10 +17,13 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
+//
 // -----------------------------
 // Case-insensitive helpers
 // -----------------------------
+//
 
+// ContainsInsensitive checks if list contains item, ignoring case/whitespace.
 func ContainsInsensitive(list []string, item string) bool {
 	for _, v := range list {
 		if strings.EqualFold(strings.TrimSpace(v), item) {
@@ -30,10 +33,12 @@ func ContainsInsensitive(list []string, item string) bool {
 	return false
 }
 
+// MatchesSystem is a wrapper for ContainsInsensitive, for system IDs.
 func MatchesSystem(list []string, system string) bool {
 	return ContainsInsensitive(list, system)
 }
 
+// AllowedFor checks include/exclude rules for a system ID.
 func AllowedFor(system string, include, exclude []string) bool {
 	if len(include) > 0 && !MatchesSystem(include, system) {
 		return false
@@ -44,10 +49,13 @@ func AllowedFor(system string, include, exclude []string) bool {
 	return true
 }
 
+//
 // -----------------------------
 // Filterlist readers
 // -----------------------------
+//
 
+// ReadNameSet loads a filterlist file into a set of normalized names.
 func ReadNameSet(path string) map[string]struct{} {
 	f, err := os.Open(path)
 	if err != nil {
@@ -68,6 +76,7 @@ func ReadNameSet(path string) map[string]struct{} {
 	return set
 }
 
+// ReadStaticMap loads staticlist.txt into a name→timestamp map.
 func ReadStaticMap(path string) map[string]string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -93,10 +102,13 @@ func ReadStaticMap(path string) map[string]string {
 	return m
 }
 
+//
 // -----------------------------
 // Line helpers
 // -----------------------------
+//
 
+// ParseLine extracts <timestamp> prefix and remainder.
 func ParseLine(line string) (float64, string) {
 	if strings.HasPrefix(line, "<") {
 		if idx := strings.Index(line, ">"); idx > 1 {
@@ -109,6 +121,7 @@ func ParseLine(line string) (float64, string) {
 	return 0, line
 }
 
+// ReadStaticTimestamp returns the static timestamp for a game if present.
 func ReadStaticTimestamp(systemID, game string) float64 {
 	filterBase := config.FilterlistDir()
 	path := filepath.Join(filterBase, systemID+"_staticlist.txt")
@@ -139,10 +152,13 @@ func ReadStaticTimestamp(systemID, game string) float64 {
 	return 0
 }
 
+//
 // -----------------------------
 // Matching helper
 // -----------------------------
+//
 
+// matchRule applies glob-like rules (*foo*, foo*, *bar).
 func matchRule(rule, candidate string) bool {
 	rule = strings.ToLower(strings.TrimSpace(rule))
 	candidate = strings.ToLower(strings.TrimSpace(candidate))
@@ -169,10 +185,13 @@ func matchRule(rule, candidate string) bool {
 	return candidate == rule
 }
 
+//
 // -----------------------------
 // Extra helpers from attract.go
 // -----------------------------
+//
 
+// ParsePlayTime handles "40" or "40-130" style configs.
 func ParsePlayTime(value string, r *rand.Rand) time.Duration {
 	if strings.Contains(value, "-") {
 		parts := strings.SplitN(value, "-", 2)
@@ -187,6 +206,7 @@ func ParsePlayTime(value string, r *rand.Rand) time.Duration {
 	return time.Duration(secs) * time.Second
 }
 
+// Disabled checks if a game should be blocked by disable rules.
 func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 	rules, ok := cfg.Disable[systemID]
 	if !ok {
@@ -215,6 +235,13 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 	return false
 }
 
+//
+// -----------------------------
+// System/group helpers
+// -----------------------------
+//
+
+// GetSystemsByCategory retrieves systems by category (Console, Handheld, Arcade, etc.).
 func GetSystemsByCategory(category string) ([]string, error) {
 	var systemIDs []string
 	for _, systemID := range games.AllSystems() {
@@ -228,6 +255,7 @@ func GetSystemsByCategory(category string) ([]string, error) {
 	return systemIDs, nil
 }
 
+// ExpandGroups expands category/group names into system IDs.
 func ExpandGroups(systemIDs []string) ([]string, error) {
 	var expanded []string
 	for _, systemID := range systemIDs {
@@ -255,6 +283,7 @@ func ExpandGroups(systemIDs []string) ([]string, error) {
 	return expanded, nil
 }
 
+// FilterAllowed applies include/exclude restrictions case-insensitively.
 func FilterAllowed(all []string, include, exclude []string) []string {
 	var filtered []string
 	for _, sys := range all {
@@ -272,10 +301,13 @@ func FilterAllowed(all []string, include, exclude []string) []string {
 	return filtered
 }
 
+//
 // -----------------------------
 // Filters
 // -----------------------------
+//
 
+// FilterUniqueWithMGL ensures .mgl takes precedence when duplicates exist.
 func FilterUniqueWithMGL(files []string) []string {
 	chosen := make(map[string]string)
 	for _, f := range files {
@@ -299,6 +331,7 @@ func FilterUniqueWithMGL(files []string) []string {
 	return result
 }
 
+// FilterFoldersAndFiles drops files matching disabled folder/file rules.
 func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConfig) []string {
 	var folders, patterns []string
 
@@ -321,6 +354,7 @@ func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConf
 		dir := filepath.Dir(f)
 		skip := false
 
+		// folder rules
 		dirParts := strings.Split(dir, string(os.PathSeparator))
 		for _, folderRule := range folders {
 			for _, seg := range dirParts {
@@ -338,6 +372,7 @@ func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConf
 			continue
 		}
 
+		// file rules
 		for _, fileRule := range patterns {
 			if matchRule(fileRule, base) {
 				fmt.Printf("[Filters] Skipping %s (pattern %s disabled)\n", base, fileRule)
@@ -353,6 +388,7 @@ func FilterFoldersAndFiles(files []string, systemID string, cfg *config.UserConf
 	return filtered
 }
 
+// FilterExtensions drops files with disabled extensions.
 func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) []string {
 	var rules []string
 	sysKey := strings.ToLower(systemID)
@@ -389,10 +425,13 @@ func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) [
 	return filtered
 }
 
+//
 // -----------------------------
 // Filterlist runners
 // -----------------------------
+//
 
+// ApplyFilterlists applies whitelist/blacklist/staticlist and updates counters.
 func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
 	filterBase := config.FilterlistDir()
 	hadLists := false
@@ -449,10 +488,12 @@ func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.
 		}
 	}
 
+	// Folders/files filters
 	before := len(lines)
 	lines = FilterFoldersAndFiles(lines, systemID, cfg)
 	counts["Folder"] = before - len(lines)
 
+	// Deduplication / .mgl precedence
 	before = len(lines)
 	lines = FilterUniqueWithMGL(lines)
 	counts["File"] = before - len(lines)
@@ -461,19 +502,24 @@ func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.
 	return lines, counts, hadLists
 }
 
+//
 // -----------------------------
 // List + Masterlist helpers
 // -----------------------------
+//
 
+// fileExists checks if path exists and is not a dir.
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
 }
 
+// gamelistFilename returns standard system gamelist filename.
 func gamelistFilename(systemID string) string {
 	return systemID + "_gamelist.txt"
 }
 
+// writeGamelist saves a gamelist (unless RAM-only).
 func writeGamelist(dir, systemID string, files []string, ramOnly bool) {
 	if ramOnly {
 		return
@@ -482,10 +528,12 @@ func writeGamelist(dir, systemID string, files []string, ramOnly bool) {
 	_ = os.WriteFile(path, []byte(strings.Join(files, "\n")), 0644)
 }
 
+// writeSimpleList saves a text file list.
 func writeSimpleList(path string, lines []string) {
 	_ = os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
 }
 
+// removeSystemBlock strips existing # SYSTEM: block for a system.
 func removeSystemBlock(master []string, systemID string) []string {
 	var out []string
 	skip := false
@@ -504,6 +552,7 @@ func removeSystemBlock(master []string, systemID string) []string {
 	return out
 }
 
+// countGames counts all non-#SYSTEM lines in masterlist.
 func countGames(master []string) int {
 	count := 0
 	for _, line := range master {
@@ -514,6 +563,7 @@ func countGames(master []string) int {
 	return count
 }
 
+// updateGameIndex builds GameEntry objects and pushes to cache.
 func updateGameIndex(systemID string, files []string) {
 	unique := utils.DedupeFiles(files)
 	for _, f := range unique {
@@ -528,16 +578,20 @@ func updateGameIndex(systemID string, files []string) {
 	}
 }
 
+//
 // -----------------------------
 // Timestamp helpers
 // -----------------------------
+//
 
+// SavedTimestamp tracks last-modified info for system folders.
 type SavedTimestamp struct {
 	SystemID string    `json:"system_id"`
 	Path     string    `json:"path"`
 	ModTime  time.Time `json:"mod_time"`
 }
 
+// saveTimestamps writes JSON modtime cache to disk.
 func saveTimestamps(gamelistDir string, timestamps []SavedTimestamp) error {
 	data, err := json.MarshalIndent(timestamps, "", "  ")
 	if err != nil {
@@ -550,6 +604,7 @@ func saveTimestamps(gamelistDir string, timestamps []SavedTimestamp) error {
 	return nil
 }
 
+// loadSavedTimestamps reads JSON modtime cache from disk.
 func loadSavedTimestamps(gamelistDir string) ([]SavedTimestamp, error) {
 	path := filepath.Join(gamelistDir, "Modtime")
 	data, err := os.ReadFile(path)
@@ -566,6 +621,7 @@ func loadSavedTimestamps(gamelistDir string) ([]SavedTimestamp, error) {
 	return timestamps, nil
 }
 
+// isFolderModified checks if any subfolder was modified since saved timestamp.
 func isFolderModified(systemID, path string, saved []SavedTimestamp) (bool, time.Time, error) {
 	var latestMod time.Time
 
@@ -602,6 +658,7 @@ func isFolderModified(systemID, path string, saved []SavedTimestamp) (bool, time
 	return true, latestMod, nil
 }
 
+// updateTimestamp updates or adds entry to SavedTimestamp list.
 func updateTimestamp(list []SavedTimestamp, systemID, path string, mod time.Time) []SavedTimestamp {
 	for i, ts := range list {
 		if ts.SystemID == systemID && ts.Path == path {
@@ -616,12 +673,15 @@ func updateTimestamp(list []SavedTimestamp, systemID, path string, mod time.Time
 	})
 }
 
+//
 // -----------------------------
 // History navigation
 // -----------------------------
+//
 
 var currentIndex int = -1
 
+// Play appends a game to history.
 func Play(path string) {
 	hist := GetList("History.txt")
 	hist = append(hist, path)
@@ -629,6 +689,7 @@ func Play(path string) {
 	currentIndex = len(hist) - 1
 }
 
+// Next moves forward in history.
 func Next() (string, bool) {
 	hist := GetList("History.txt")
 	if currentIndex >= 0 && currentIndex < len(hist)-1 {
@@ -638,6 +699,7 @@ func Next() (string, bool) {
 	return "", false
 }
 
+// Back moves backward in history.
 func Back() (string, bool) {
 	hist := GetList("History.txt")
 	if currentIndex > 0 {
@@ -650,9 +712,11 @@ func Back() (string, bool) {
 func PlayNext() (string, bool) { return Next() }
 func PlayBack() (string, bool) { return Back() }
 
+//
 // -----------------------------
 // Game Runner / Now Playing
 // -----------------------------
+//
 
 const nowPlayingFile = "/tmp/Now_Playing.txt"
 
@@ -663,10 +727,12 @@ var (
 	LastStartTime    time.Time
 )
 
+// GetLastPlayed returns info about last launched game.
 func GetLastPlayed() (system games.System, path, name string, start time.Time) {
 	return LastPlayedSystem, LastPlayedPath, LastPlayedName, LastStartTime
 }
 
+// setLastPlayed updates in-memory state for last played game.
 func setLastPlayed(system games.System, path string) {
 	LastPlayedSystem = system
 	LastPlayedPath = path
@@ -676,6 +742,7 @@ func setLastPlayed(system games.System, path string) {
 	LastPlayedName = strings.TrimSuffix(base, filepath.Ext(base))
 }
 
+// writeNowPlayingFile saves details to /tmp/Now_Playing.txt.
 func writeNowPlayingFile() error {
 	line1 := fmt.Sprintf("[%s] %s", LastPlayedSystem.Name, LastPlayedName)
 	base := filepath.Base(LastPlayedPath)
@@ -685,6 +752,7 @@ func writeNowPlayingFile() error {
 	return os.WriteFile(nowPlayingFile, []byte(content), 0644)
 }
 
+// Run launches a game through MiSTer.
 func Run(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("Usage: SAM -run <path>")
