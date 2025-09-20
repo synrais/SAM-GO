@@ -755,7 +755,7 @@ func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 // resetGlobalTimer resets the singleton attract timer.
 func resetGlobalTimer(cfg *config.UserConfig, r *rand.Rand) {
 	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
-	utils.ResetAttractTimer(wait)
+	ResetAttractTimer(wait) // no utils. prefix anymore
 }
 
 //
