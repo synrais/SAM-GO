@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,13 +20,13 @@ import (
 func RunAttract(cfg *config.UserConfig, args []string) {
 	attractCfg := cfg.Attract
 
-	// 1. Ensure gamelists are built (or refreshed).
+	// 1. Ensure gamelists are built.
 	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
 	if CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
 		fmt.Fprintln(os.Stderr, "[Attract] List build failed: no games indexed")
 	}
 
-	// 2. Load lists into cache memory for quick access.
+	// 2. Load lists into cache.
 	for _, system := range games.AllSystems() {
 		files, _ := filepath.Glob(filepath.Join(config.GamelistDir(), "*_"+system.Id+"_gamelist.txt"))
 		for _, f := range files {
@@ -41,7 +42,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 	skipCh := make(chan struct{}, 1)
 	backCh := make(chan struct{}, 1)
 
-	// Optional silent flag for less logging.
+	// Silent flag.
 	silent := false
 	for _, a := range args {
 		if a == "-s" || a == "--silent" {
@@ -49,7 +50,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		}
 	}
 
-	// 4a. Static detector watches for inactivity and pushes Skip events.
+	// 4a. Static detector.
 	if attractCfg.UseStaticDetector {
 		go func() {
 			for ev := range Stream(cfg, skipCh) {
@@ -60,7 +61,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		}()
 	}
 
-	// 4b. Input listeners (keyboard/mouse/joystick) for Skip/Back actions.
+	// 4b. Input listeners.
 	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
 		input.RelayInputs(cfg,
 			func() { select { case backCh <- struct{}{}: default: } },
@@ -68,7 +69,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		)
 	}
 
-	// 5. Collect gamelists in cache, apply include/exclude filters.
+	// 5. Collect gamelists.
 	allKeys := cache.ListKeys()
 	var allFiles []string
 	for _, k := range allKeys {
@@ -99,7 +100,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		fmt.Println("[Attract] Running. Ctrl-C to exit.")
 	}
 
-	// Helper: play one game with pause/resume support.
+	// Helper: play one game and handle skip/back/timer.
 	playGame := func(gamePath string, ts float64) {
 	Launch:
 		for {
@@ -109,7 +110,7 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 				fmt.Printf("[Attract] %s - %s <%s>\n",
 					time.Now().Format("15:04:05"), name, gamePath)
 			}
-			Run([]string{gamePath})
+			Run([]string{gamePath}) // local Run from utils.go
 
 			// Decide how long to keep game running.
 			wait := ParsePlayTime(attractCfg.PlayTime, r)
@@ -122,34 +123,18 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 				}
 			}
 
-			// Start ticker for this game.
-			ticker := time.NewTicker(wait)
+			timer := time.NewTimer(wait)
+			defer timer.Stop()
 
 			for {
-				// Pause attract if search is active.
 				if input.IsSearching() {
-					ticker.Stop()
-					ticker = nil
-
-					// Block until search exits.
-					for input.IsSearching() {
-						time.Sleep(100 * time.Millisecond)
-					}
-
-					// Resume instantly.
-					if !silent {
-						fmt.Println("[Attract] Resuming after search…")
-					}
-					if next, ok := PlayNext(); ok {
-						gamePath = next
-						ts = 0
-						continue Launch
-					}
-					return
+					timer.Stop()
+					time.Sleep(100 * time.Millisecond)
+					continue
 				}
 
 				select {
-				case <-ticker.C:
+				case <-timer.C:
 					if next, ok := PlayNext(); ok {
 						gamePath = next
 						ts = 0
@@ -177,9 +162,8 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		}
 	}
 
-	// 6. Main attract loop: forever cycle.
+	// 6. Main loop.
 	for {
-		// Handle instant Back/Skip requests outside main play loop.
 		select {
 		case <-backCh:
 			if prev, ok := PlayBack(); ok {
@@ -194,13 +178,11 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		default:
 		}
 
-		// If exhausted, reset cache and start fresh.
 		if len(files) == 0 {
 			if !silent {
 				fmt.Println("[Attract] All systems exhausted — refreshing from cache")
 			}
 			cache.ResetAll()
-
 			allKeys = cache.ListKeys()
 			allFiles = nil
 			for _, k := range allKeys {
@@ -209,18 +191,15 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 				}
 			}
 			files = FilterAllowed(allFiles, include, exclude)
-
 			if len(files) == 0 {
 				fmt.Println("[Attract] No gamelists even after reset, exiting.")
 				return
 			}
 		}
 
-		// Pick random system and game from its list.
 		listKey := files[r.Intn(len(files))]
 		lines := cache.GetList(listKey)
 		if len(lines) == 0 {
-			// Drop empty list from rotation.
 			var newFiles []string
 			for _, f := range files {
 				if f != listKey {
@@ -231,19 +210,45 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 			continue
 		}
 
-		// Pick one entry (first or random).
 		index := 0
 		if attractCfg.Random {
 			index = r.Intn(len(lines))
 		}
 		ts, gamePath := utils.ParseLine(lines[index])
 
-		// Mark in history and run.
 		Play(gamePath)
 		playGame(gamePath, ts)
 
-		// Remove game from list so it won’t repeat until refresh.
 		lines = append(lines[:index], lines[index+1:]...)
 		cache.SetList(listKey, lines)
 	}
+}
+
+// ParsePlayTime parses playtime strings like "40" or "40-130" into a time.Duration
+// and logs the exact interval chosen.
+func ParsePlayTime(spec string, r *rand.Rand) time.Duration {
+	parts := strings.Split(spec, "-")
+
+	// Single value
+	if len(parts) == 1 {
+		val, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		if err != nil || val <= 0 {
+			val = 60 // fallback default
+		}
+		dur := time.Duration(val) * time.Second
+		fmt.Printf("[Attract] Playtime set: %ds\n", val)
+		return dur
+	}
+
+	// Range: min-max
+	min, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	max, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err1 != nil || err2 != nil || min <= 0 || max <= 0 || min >= max {
+		min, max = 30, 90 // fallback defaults
+	}
+
+	val := r.Intn(max-min+1) + min
+	dur := time.Duration(val) * time.Second
+	fmt.Printf("[Attract] Playtime set: random %ds (range %d-%ds)\n", val, min, max)
+	return dur
 }
