@@ -8,75 +8,28 @@ import (
 	"strings"
 	"time"
 
-	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
-	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// RunAttract is the main entrypoint for Attract Mode.
-func RunAttract(cfg *config.UserConfig, args []string) {
-	attractCfg := cfg.Attract
-
-	// 1. Ensure gamelists are built (or refreshed).
+// PrepareAttract builds gamelists and collects allowed files.
+func PrepareAttract(cfg *config.UserConfig) []string {
+	// 1. Ensure gamelists are built.
 	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
 	if CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
 		fmt.Fprintln(os.Stderr, "[Attract] List build failed: no games indexed")
 	}
 
-	// 2. Load lists into cache memory for quick access.
-	for _, system := range games.AllSystems() {
-		files, _ := filepath.Glob(filepath.Join(config.GamelistDir(), "*_"+system.Id+"_gamelist.txt"))
-		for _, f := range files {
-			lines, err := utils.ReadLines(f)
-			if err != nil {
-				continue
-			}
-			cache.SetList(filepath.Base(f), lines)
-		}
+	// 2. Collect gamelist files.
+	files, _ := filepath.Glob(filepath.Join(config.GamelistDir(), "*_gamelist.txt"))
+	if len(files) == 0 {
+		fmt.Println("[Attract] No gamelists found.")
+		os.Exit(1)
 	}
 
-	// 3. Channels for navigation (skip/next/back).
-	skipCh := make(chan struct{}, 1)
-	backCh := make(chan struct{}, 1)
-
-	// Optional silent flag for less logging.
-	silent := false
-	for _, a := range args {
-		if a == "-s" || a == "--silent" {
-			silent = true
-		}
-	}
-
-	// 4a. Static detector watches for inactivity and pushes Skip events.
-	if attractCfg.UseStaticDetector {
-		go func() {
-			for ev := range Stream(cfg, skipCh) {
-				if !silent {
-					fmt.Printf("[Attract] %s\n", ev)
-				}
-			}
-		}()
-	}
-
-	// 4b. Input listeners (keyboard/mouse/joystick) for Skip/Back actions.
-	if cfg.InputDetector.Mouse || cfg.InputDetector.Keyboard || cfg.InputDetector.Joystick {
-		input.RelayInputs(cfg,
-			func() { select { case backCh <- struct{}{}: default: } },
-			func() { select { case skipCh <- struct{}{}: default: } },
-		)
-	}
-
-	// 5. Collect gamelists in cache, apply include/exclude filters.
-	allKeys := cache.ListKeys()
-	var allFiles []string
-	for _, k := range allKeys {
-		if strings.HasSuffix(k, "_gamelist.txt") {
-			allFiles = append(allFiles, k)
-		}
-	}
-
+	// 3. Apply include/exclude filters.
+	attractCfg := cfg.Attract
 	include, err := ExpandGroups(attractCfg.Include)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[Attract] Error expanding include groups: %v\n", err)
@@ -88,151 +41,53 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		os.Exit(1)
 	}
 
-	files := FilterAllowed(allFiles, include, exclude)
+	files = FilterAllowed(files, include, exclude)
 	if len(files) == 0 {
-		fmt.Println("[Attract] No gamelists found in cache")
+		fmt.Println("[Attract] No allowed gamelists after filtering")
 		os.Exit(1)
 	}
 
+	return files
+}
+
+// RunAttractLoop runs the attract mode loop until interrupted.
+func RunAttractLoop(cfg *config.UserConfig, files []string) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	if !silent {
-		fmt.Println("[Attract] Running. Ctrl-C to exit.")
-	}
+	fmt.Println("[Attract] Running. Ctrl-C to exit.")
 
-	// Helper: play one game and handle skip/back/timer.
-	playGame := func(gamePath string, ts float64) {
-	Launch:
-		for {
-			name := filepath.Base(gamePath)
-			name = strings.TrimSuffix(name, filepath.Ext(name))
-			if !silent {
-				fmt.Printf("[Attract] %s - %s <%s>\n",
-					time.Now().Format("15:04:05"), name, gamePath)
-			}
-			Run([]string{gamePath})
-
-			// Decide how long to keep game running.
-			wait := ParsePlayTime(attractCfg.PlayTime, r)
-			if ts > 0 {
-				skipDuration := time.Duration(ts*float64(time.Second)) +
-					time.Duration(cfg.List.SkipafterStatic)*time.Second
-				if skipDuration < wait {
-					wait = skipDuration
-				}
-			}
-
-			timer := time.NewTimer(wait)
-
-			for {
-				// If paused (search or something else) → stall loop.
-				if AttractPaused.Load() {
-					timer.Stop()
-					time.Sleep(100 * time.Millisecond)
-					continue
-				}
-
-				// Normal attract events.
-				select {
-				case <-timer.C:
-					if next, ok := PlayNext(); ok {
-						gamePath = next
-						ts = 0
-						continue Launch
-					}
-					return
-
-				case <-skipCh:
-					if !silent {
-						fmt.Println("[Attract] Skipped")
-					}
-					if next, ok := PlayNext(); ok {
-						gamePath = next
-						ts = 0
-						continue Launch
-					}
-					return
-
-				case <-backCh:
-					if prev, ok := PlayBack(); ok {
-						gamePath = prev
-						ts = 0
-						continue Launch
-					}
-				}
-			}
-		}
-	}
-
-	// 6. Main attract loop: forever cycle.
 	for {
-		// Respect pause here too (e.g. if paused before picking next).
-		if AttractPaused.Load() {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-
-		// Handle instant Back/Skip requests.
-		select {
-		case <-backCh:
-			if prev, ok := PlayBack(); ok {
-				playGame(prev, 0)
-				continue
-			}
-		case <-skipCh:
-			if next, ok := PlayNext(); ok {
-				playGame(next, 0)
-				continue
-			}
-		default:
-		}
-
-		// Reset lists if exhausted.
-		if len(files) == 0 {
-			if !silent {
-				fmt.Println("[Attract] All systems exhausted — refreshing from cache")
-			}
-			cache.ResetAll()
-
-			allKeys = cache.ListKeys()
-			allFiles = nil
-			for _, k := range allKeys {
-				if strings.HasSuffix(k, "_gamelist.txt") {
-					allFiles = append(allFiles, k)
-				}
-			}
-			files = FilterAllowed(allFiles, include, exclude)
-
-			if len(files) == 0 {
-				fmt.Println("[Attract] No gamelists even after reset, exiting.")
-				return
-			}
-		}
-
-		// Pick random system and game.
+		// Pick random gamelist
 		listKey := files[r.Intn(len(files))]
-		lines := cache.GetList(listKey)
-		if len(lines) == 0 {
-			var newFiles []string
-			for _, f := range files {
-				if f != listKey {
-					newFiles = append(newFiles, f)
-				}
-			}
-			files = newFiles
+		lines, err := utils.ReadLines(listKey)
+		if err != nil || len(lines) == 0 {
 			continue
 		}
 
+		// Pick random entry
 		index := 0
-		if attractCfg.Random {
+		if cfg.Attract.Random {
 			index = r.Intn(len(lines))
 		}
 		ts, gamePath := utils.ParseLine(lines[index])
 
-		Play(gamePath)
-		playGame(gamePath, ts)
+		// Print + run game
+		name := filepath.Base(gamePath)
+		name = strings.TrimSuffix(name, filepath.Ext(name))
+		fmt.Printf("[Attract] %s - %s <%s>\n",
+			time.Now().Format("15:04:05"), name, gamePath)
+		Run([]string{gamePath})
 
-		// Remove from rotation.
-		lines = append(lines[:index], lines[index+1:]...)
-		cache.SetList(listKey, lines)
+		// Decide wait time
+		wait := ParsePlayTime(cfg.Attract.PlayTime, r)
+		if ts > 0 {
+			skipDuration := time.Duration(ts*float64(time.Second)) +
+				time.Duration(cfg.List.SkipafterStatic)*time.Second
+			if skipDuration < wait {
+				wait = skipDuration
+			}
+		}
+
+		// Wait until next game
+		time.Sleep(wait)
 	}
 }
