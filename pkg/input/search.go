@@ -4,14 +4,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 // --- Search state ---
+
 // GameIndex holds all indexed game entries for search.
 var GameIndex []GameEntry
 
@@ -22,90 +23,89 @@ type GameEntry struct {
 	Path string // original line from Search.txt
 }
 
-// SearchAndPlay enters search mode and blocks until the user exits.
-func SearchAndPlay() {
-	fmt.Println("[SEARCH] 🔍 Entered search mode (Attract paused).")
+// SearchAndPlay enters search mode and blocks until ESC is pressed.
+// This function handles keyboard input via RelayInputs → StreamEvents.
+func SearchAndPlay(cfg *config.UserConfig) {
+	fmt.Println("[SEARCH] 🔍 Entered search mode.")
 	fmt.Println("[SEARCH] Type to filter, ENTER to launch, ESC to exit.")
-
-	// Debug: show how many games are indexed
 	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(GameIndex))
 
-	ch := StreamKeyboards()
-	re := regexp.MustCompile(`<([^>]+)>`)
+	events := StreamEvents(cfg)
 
 	var sb strings.Builder
 	var candidates []string
 	idx := -1
 
-	for line := range ch {
-		// Look for <TOKENS>
-		matches := re.FindAllStringSubmatch(line, -1)
+	for ev := range events {
+		key := string(ev)
 
-		for _, m := range matches {
-			key := strings.ToUpper(m[1]) // normalize
+		switch key {
+		// --- Control Keys ---
+		case "`":
+			// Allow restarting query if backtick is pressed
+			fmt.Println("[SEARCH] Restarting query…")
+			sb.Reset()
+			candidates = nil
+			idx = -1
 
-			switch key {
-			case "SPACE":
-				sb.WriteRune(' ')
-				fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
-
-			case "ENTER":
-				qn, qext := utils.NormalizeEntry(sb.String())
-
-				if qn != "" {
-					fmt.Printf("[SEARCH] Looking for: %q\n", sb.String())
-					fmt.Printf("[SEARCH] Searching... (%d titles)\n", len(GameIndex))
-
-					candidates = findMatches(qn, qext)
-					if len(candidates) > 0 {
-						idx = 0
-						fmt.Printf("[SEARCH] ▶ Launching: %s\n", candidates[idx])
-						launchGame(candidates[idx])
-					} else {
-						fmt.Println("[SEARCH] No match found")
-					}
-				}
-
-				// Reset after enter
-				sb.Reset()
-				fmt.Println("[SEARCH] Ready. Use ←/→ to browse, ESC to exit.")
-
-			case "ESC":
-				fmt.Println("[SEARCH] Exiting search mode (Attract resumes).")
-				return
-
-			case "BACKSPACE":
-				s := sb.String()
-				if len(s) > 0 {
-					sb.Reset()
-					sb.WriteString(s[:len(s)-1])
-				}
-				fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
-
-			case "LEFT":
-				if len(candidates) > 0 && idx > 0 {
-					idx--
-					fmt.Printf("[SEARCH] ▶ Launching (prev): %s\n", candidates[idx])
-					launchGame(candidates[idx])
-				}
-
-			case "RIGHT":
-				if len(candidates) > 0 && idx < len(candidates)-1 {
-					idx++
-					fmt.Printf("[SEARCH] ▶ Launching (next): %s\n", candidates[idx])
-					launchGame(candidates[idx])
-				}
-			}
-		}
-
-		// Regular text input → buffer
-		l := re.ReplaceAllString(line, "")
-		for _, r := range l {
-			if r == '\n' || r == '\r' {
-				continue
-			}
-			sb.WriteRune(r)
+		case "space":
+			sb.WriteRune(' ')
 			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
+
+		case "enter":
+			qn, qext := utils.NormalizeEntry(sb.String())
+			if qext != "" {
+				fmt.Printf("[SEARCH] Looking for: %q (.%s)\n", sb.String(), qext)
+			} else {
+				fmt.Printf("[SEARCH] Looking for: %q\n", sb.String())
+			}
+
+			if qn != "" {
+				fmt.Printf("[SEARCH] Searching... (%d titles)\n", len(GameIndex))
+				candidates = findMatches(qn, qext)
+				if len(candidates) > 0 {
+					idx = 0
+					fmt.Printf("[SEARCH] ▶ Launching: %s\n", candidates[idx])
+					launchGame(candidates[idx])
+				} else {
+					fmt.Println("[SEARCH] No match found")
+				}
+			}
+			sb.Reset()
+			fmt.Println("[SEARCH] Ready. Use ←/→ to browse, ESC to exit.")
+
+		case "esc", "escape":
+			fmt.Println("[SEARCH] Exiting search mode.")
+			return
+
+		case "backspace":
+			s := sb.String()
+			if len(s) > 0 {
+				sb.Reset()
+				sb.WriteString(s[:len(s)-1])
+			}
+			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
+
+		case "left":
+			if len(candidates) > 0 && idx > 0 {
+				idx--
+				fmt.Printf("[SEARCH] ▶ Launching (prev): %s\n", candidates[idx])
+				launchGame(candidates[idx])
+			}
+
+		case "right":
+			if len(candidates) > 0 && idx < len(candidates)-1 {
+				idx++
+				fmt.Printf("[SEARCH] ▶ Launching (next): %s\n", candidates[idx])
+				launchGame(candidates[idx])
+			}
+
+		// --- Text Input (normal characters) ---
+		default:
+			if len(key) == 1 { // single char
+				sb.WriteString(key)
+				fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
+			}
 		}
 	}
 }
@@ -116,15 +116,12 @@ func findMatches(qn, qext string) []string {
 	var prefix, substring, fuzzy []string
 
 	for _, e := range GameIndex {
-		// Skip separators
 		if strings.HasPrefix(e.Name, "# SYSTEM:") {
 			continue
 		}
-
 		if qext != "" && qext != e.Ext {
 			continue
 		}
-
 		if strings.HasPrefix(e.Name, qn) {
 			prefix = append(prefix, e.Path)
 		} else if strings.Contains(e.Name, qn) {
@@ -142,11 +139,9 @@ func findMatches(qn, qext string) []string {
 	sort.Strings(substring)
 	sort.Strings(fuzzy)
 
-	// Priority: prefix > substring > fuzzy
 	out := append(prefix, substring...)
 	out = append(out, fuzzy...)
 
-	// Limit
 	if len(out) > 200 {
 		out = out[:200]
 	}
