@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/synrais/SAM-GO/pkg/cache"
@@ -748,11 +749,15 @@ func Run(args []string) error {
 	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
 }
 
-// ---------------- ATTRACT PAUSE CONTROL ----------------
+// AttractPaused is a simple global flag toggled by other modules.
+// true = paused (Attract loop and detectors should stop advancing)
+// false = running
+var AttractPaused atomic.Bool
 
-// Global flag for attract pause state.
-// When true, Attract mode will stop advancing games.
+func PauseAttract() {
+	AttractPaused.Store(true)
+}
 
-var AttractPaused bool
-
-
+func ResumeAttract() {
+	AttractPaused.Store(false)
+}
