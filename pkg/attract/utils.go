@@ -747,3 +747,53 @@ func Run(args []string) error {
 	// Launch game
 	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
 }
+
+// -----------------------------------------------------------------------------
+// SAM State Machine
+//
+// This provides a simple global state tracker for SAM to coordinate between
+// Attract mode (running games) and Attract mode paused (search mode).
+// Only one state can be active at a time.
+//
+// Usage:
+//   utils.SetState(utils.StateAttractPaused) // enter search / paused mode
+//   utils.SetState(utils.StateAttract)       // resume attract mode
+//   if utils.GetState() == utils.StateAttract { ... }
+//
+// The state change will print a debug log whenever it transitions.
+// -----------------------------------------------------------------------------
+
+type State int
+
+const (
+	StateAttract State = iota
+	StateAttractPaused
+)
+
+var current State = StateAttract
+
+// SetState updates the global SAM state, printing a transition log if changed.
+func SetState(s State) {
+	if s != current {
+		fmt.Printf("[STATE] %s → %s\n", StateName(current), StateName(s))
+		current = s
+	}
+}
+
+// GetState returns the current global SAM state.
+func GetState() State {
+	return current
+}
+
+// StateName returns a human-readable label for the given state.
+func StateName(s State) string {
+	switch s {
+	case StateAttract:
+		return "ATTRACT"
+	case StateAttractPaused:
+		return "ATTRACT_PAUSED"
+	default:
+		return "UNKNOWN"
+	}
+}
+
