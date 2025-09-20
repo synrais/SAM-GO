@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
-	"math/rand"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 )
@@ -14,7 +12,7 @@ import (
 type InputAction func()
 
 // --- Attract Mode Input Map (grouped by device type) ---
-func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, inputCh <-chan string) map[string]InputAction {
+func AttractInputMap(cfg *config.UserConfig, inputCh <-chan string) map[string]InputAction {
 	return map[string]InputAction{
 
 		// ----------------------------
@@ -30,16 +28,18 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		"`": func() {
 			fmt.Println("[Attract] Entering search mode...")
 			SearchAndPlay(inputCh)
-			fmt.Println("[Attract] Still running attract mode!")
+			fmt.Println("[Attract] Resuming attract mode.")
 		},
 		"left": func() {
-			if prev, ok := PlayBack(timer, cfg, r); ok {
-				fmt.Println("[Attract] Keyboard ← back in history:", prev)
+			if prev, ok := PlayBack(); ok {
+				fmt.Println("[Attract] Keyboard ← back in history.")
+				Run([]string{prev})
 			}
 		},
 		"right": func() {
-			if next, ok := PlayNext(timer, cfg, r); ok {
-				fmt.Println("[Attract] Keyboard → forward in history:", next)
+			if next, ok := Next(); ok {
+				fmt.Println("[Attract] Keyboard → forward in history.")
+				Run([]string{next})
 			}
 		},
 
@@ -47,13 +47,15 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// Controller Buttons
 		// ----------------------------
 		"button1": func() {
-			if next, ok := PlayNext(timer, cfg, r); ok {
-				fmt.Println("[Attract] Button1 → forward in history:", next)
+			if next, ok := Next(); ok {
+				fmt.Println("[Attract] Button1 → forward in history.")
+				Run([]string{next})
 			}
 		},
 		"button2": func() {
-			if prev, ok := PlayBack(timer, cfg, r); ok {
-				fmt.Println("[Attract] Button2 ← back in history:", prev)
+			if prev, ok := PlayBack(); ok {
+				fmt.Println("[Attract] Button2 ← back in history.")
+				Run([]string{prev})
 			}
 		},
 
@@ -61,13 +63,15 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// Touch / Gestures
 		// ----------------------------
 		"swipe-right": func() {
-			if next, ok := PlayNext(timer, cfg, r); ok {
-				fmt.Println("[Attract] Swipe → forward in history:", next)
+			if next, ok := Next(); ok {
+				fmt.Println("[Attract] Swipe → forward in history.")
+				Run([]string{next})
 			}
 		},
 		"swipe-left": func() {
-			if prev, ok := PlayBack(timer, cfg, r); ok {
-				fmt.Println("[Attract] Swipe ← back in history:", prev)
+			if prev, ok := PlayBack(); ok {
+				fmt.Println("[Attract] Swipe ← back in history.")
+				Run([]string{prev})
 			}
 		},
 
@@ -75,13 +79,15 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// Analog Axis
 		// ----------------------------
 		"axis-right": func() {
-			if next, ok := PlayNext(timer, cfg, r); ok {
-				fmt.Println("[Attract] Axis → forward in history:", next)
+			if next, ok := Next(); ok {
+				fmt.Println("[Attract] Axis → forward in history.")
+				Run([]string{next})
 			}
 		},
 		"axis-left": func() {
-			if prev, ok := PlayBack(timer, cfg, r); ok {
-				fmt.Println("[Attract] Axis ← back in history:", prev)
+			if prev, ok := PlayBack(); ok {
+				fmt.Println("[Attract] Axis ← back in history.")
+				Run([]string{prev})
 			}
 		},
 	}
