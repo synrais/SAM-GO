@@ -7,14 +7,11 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync/atomic"
 
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// --- Global search state ---
-var searching atomic.Bool
-
+// --- Search state ---
 // GameIndex holds all indexed game entries for search.
 var GameIndex []GameEntry
 
@@ -25,18 +22,20 @@ type GameEntry struct {
 	Path string // original line from Search.txt
 }
 
-// IsSearching reports whether search mode is active.
+// IsSearching reports whether SAM is currently in search mode.
 func IsSearching() bool {
-	return searching.Load()
+	return utils.GetState() == utils.StateAttractPaused
 }
 
-// SearchAndPlay enters search mode until ESC.
+// SearchAndPlay enters search mode and allows filtering + launching games.
 func SearchAndPlay() {
-	fmt.Println("[SEARCH] 🔍 Entered search mode (Attract paused).")
-	fmt.Println("[SEARCH] Type to filter, ENTER to launch, ESC to exit.")
+	fmt.Println("Attract mode paused, press ESC to resume")
+	fmt.Println("Search: type your game and press Enter")
 
-	searching.Store(true) // signal attract FSM
+	// Mark search mode active until ESC.
+	utils.SetState(utils.StateAttractPaused)
 
+	// Debug: show how many games are indexed.
 	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(GameIndex))
 
 	ch := StreamKeyboards()
@@ -47,10 +46,11 @@ func SearchAndPlay() {
 	idx := -1
 
 	for line := range ch {
+		// Look for <TOKENS>
 		matches := re.FindAllStringSubmatch(line, -1)
 
 		for _, m := range matches {
-			key := strings.ToUpper(m[1])
+			key := strings.ToUpper(m[1]) // normalize to uppercase
 
 			switch key {
 			case "SPACE":
@@ -74,15 +74,17 @@ func SearchAndPlay() {
 						fmt.Printf("[SEARCH] ▶ Launching: %s\n", candidates[idx])
 						launchGame(candidates[idx])
 					} else {
-						fmt.Println("[SEARCH] ❌ No match found")
+						fmt.Println("[SEARCH] No match found")
 					}
 				}
+				// Reset buffer after enter
 				sb.Reset()
 				fmt.Println("[SEARCH] Ready. Use ←/→ to browse, ESC to exit.")
 
 			case "ESC":
-				fmt.Println("[SEARCH] 🚪 Exiting search mode (Attract will resume).")
-				searching.Store(false) // signal attract FSM to resume
+				fmt.Println("[SEARCH] Exiting search mode")
+				utils.SetState(utils.StateAttract) // resume attract mode
+				fmt.Println("Attract mode resumed")
 				return
 
 			case "BACKSPACE":
@@ -109,7 +111,7 @@ func SearchAndPlay() {
 			}
 		}
 
-		// Normal characters
+		// Regular text input → query buffer
 		l := re.ReplaceAllString(line, "")
 		for _, r := range l {
 			if r == '\n' || r == '\r' {
@@ -122,6 +124,7 @@ func SearchAndPlay() {
 }
 
 // --- Matching ---
+
 func findMatches(qn, qext string) []string {
 	var prefix, substring, fuzzy []string
 
@@ -137,19 +140,23 @@ func findMatches(qn, qext string) []string {
 		} else if strings.Contains(e.Name, qn) {
 			substring = append(substring, e.Path)
 		} else {
-			if levenshtein(qn, e.Name) <= 3 {
+			dist := levenshtein(qn, e.Name)
+			if dist <= 3 {
 				fuzzy = append(fuzzy, e.Path)
 			}
 		}
 	}
 
+	// Sort for stability
 	sort.Strings(prefix)
 	sort.Strings(substring)
 	sort.Strings(fuzzy)
 
+	// Merge results: prefix > substring > fuzzy
 	out := append(prefix, substring...)
 	out = append(out, fuzzy...)
 
+	// Limit for safety
 	if len(out) > 200 {
 		out = out[:200]
 	}
@@ -159,10 +166,11 @@ func findMatches(qn, qext string) []string {
 }
 
 // --- Helpers ---
+
 func launchGame(path string) {
 	exe, err := os.Executable()
 	if err != nil {
-		fmt.Println("[SEARCH] ERROR: could not resolve executable")
+		fmt.Println("[SEARCH] ERROR: could not resolve executable for launch")
 		return
 	}
 	fmt.Printf("[SEARCH] Exec: %s -run %q\n", exe, path)
