@@ -79,7 +79,13 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 	}
 
 	// Start static detector in background (skip is wired internally)
-	go Stream(cfg)
+	go func() {
+    	events := Stream(cfg)
+    	for range events {
+        	// just drain the channel, no per-frame printing
+        	// skip logic still runs inside Stream
+    	}
+	}()
 
 	// Timer for automatic switching
 	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
