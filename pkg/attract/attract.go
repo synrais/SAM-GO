@@ -79,12 +79,7 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 	}
 
 	// Start static detector in background (skip is wired internally)
-	go func() {
-		events := Stream(cfg)
-		for e := range events {
-			fmt.Printf("[StaticDetector] %s\n", e.String())
-		}
-	}()
+	go Stream(cfg)
 
 	// Timer for automatic switching
 	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
