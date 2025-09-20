@@ -717,32 +717,8 @@ func resetTimer(timer *time.Timer, d time.Duration) {
 	timer.Reset(d)
 }
 
-// Play appends a game to history and launches it, resetting timer if present.
-func Play(path string, timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) {
-    // If no explicit path, pick a random game like attract mode normally would
-    if path == "" {
-        newPath := PickRandomGame(cfg, r) // <- use your existing attract picker
-        if newPath == "" {
-            fmt.Println("[Attract] No game available to play.")
-            return
-        }
-        path = newPath
-    }
-
-    hist := GetList("History.txt")
-    hist = append(hist, path)
-    SetList("History.txt", hist)
-    currentIndex = len(hist) - 1
-
-    // Run the game
-    Run([]string{path})
-
-    // Reset timer if we have one
-    resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
-}
-
-// Next moves forward in history, runs game, resets timer.
-func Next(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
+// Next moves forward in history; if none, picks a new attract game.
+func Next(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand, files []string) (string, bool) {
 	hist := GetList("History.txt")
 	if currentIndex >= 0 && currentIndex < len(hist)-1 {
 		currentIndex++
@@ -750,6 +726,19 @@ func Next(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool
 		Run([]string{path})
 		resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
 		return path, true
+	}
+
+	// no forward history → pick fresh attract game
+	newPath := PickRandomGame(cfg, files, r)
+	if newPath != "" {
+		hist = append(hist, newPath)
+		SetList("History.txt", hist)
+		currentIndex = len(hist) - 1
+
+		Run([]string{newPath})
+		resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
+		fmt.Println("[Attract] No forward entry, starting new attract pick.")
+		return newPath, true
 	}
 	return "", false
 }
@@ -768,8 +757,8 @@ func Back(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool
 }
 
 // Aliases for consistency
-func PlayNext(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
-	return Next(timer, cfg, r)
+func PlayNext(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand, files []string) (string, bool) {
+	return Next(timer, cfg, r, files)
 }
 
 func PlayBack(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
