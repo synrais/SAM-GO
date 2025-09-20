@@ -323,14 +323,12 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 
 				// Check for static screen
 				frameTime := time.Now()
-				stuckCount := 0
 				if !firstFrame {
 					changed := false
 					for i := 0; i < samples; i++ {
 						if currRGB[i] != prevRGB[i] {
 							changed = true
-						} else {
-							stuckCount++
+							break
 						}
 					}
 					if !changed {
@@ -378,24 +376,11 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 					}
 				}
 
-				event := StaticEvent{
-					Uptime:       uptime,
-					Frames:       sampleFrames,
-					StaticScreen: staticScreenRun,
-					StuckPixels:  stuckCount,
-					Samples:      samples,
-					Width:        res.Width,
-					Height:       res.Height,
-					DominantHex:  domHex,
-					DominantName: domName,
-					AverageHex:   avgHex,
-					AverageName:  avgName,
-					Game:         displayGame,
-				}
-				streamCh <- event
+				// event := StaticEvent{ ... }  // keep sending if needed elsewhere
+				// streamCh <- event
 
-				// Uncomment for per-frame debug
-				// fmt.Println(event)
+				// per-frame debug output disabled
+				// fmt.Printf("[StaticDetector] %s\n", event.String())
 
 				elapsed := time.Since(t1)
 				frameDur := time.Second / targetFPS
