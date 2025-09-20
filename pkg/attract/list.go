@@ -248,18 +248,3 @@ func CreateGamelists(cfg *config.UserConfig,
 
 	return totalGames
 }
-
-// updateGameIndex pushes system entries into the in-RAM GameIndex.
-func updateGameIndex(systemID string, files []string) {
-	unique := utils.DedupeFiles(files)
-	for _, f := range unique {
-		name, ext := utils.NormalizeEntry(f)
-		entry := GameEntry{
-			SystemID: systemID,
-			Name:     name,
-			Ext:      ext,
-			Path:     f,
-		}
-		AppendGameIndex(entry)
-	}
-}
