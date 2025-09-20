@@ -11,23 +11,27 @@ import (
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/input"
-	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// PrepareAttractLists builds gamelists, applies filters,
-// then starts InitAttract to handle input and launch the main loop.
+// PrepareAttractLists ensures gamelists are built and preloaded into cache,
+// applies include/exclude filters, and hands over to InitAttract.
 func PrepareAttractLists(cfg *config.UserConfig) {
-	// 1. Ensure gamelists are built.
+	// 1. Ensure gamelists are built & cached.
 	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
 	if CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
 		fmt.Fprintln(os.Stderr, "[Attract] List build failed: no games indexed")
 		os.Exit(1)
 	}
 
-	// 2. Collect gamelist files.
-	files, _ := filepath.Glob(filepath.Join(config.GamelistDir(), "*_gamelist.txt"))
+	// 2. Collect gamelist keys from cache (RAM only).
+	files := []string{}
+	for _, k := range ListKeys() {
+		if strings.HasSuffix(k, "_gamelist.txt") {
+			files = append(files, k)
+		}
+	}
 	if len(files) == 0 {
-		fmt.Println("[Attract] No gamelists found.")
+		fmt.Println("[Attract] No gamelists found in cache.")
 		os.Exit(1)
 	}
 
@@ -73,6 +77,7 @@ func InitAttract(cfg *config.UserConfig, files []string) {
 }
 
 // RunAttractLoop runs the attract mode loop until interrupted.
+// It pulls entries only from the in-RAM cache (never re-reads from disk).
 func RunAttractLoop(cfg *config.UserConfig, files []string, skipCh, backCh chan struct{}) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	fmt.Println("[Attract] Running. Ctrl-C to exit.")
@@ -87,10 +92,10 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, skipCh, backCh chan 
 	}
 
 	for {
-		// Pick random gamelist
+		// Pick random gamelist from cache
 		listKey := files[r.Intn(len(files))]
-		lines, err := utils.ReadLines(listKey)
-		if err != nil || len(lines) == 0 {
+		lines := GetList(listKey)
+		if len(lines) == 0 {
 			continue
 		}
 
@@ -99,7 +104,7 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, skipCh, backCh chan 
 		if cfg.Attract.Random {
 			index = r.Intn(len(lines))
 		}
-		ts, gamePath := utils.ParseLine(lines[index])
+		ts, gamePath := ParseLine(lines[index])
 
 		// Print + run game
 		name := filepath.Base(gamePath)
