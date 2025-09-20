@@ -3,6 +3,7 @@ package attract
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 )
@@ -92,19 +93,22 @@ func AttractInputMap(cfg *config.UserConfig, inputCh <-chan string) map[string]I
 	}
 }
 
-
-// --- Search Mode Input Map ---
+// --- Search Mode Input Map (grouped by device type) ---
 func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, index []GameEntry, inputCh <-chan string) map[string]InputAction {
 	return map[string]InputAction{
+
+		// ----------------------------
+		// Keyboard
+		// ----------------------------
 		"space": func() {
 			sb.WriteRune(' ')
 			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
 		},
 		"enter": func() {
-			qn, qext := NormalizeQuery(sb.String())
-			if qn != "" {
-				fmt.Printf("[SEARCH] Searching... (%d titles)\n", len(index))
-				*candidates = findMatches(qn, qext, index)
+			query := sb.String()
+			if query != "" {
+				fmt.Printf("[SEARCH] Searching for: %q (%d titles)\n", query, len(index))
+				*candidates = findMatches(query, "", index)
 				if len(*candidates) > 0 {
 					*idx = 0
 					launchGame((*candidates)[*idx])
@@ -117,7 +121,6 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 		},
 		"esc": func() {
 			fmt.Println("[SEARCH] Exiting search mode (Attract resumed).")
-			// caller breaks loop
 		},
 		"backspace": func() {
 			s := sb.String()
@@ -127,6 +130,71 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 			}
 			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
 		},
+
+		// ----------------------------
+		// Navigation (shared keys)
+		// ----------------------------
+		"left": func() {
+			if len(*candidates) > 0 && *idx > 0 {
+				*idx--
+				launchGame((*candidates)[*idx])
+			}
+		},
+		"right": func() {
+			if len(*candidates) > 0 && *idx < len(*candidates)-1 {
+				*idx++
+				launchGame((*candidates)[*idx])
+			}
+		},
+	}
+}
+
+// --- Search Mode Input Map ---
+func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, index []GameEntry, inputCh <-chan string) map[string]InputAction {
+	return map[string]InputAction{
+
+		// ----------------------------
+		// Keyboard text entry
+		// ----------------------------
+		"space": func() {
+			sb.WriteRune(' ')
+			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
+		},
+		"backspace": func() {
+			s := sb.String()
+			if len(s) > 0 {
+				sb.Reset()
+				sb.WriteString(s[:len(s)-1])
+			}
+			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
+		},
+		"enter": func() {
+			query := sb.String()
+			if query != "" {
+				fmt.Printf("[SEARCH] Searching for %q (%d titles)\n", query, len(index))
+				*candidates = findMatches(query, "", index) // no normalize, raw query
+				if len(*candidates) > 0 {
+					*idx = 0
+					launchGame((*candidates)[*idx])
+				} else {
+					fmt.Println("[SEARCH] No match found")
+				}
+			}
+			sb.Reset()
+			fmt.Println("[SEARCH] Ready. Use ←/→ to browse, ESC to exit.")
+		},
+
+		// ----------------------------
+		// Mode control
+		// ----------------------------
+		"esc": func() {
+			fmt.Println("[SEARCH] Exiting search mode (Attract resumed).")
+			// caller breaks loop
+		},
+
+		// ----------------------------
+		// Navigation (browse results)
+		// ----------------------------
 		"left": func() {
 			if len(*candidates) > 0 && *idx > 0 {
 				*idx--
