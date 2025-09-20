@@ -12,7 +12,6 @@ import (
 	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
-	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
@@ -82,7 +81,7 @@ func CreateGamelists(cfg *config.UserConfig,
 	}
 	if fileExists(indexPath) {
 		data, _ := os.ReadFile(indexPath)
-		_ = json.Unmarshal(data, &input.GameIndex)
+		_ = json.Unmarshal(data, &GameIndex) // local attract.GameIndex
 	}
 
 	// 5. Process each system in order.
@@ -169,7 +168,7 @@ func CreateGamelists(cfg *config.UserConfig,
 				)
 			}
 
-			// Update masterlist + GameIndex with new results.
+			// Update masterlist + local GameIndex with new results.
 			masterList = removeSystemBlock(masterList, systemId)
 			masterList = append(masterList, "# SYSTEM: "+systemId+" #")
 			masterList = append(masterList, rawFiles...)
@@ -217,7 +216,7 @@ func CreateGamelists(cfg *config.UserConfig,
 	cache.SetList("Masterlist.txt", masterList)
 	if !cfg.List.RamOnly {
 		writeSimpleList(masterPath, masterList)
-		if data, err := json.MarshalIndent(input.GameIndex, "", "  "); err == nil {
+		if data, err := json.MarshalIndent(GameIndex, "", "  "); err == nil {
 			_ = os.WriteFile(indexPath, data, 0644)
 		}
 	}
@@ -225,14 +224,14 @@ func CreateGamelists(cfg *config.UserConfig,
 	// 8. Print summary and return total game count.
 	if !quiet {
 		fmt.Printf("[List] Masterlist contains %d titles\n", countGames(masterList))
-		fmt.Printf("[List] GameIndex contains %d titles\n", len(input.GameIndex))
+		fmt.Printf("[List] GameIndex contains %d titles\n", len(GameIndex))
 
 		state := "reused"
 		if fresh > 0 || rebuilt > 0 {
 			state = "fresh"
 		}
 		fmt.Printf("[List] %-12s %7d entries [%s]\n", "Masterlist.txt", countGames(masterList), state)
-		fmt.Printf("[List] %-12s %7d entries [%s]\n", "GameIndex", len(input.GameIndex), state)
+		fmt.Printf("[List] %-12s %7d entries [%s]\n", "GameIndex", len(GameIndex), state)
 
 		taken := time.Since(start).Seconds()
 		fmt.Printf("[List] Done: %d games in %.1fs (%d fresh, %d rebuilt, %d reused systems)\n",
