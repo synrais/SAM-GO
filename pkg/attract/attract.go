@@ -15,17 +15,15 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// --- State markers ---
+// --- State handling ---
 type AttractState string
 
 const (
-	StateIdle      AttractState = "IDLE"
-	StatePlaying   AttractState = "PLAYING"
-	StateSearching AttractState = "SEARCHING"
-	StateResuming  AttractState = "RESUME"
+	StateAttract AttractState = "ATTRACT"
+	StateSearch  AttractState = "SEARCH"
 )
 
-var currentState AttractState = StateIdle
+var currentState = StateAttract
 
 func setState(newState AttractState) {
 	if currentState != newState {
@@ -118,10 +116,27 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		fmt.Println("[Attract] Running. Ctrl-C to exit.")
 	}
 
-	// Helper: play one game and handle skip/back/timer/search.
+	// Helper: play one game and handle skip/back/timer.
 	playGame := func(gamePath string, ts float64) {
 	Launch:
 		for {
+			// If search has started, pause attract until it exits.
+			if input.IsSearching() {
+				setState(StateSearch)
+				for input.IsSearching() {
+					time.Sleep(200 * time.Millisecond)
+				}
+				setState(StateAttract)
+				// After exiting search, advance immediately.
+				if next, ok := PlayNext(); ok {
+					gamePath = next
+					ts = 0
+					continue Launch
+				}
+			}
+
+			// Normal attract play
+			setState(StateAttract)
 			name := filepath.Base(gamePath)
 			name = strings.TrimSuffix(name, filepath.Ext(name))
 			if !silent {
@@ -129,7 +144,6 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 					time.Now().Format("15:04:05"), name, gamePath)
 			}
 			Run([]string{gamePath})
-			setState(StatePlaying)
 
 			// Decide how long to keep game running.
 			wait := ParsePlayTime(attractCfg.PlayTime, r)
@@ -142,38 +156,12 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 			}
 
 			timer := time.NewTimer(wait)
-			wasSearching := false
+			defer timer.Stop()
 
 			for {
-				// --- SEARCH MODE HANDLING ---
-				if input.IsSearching() {
-					if !wasSearching {
-						setState(StateSearching)
-						timer.Stop()
-						wasSearching = true
-					}
-					time.Sleep(100 * time.Millisecond)
-					continue
-				} else if wasSearching {
-					// Exited search → instantly advance
-					setState(StateResuming)
-					wasSearching = false
-					if next, ok := PlayNext(); ok {
-						fmt.Println("[DEBUG] Advancing after search → PlayNext()")
-						gamePath = next
-						ts = 0
-						continue Launch
-					}
-					// restart timer if nothing to advance to
-					timer = time.NewTimer(wait)
-					setState(StatePlaying)
-				}
-
-				// --- NORMAL ATTRACT LOOP ---
 				select {
 				case <-timer.C:
 					if next, ok := PlayNext(); ok {
-						fmt.Println("[DEBUG] Timer expired → PlayNext()")
 						gamePath = next
 						ts = 0
 						continue Launch
@@ -185,7 +173,6 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 						fmt.Println("[Attract] Skipped")
 					}
 					if next, ok := PlayNext(); ok {
-						fmt.Println("[DEBUG] User pressed Skip → PlayNext()")
 						gamePath = next
 						ts = 0
 						continue Launch
@@ -194,11 +181,26 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 
 				case <-backCh:
 					if prev, ok := PlayBack(); ok {
-						fmt.Println("[DEBUG] User pressed Back → PlayBack()")
 						gamePath = prev
 						ts = 0
 						continue Launch
 					}
+				default:
+					// Poll for search state even during play
+					if input.IsSearching() {
+						timer.Stop()
+						setState(StateSearch)
+						for input.IsSearching() {
+							time.Sleep(200 * time.Millisecond)
+						}
+						setState(StateAttract)
+						if next, ok := PlayNext(); ok {
+							gamePath = next
+							ts = 0
+							continue Launch
+						}
+					}
+					time.Sleep(100 * time.Millisecond)
 				}
 			}
 		}
@@ -209,13 +211,11 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		select {
 		case <-backCh:
 			if prev, ok := PlayBack(); ok {
-				fmt.Println("[DEBUG] Main loop → PlayBack()")
 				playGame(prev, 0)
 				continue
 			}
 		case <-skipCh:
 			if next, ok := PlayNext(); ok {
-				fmt.Println("[DEBUG] Main loop → PlayNext()")
 				playGame(next, 0)
 				continue
 			}
