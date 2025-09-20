@@ -13,12 +13,14 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// PrepareAttract builds gamelists and collects allowed files.
-func PrepareAttract(cfg *config.UserConfig) []string {
+// PrepareAttract builds gamelists, applies filters,
+// then immediately launches the attract loop.
+func PrepareAttract(cfg *config.UserConfig) {
 	// 1. Ensure gamelists are built.
 	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
 	if CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
 		fmt.Fprintln(os.Stderr, "[Attract] List build failed: no games indexed")
+		os.Exit(1)
 	}
 
 	// 2. Collect gamelist files.
@@ -47,7 +49,8 @@ func PrepareAttract(cfg *config.UserConfig) []string {
 		os.Exit(1)
 	}
 
-	return files
+	// 4. Start the main loop right away.
+	RunAttractLoop(cfg, files)
 }
 
 // RunAttractLoop runs the attract mode loop until interrupted.
