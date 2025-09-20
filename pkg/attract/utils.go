@@ -675,42 +675,68 @@ func updateTimestamp(list []SavedTimestamp, systemID, path string, mod time.Time
 
 //
 // -----------------------------
-// History navigation
+// History navigation + Timer reset
 // -----------------------------
-//
 
 var currentIndex int = -1
 
-// Play appends a game to history.
-func Play(path string) {
+// resetTimer stops and resets the given timer safely.
+func resetTimer(timer *time.Timer, d time.Duration) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	timer.Reset(d)
+}
+
+// Play appends a game to history and resets timer.
+func Play(path string, timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) {
 	hist := GetList("History.txt")
 	hist = append(hist, path)
 	SetList("History.txt", hist)
 	currentIndex = len(hist) - 1
+
+	// Run the game
+	Run([]string{path})
+
+	// Reset timer
+	resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
 }
 
-// Next moves forward in history.
-func Next() (string, bool) {
+// Next moves forward in history and resets timer.
+func Next(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
 	if currentIndex >= 0 && currentIndex < len(hist)-1 {
 		currentIndex++
-		return hist[currentIndex], true
+		path := hist[currentIndex]
+		Run([]string{path})
+		resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
+		return path, true
 	}
 	return "", false
 }
 
-// Back moves backward in history.
-func Back() (string, bool) {
+// Back moves backward in history and resets timer.
+func Back(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
 	if currentIndex > 0 {
 		currentIndex--
-		return hist[currentIndex], true
+		path := hist[currentIndex]
+		Run([]string{path})
+		resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
+		return path, true
 	}
 	return "", false
 }
 
-func PlayNext() (string, bool) { return Next() }
-func PlayBack() (string, bool) { return Back() }
+func PlayNext(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
+	return Next(timer, cfg, r)
+}
+func PlayBack(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
+	return Back(timer, cfg, r)
+}
 
 //
 // -----------------------------
