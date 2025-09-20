@@ -1,18 +1,3 @@
-package attract
-
-import (
-	"fmt"
-	"os"
-	"strings"
-	"time"
-	"math/rand"
-
-	"github.com/synrais/SAM-GO/pkg/config"
-)
-
-// Generic function type for mapped inputs
-type InputAction func()
-
 // --- Attract Mode Input Map (grouped by device type) ---
 func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, inputCh <-chan string) map[string]InputAction {
 	return map[string]InputAction{
@@ -20,11 +5,11 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// ----------------------------
 		// Keyboard
 		// ----------------------------
-		"esc": func() {
+		"ESC": func() {
 			fmt.Println("[Attract] Exiting attract mode.")
 			os.Exit(0)
 		},
-		"space": func() {
+		"SPACE": func() {
 			fmt.Println("[Attract] Skipped current game.")
 		},
 		"`": func() {
@@ -32,13 +17,13 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 			SearchAndPlay(inputCh)
 			fmt.Println("[Attract] Resuming attract mode.")
 		},
-		"left": func() {
+		"LEFT": func() {
 			if prev, ok := PlayBack(timer, cfg, r); ok {
 				fmt.Println("[Attract] Keyboard ← back in history.")
 				Run([]string{prev})
 			}
 		},
-		"right": func() {
+		"RIGHT": func() {
 			if next, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Keyboard → forward in history.")
 				Run([]string{next})
@@ -102,11 +87,11 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 		// ----------------------------
 		// Keyboard
 		// ----------------------------
-		"space": func() {
+		"SPACE": func() {
 			sb.WriteRune(' ')
 			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
 		},
-		"backspace": func() {
+		"BACKSPACE": func() {
 			s := sb.String()
 			if len(s) > 0 {
 				sb.Reset()
@@ -114,7 +99,7 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 			}
 			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
 		},
-		"enter": func() {
+		"ENTER": func() {
 			query := sb.String()
 			if query != "" {
 				fmt.Printf("[SEARCH] Searching for: %q (%d titles)\n", query, len(index))
@@ -127,22 +112,22 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 				}
 			}
 			sb.Reset()
-			fmt.Println("[SEARCH] Ready. Use ←/→ to browse, ESC to exit.")
+			fmt.Println("[SEARCH] Ready. Use LEFT/RIGHT to browse, ESC to exit.")
 		},
-		"esc": func() {
+		"ESC": func() {
 			fmt.Println("[SEARCH] Exiting search mode (Attract resumed).")
 		},
 
 		// ----------------------------
 		// Navigation
 		// ----------------------------
-		"left": func() {
+		"LEFT": func() {
 			if len(*candidates) > 0 && *idx > 0 {
 				*idx--
 				launchGame((*candidates)[*idx])
 			}
 		},
-		"right": func() {
+		"RIGHT": func() {
 			if len(*candidates) > 0 && *idx < len(*candidates)-1 {
 				*idx++
 				launchGame((*candidates)[*idx])
