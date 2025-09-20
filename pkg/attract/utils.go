@@ -696,16 +696,26 @@ func resetTimer(timer *time.Timer, d time.Duration) {
 
 // Play appends a game to history and launches it, resetting timer if present.
 func Play(path string, timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) {
-	hist := GetList("History.txt")
-	hist = append(hist, path)
-	SetList("History.txt", hist)
-	currentIndex = len(hist) - 1
+    // If no explicit path, pick a random game like attract mode normally would
+    if path == "" {
+        newPath := PickRandomGame(cfg, r) // <- use your existing attract picker
+        if newPath == "" {
+            fmt.Println("[Attract] No game available to play.")
+            return
+        }
+        path = newPath
+    }
 
-	// Run the game
-	Run([]string{path})
+    hist := GetList("History.txt")
+    hist = append(hist, path)
+    SetList("History.txt", hist)
+    currentIndex = len(hist) - 1
 
-	// Reset timer if we have one
-	resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
+    // Run the game
+    Run([]string{path})
+
+    // Reset timer if we have one
+    resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
 }
 
 // Next moves forward in history, runs game, resets timer.
