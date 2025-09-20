@@ -11,18 +11,27 @@ import (
 )
 
 // -----------------------------
-// Core cache maps
+// Core in-RAM cache
 // -----------------------------
 
 var (
-	mu        sync.RWMutex
-	lists     = make(map[string][]string)   // working copy (mutable)
-	masters   = make(map[string][]string)   // pristine originals (never touched)
-	gameIndex []GameEntry                   // central slice of all games
+	mu      sync.RWMutex
+	lists   = make(map[string][]string) // working copy (mutates as games are consumed)
+	masters = make(map[string][]string) // pristine originals (never touched)
+
+	gameIndex []GameEntry // full search index, built by list.go
 )
 
+// GameEntry is one normalized entry in the GameIndex.
+type GameEntry struct {
+	SystemID string // system this game belongs to (nes, snes, arcade…)
+	Name     string // normalized name
+	Ext      string // extension (smd, nes, zip…)
+	Path     string // full original file path
+}
+
 // -----------------------------
-// Text list cache
+// List cache (gamelists, masterlist, history)
 // -----------------------------
 
 // ReloadAll clears and reloads all .txt files from a directory into RAM.
@@ -67,7 +76,7 @@ func GetList(name string) []string {
 func SetList(name string, lines []string) {
 	mu.Lock()
 	defer mu.Unlock()
-	copied := append([]string(nil), lines...)
+	copied := append([]string(nil), lines...) // defensive copy
 	lists[name] = copied
 	if _, ok := masters[name]; !ok {
 		masters[name] = append([]string(nil), lines...)
@@ -90,7 +99,7 @@ func DeleteKey(name string) {
 	mu.Lock()
 	defer mu.Unlock()
 	delete(lists, name)
-	// masters left intact, ResetAll can restore later
+	// leave masters untouched so ResetAll can restore it later
 }
 
 // ResetAll restores all working lists back to their master originals.
@@ -107,37 +116,23 @@ func ResetAll() {
 // GameIndex cache
 // -----------------------------
 
-// GetGameIndex returns the full game index (copy).
+// AppendGameIndex adds one entry into the in-RAM index.
+func AppendGameIndex(entry GameEntry) {
+	mu.Lock()
+	defer mu.Unlock()
+	gameIndex = append(gameIndex, entry)
+}
+
+// GetGameIndex returns a snapshot of the current index.
 func GetGameIndex() []GameEntry {
 	mu.RLock()
 	defer mu.RUnlock()
 	return append([]GameEntry(nil), gameIndex...)
 }
 
-// SetGameIndex replaces the entire index.
-func SetGameIndex(entries []GameEntry) {
+// ResetGameIndex clears the in-RAM index.
+func ResetGameIndex() {
 	mu.Lock()
 	defer mu.Unlock()
-	gameIndex = append([]GameEntry(nil), entries...)
-}
-
-// AppendGameIndex adds entries to the index.
-func AppendGameIndex(entries ...GameEntry) {
-	mu.Lock()
-	defer mu.Unlock()
-	gameIndex = append(gameIndex, entries...)
-}
-
-// ClearGameIndex wipes the index completely.
-func ClearGameIndex() {
-	mu.Lock()
-	defer mu.Unlock()
-	gameIndex = nil
-}
-
-// LenGameIndex returns the number of entries in the index.
-func LenGameIndex() int {
-	mu.RLock()
-	defer mu.RUnlock()
-	return len(gameIndex)
+	gameIndex = []GameEntry{}
 }
