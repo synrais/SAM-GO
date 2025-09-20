@@ -710,7 +710,7 @@ var currentIndex int = -1
 func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
 
-	// move forward in history if possible
+	// Move forward in history if possible
 	if currentIndex >= 0 && currentIndex < len(hist)-1 {
 		currentIndex++
 		path := hist[currentIndex]
@@ -719,7 +719,7 @@ func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 		return path, true
 	}
 
-	// otherwise pick new random
+	// Otherwise pick a new random game
 	path := PickRandomGame(cfg, r)
 	if path == "" {
 		fmt.Println("[Attract] No game available to play.")
@@ -735,10 +735,11 @@ func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	return path, true
 }
 
-// Back moves backward in history.
+// Back moves backward in history if possible.
 // Always resets the global attract timer.
 func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
+
 	if currentIndex > 0 {
 		currentIndex--
 		path := hist[currentIndex]
@@ -746,10 +747,12 @@ func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 		resetGlobalTimer(cfg, r)
 		return path, true
 	}
+
+	// Nothing to go back to
 	return "", false
 }
 
-// resetGlobalTimer resets the singleton timer via utils.
+// resetGlobalTimer resets the singleton attract timer.
 func resetGlobalTimer(cfg *config.UserConfig, r *rand.Rand) {
 	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
 	utils.ResetAttractTimer(wait)
