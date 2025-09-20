@@ -48,13 +48,13 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// ----------------------------
 		// Controller Buttons
 		// ----------------------------
-		"button1": func() {
+		"BUTTON1": func() {
 			if next, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Button1 → forward in history.")
 				Run([]string{next})
 			}
 		},
-		"button2": func() {
+		"BUTTON2": func() {
 			if prev, ok := PlayBack(timer, cfg, r); ok {
 				fmt.Println("[Attract] Button2 ← back in history.")
 				Run([]string{prev})
@@ -64,13 +64,13 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// ----------------------------
 		// Touch / Gestures
 		// ----------------------------
-		"swipe-right": func() {
+		"SWIPE-RIGHT": func() {
 			if next, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Swipe → forward in history.")
 				Run([]string{next})
 			}
 		},
-		"swipe-left": func() {
+		"SWIPE-LEFT": func() {
 			if prev, ok := PlayBack(timer, cfg, r); ok {
 				fmt.Println("[Attract] Swipe ← back in history.")
 				Run([]string{prev})
@@ -80,13 +80,13 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// ----------------------------
 		// Analog Axis
 		// ----------------------------
-		"axis-right": func() {
+		"AXIS-RIGHT": func() {
 			if next, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Axis → forward in history.")
 				Run([]string{next})
 			}
 		},
-		"axis-left": func() {
+		"AXIS-LEFT": func() {
 			if prev, ok := PlayBack(timer, cfg, r); ok {
 				fmt.Println("[Attract] Axis ← back in history.")
 				Run([]string{prev})
@@ -127,7 +127,7 @@ func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, inde
 				}
 			}
 			sb.Reset()
-			fmt.Println("[SEARCH] Ready. Use ←/→ to browse, ESC to exit.")
+			fmt.Println("[SEARCH] Ready. Use <LEFT>/<RIGHT> to browse, <ESC> to exit.")
 		},
 		"<ESC>": func() {
 			fmt.Println("[SEARCH] Exiting search mode (Attract resumed).")
