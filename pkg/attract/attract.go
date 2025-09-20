@@ -89,6 +89,9 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 		wait := ParsePlayTime(cfg.Attract.PlayTime, r)
 		timer := time.NewTimer(wait)
 
+		// load input map
+		inputMap := AttractInputMap(cfg, r, timer, inputCh)
+
 	loop:
 		for {
 			select {
@@ -96,61 +99,8 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 				break loop // natural advance
 
 			case ev := <-inputCh:
-				switch strings.ToLower(ev) {
-				case "esc":
-					fmt.Println("[Attract] Exiting attract mode.")
-					return
-
-				case "space":
-					fmt.Println("[Attract] Skipped current game.")
-					break loop
-
-				case "`": // <-- backtick enters search
-					fmt.Println("[Attract] Entering search mode...")
-					SearchAndPlay(inputCh)
-					fmt.Println("[Attract] Resuming attract mode.")
-
-					// reset timer after search
-					if !timer.Stop() {
-						select {
-						case <-timer.C:
-						default:
-						}
-					}
-					timer.Reset(ParsePlayTime(cfg.Attract.PlayTime, r))
-
-				case "right", "button1":
-					if next, ok := Next(); ok {
-						fmt.Println("[Attract] Going forward in history.")
-						Run([]string{next})
-
-						// reset timer
-						if !timer.Stop() {
-							select {
-							case <-timer.C:
-							default:
-							}
-						}
-						timer.Reset(ParsePlayTime(cfg.Attract.PlayTime, r))
-					} else {
-						fmt.Println("[Attract] Skipped current game.")
-						break loop
-					}
-
-				case "left", "button2":
-					if prev, ok := PlayBack(); ok {
-						fmt.Println("[Attract] Going back in history.")
-						Run([]string{prev})
-
-						// reset timer
-						if !timer.Stop() {
-							select {
-							case <-timer.C:
-							default:
-							}
-						}
-						timer.Reset(ParsePlayTime(cfg.Attract.PlayTime, r))
-					}
+				if action, ok := inputMap[strings.ToLower(ev)]; ok {
+					action()
 				}
 			}
 		}
