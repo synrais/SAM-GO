@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/synrais/SAM-GO/pkg/cache"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/utils"
@@ -81,7 +80,13 @@ func CreateGamelists(cfg *config.UserConfig,
 	}
 	if fileExists(indexPath) {
 		data, _ := os.ReadFile(indexPath)
-		_ = json.Unmarshal(data, &GameIndex) // local attract.GameIndex
+		var diskIndex []GameEntry
+		if err := json.Unmarshal(data, &diskIndex); err == nil {
+			ResetGameIndex()
+			for _, e := range diskIndex {
+				AppendGameIndex(e)
+			}
+		}
 	}
 
 	// 5. Process each system in order.
@@ -168,7 +173,7 @@ func CreateGamelists(cfg *config.UserConfig,
 				)
 			}
 
-			// Update masterlist + local GameIndex with new results.
+			// Update masterlist + GameIndex with new results.
 			masterList = removeSystemBlock(masterList, systemId)
 			masterList = append(masterList, "# SYSTEM: "+systemId+" #")
 			masterList = append(masterList, rawFiles...)
@@ -176,11 +181,11 @@ func CreateGamelists(cfg *config.UserConfig,
 
 		} else {
 			// 5c. Reuse cached gamelist.
-			lines := cache.GetList(gamelistFilename(systemId))
+			lines := GetList(gamelistFilename(systemId))
 			if len(lines) == 0 {
 				// Fall back to disk if cache empty.
 				lines, _ = utils.ReadLines(gamelistPath)
-				cache.SetList(gamelistFilename(systemId), lines)
+				SetList(gamelistFilename(systemId), lines)
 			}
 
 			// Apply extension filter + filterlists.
@@ -213,10 +218,10 @@ func CreateGamelists(cfg *config.UserConfig,
 	}
 
 	// 7. Save masterlist and GameIndex to disk (unless RAM-only mode).
-	cache.SetList("Masterlist.txt", masterList)
+	SetList("Masterlist.txt", masterList)
 	if !cfg.List.RamOnly {
 		writeSimpleList(masterPath, masterList)
-		if data, err := json.MarshalIndent(GameIndex, "", "  "); err == nil {
+		if data, err := json.MarshalIndent(GetGameIndex(), "", "  "); err == nil {
 			_ = os.WriteFile(indexPath, data, 0644)
 		}
 	}
@@ -224,14 +229,14 @@ func CreateGamelists(cfg *config.UserConfig,
 	// 8. Print summary and return total game count.
 	if !quiet {
 		fmt.Printf("[List] Masterlist contains %d titles\n", countGames(masterList))
-		fmt.Printf("[List] GameIndex contains %d titles\n", len(GameIndex))
+		fmt.Printf("[List] GameIndex contains %d titles\n", len(GetGameIndex()))
 
 		state := "reused"
 		if fresh > 0 || rebuilt > 0 {
 			state = "fresh"
 		}
 		fmt.Printf("[List] %-12s %7d entries [%s]\n", "Masterlist.txt", countGames(masterList), state)
-		fmt.Printf("[List] %-12s %7d entries [%s]\n", "GameIndex", len(GameIndex), state)
+		fmt.Printf("[List] %-12s %7d entries [%s]\n", "GameIndex", len(GetGameIndex()), state)
 
 		taken := time.Since(start).Seconds()
 		fmt.Printf("[List] Done: %d games in %.1fs (%d fresh, %d rebuilt, %d reused systems)\n",
@@ -242,4 +247,19 @@ func CreateGamelists(cfg *config.UserConfig,
 	}
 
 	return totalGames
+}
+
+// updateGameIndex pushes system entries into the in-RAM GameIndex.
+func updateGameIndex(systemID string, files []string) {
+	unique := utils.DedupeFiles(files)
+	for _, f := range unique {
+		name, ext := utils.NormalizeEntry(f)
+		entry := GameEntry{
+			SystemID: systemID,
+			Name:     name,
+			Ext:      ext,
+			Path:     f,
+		}
+		AppendGameIndex(entry)
+	}
 }
