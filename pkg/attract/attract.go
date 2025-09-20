@@ -80,12 +80,15 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 		name = strings.TrimSuffix(name, filepath.Ext(name))
 		fmt.Printf("[Attract] %s - %s <%s>\n",
 			time.Now().Format("15:04:05"), name, gamePath)
+
+		// ✅ Record in history only for attract-driven launches
+		Play(gamePath)
 		Run([]string{gamePath})
 
 		// Wait time before next game
 		wait := ParsePlayTime(cfg.Attract.PlayTime, r)
-
 		timer := time.NewTimer(wait)
+
 	loop:
 		for {
 			select {
@@ -102,7 +105,8 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 				case "left", "button2":
 					if prev, ok := PlayBack(); ok {
 						fmt.Println("[Attract] Going back to previous game.")
-						Run([]string{prev})
+						Play(prev)            // ✅ record in history
+						Run([]string{prev})   // launch previous
 						break loop
 					}
 				}
