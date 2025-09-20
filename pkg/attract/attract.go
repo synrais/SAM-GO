@@ -15,23 +15,6 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// --- State handling ---
-type AttractState string
-
-const (
-	StateAttract AttractState = "ATTRACT"
-	StateSearch  AttractState = "SEARCH"
-)
-
-var currentState = StateAttract
-
-func setState(newState AttractState) {
-	if currentState != newState {
-		fmt.Printf("[STATE] %s → %s\n", currentState, newState)
-		currentState = newState
-	}
-}
-
 // RunAttract is the main entrypoint for Attract Mode.
 func RunAttract(cfg *config.UserConfig, args []string) {
 	attractCfg := cfg.Attract
@@ -116,27 +99,10 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 		fmt.Println("[Attract] Running. Ctrl-C to exit.")
 	}
 
-	// Helper: play one game and handle skip/back/timer.
+	// Helper: play one game and handle skip/back/timer/search.
 	playGame := func(gamePath string, ts float64) {
 	Launch:
 		for {
-			// If search has started, pause attract until it exits.
-			if input.IsSearching() {
-				setState(StateSearch)
-				for input.IsSearching() {
-					time.Sleep(200 * time.Millisecond)
-				}
-				setState(StateAttract)
-				// After exiting search, advance immediately.
-				if next, ok := PlayNext(); ok {
-					gamePath = next
-					ts = 0
-					continue Launch
-				}
-			}
-
-			// Normal attract play
-			setState(StateAttract)
 			name := filepath.Base(gamePath)
 			name = strings.TrimSuffix(name, filepath.Ext(name))
 			if !silent {
@@ -156,9 +122,16 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 			}
 
 			timer := time.NewTimer(wait)
-			defer timer.Stop()
 
 			for {
+				// --- STATE HANDLING ---
+				if GetState() == StateSearch {
+					timer.Stop() // freeze while searching
+					time.Sleep(200 * time.Millisecond)
+					continue
+				}
+
+				// --- NORMAL ATTRACT LOOP ---
 				select {
 				case <-timer.C:
 					if next, ok := PlayNext(); ok {
@@ -185,22 +158,6 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 						ts = 0
 						continue Launch
 					}
-				default:
-					// Poll for search state even during play
-					if input.IsSearching() {
-						timer.Stop()
-						setState(StateSearch)
-						for input.IsSearching() {
-							time.Sleep(200 * time.Millisecond)
-						}
-						setState(StateAttract)
-						if next, ok := PlayNext(); ok {
-							gamePath = next
-							ts = 0
-							continue Launch
-						}
-					}
-					time.Sleep(100 * time.Millisecond)
 				}
 			}
 		}
@@ -208,6 +165,12 @@ func RunAttract(cfg *config.UserConfig, args []string) {
 
 	// 6. Main attract loop: forever cycle.
 	for {
+		if GetState() == StateSearch {
+			// freeze entire loop while in search mode
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+
 		select {
 		case <-backCh:
 			if prev, ok := PlayBack(); ok {
