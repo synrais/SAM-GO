@@ -680,8 +680,11 @@ func updateTimestamp(list []SavedTimestamp, systemID, path string, mod time.Time
 
 var currentIndex int = -1
 
-// resetTimer stops and resets the given timer safely.
+// resetTimer safely stops and resets a timer, ignoring nil.
 func resetTimer(timer *time.Timer, d time.Duration) {
+	if timer == nil {
+		return // no timer yet, nothing to do
+	}
 	if !timer.Stop() {
 		select {
 		case <-timer.C:
@@ -691,7 +694,7 @@ func resetTimer(timer *time.Timer, d time.Duration) {
 	timer.Reset(d)
 }
 
-// Play appends a game to history and resets timer.
+// Play appends a game to history and launches it, resetting timer if present.
 func Play(path string, timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) {
 	hist := GetList("History.txt")
 	hist = append(hist, path)
@@ -701,11 +704,11 @@ func Play(path string, timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) 
 	// Run the game
 	Run([]string{path})
 
-	// Reset timer
+	// Reset timer if we have one
 	resetTimer(timer, ParsePlayTime(cfg.Attract.PlayTime, r))
 }
 
-// Next moves forward in history and resets timer.
+// Next moves forward in history, runs game, resets timer.
 func Next(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
 	if currentIndex >= 0 && currentIndex < len(hist)-1 {
@@ -718,7 +721,7 @@ func Next(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool
 	return "", false
 }
 
-// Back moves backward in history and resets timer.
+// Back moves backward in history, runs game, resets timer.
 func Back(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
 	if currentIndex > 0 {
@@ -731,9 +734,11 @@ func Back(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool
 	return "", false
 }
 
+// Aliases for consistency
 func PlayNext(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	return Next(timer, cfg, r)
 }
+
 func PlayBack(timer *time.Timer, cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	return Back(timer, cfg, r)
 }
