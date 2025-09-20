@@ -52,27 +52,6 @@ func matchRule(rule, candidate string) bool {
 
 //
 // -----------------------------
-// Extra helpers from attract.go
-// -----------------------------
-//
-
-// ParsePlayTime handles "40" or "40-130" style configs.
-func ParsePlayTime(value string, r *rand.Rand) time.Duration {
-	if strings.Contains(value, "-") {
-		parts := strings.SplitN(value, "-", 2)
-		min, _ := strconv.Atoi(strings.TrimSpace(parts[0]))
-		max, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
-		if max > min {
-			return time.Duration(r.Intn(max-min+1)+min) * time.Second
-		}
-		return time.Duration(min) * time.Second
-	}
-	secs, _ := strconv.Atoi(value)
-	return time.Duration(secs) * time.Second
-}
-
-//
-// -----------------------------
 // System/group helpers
 // -----------------------------
 //
