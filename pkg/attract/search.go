@@ -22,14 +22,14 @@ func SearchAndPlay(inputCh <-chan string) {
 	idx := -1
 
 	// get input map
-	inputMap := SearchInputMap(&sb, &candidates, &idx, index)
+	inputMap := SearchInputMap(&sb, &candidates, &idx, index, inputCh)
 
 	for ev := range inputCh {
 		evLower := strings.ToLower(ev)
 		if action, ok := inputMap[evLower]; ok {
-			// mapped input → run action
-			if exit := action(); exit {
-				// ESC exits search, return to attract loop
+			action()
+			if evLower == "esc" {
+				// exit search mode cleanly
 				return
 			}
 		} else {
