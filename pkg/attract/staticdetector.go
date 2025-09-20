@@ -376,11 +376,21 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 					}
 				}
 
-				// event := StaticEvent{ ... }  // keep sending if needed elsewhere
-				// streamCh <- event
-
-				// per-frame debug output disabled
-				// fmt.Printf("[StaticDetector] %s\n", event.String())
+				event := StaticEvent{
+					Uptime:       uptime,
+					Frames:       sampleFrames,
+					StaticScreen: staticScreenRun,
+					StuckPixels:  samples,
+					Samples:      samples,
+					Width:        res.Width,
+					Height:       res.Height,
+					DominantHex:  domHex,
+					DominantName: domName,
+					AverageHex:   avgHex,
+					AverageName:  avgName,
+					Game:         displayGame,
+				}
+				streamCh <- event
 
 				elapsed := time.Since(t1)
 				frameDur := time.Second / targetFPS
