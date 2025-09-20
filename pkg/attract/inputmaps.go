@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 	"math/rand"
 
 	"github.com/synrais/SAM-GO/pkg/config"
@@ -14,7 +13,7 @@ import (
 type InputAction func()
 
 // --- Attract Mode Input Map (grouped by device type) ---
-func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, inputCh <-chan string) map[string]InputAction {
+func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, inputCh <-chan string) map[string]InputAction {
 	return map[string]InputAction{
 
 		// ----------------------------
@@ -26,6 +25,9 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		},
 		"space": func() {
 			fmt.Println("[Attract] Skipped current game.")
+			if _, ok := Next(cfg, r); ok {
+				// ticker reset handled inside Next
+			}
 		},
 		"`": func() {
 			fmt.Println("[Attract] Entering search mode...")
