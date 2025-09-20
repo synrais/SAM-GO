@@ -33,21 +33,18 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 			fmt.Println("[Attract] Resuming attract mode.")
 		},
 		"left": func() {
-			fmt.Println("[DEBUG] left pressed, calling PlayBack()")
 			if prev, ok := PlayBack(timer, cfg, r); ok {
 				fmt.Println("[Attract] Keyboard ← back in history.")
 				Run([]string{prev})
-			} else {
-				fmt.Println("[DEBUG] PlayBack() returned no entry")
 			}
 		},
 		"right": func() {
-			fmt.Println("[DEBUG] right pressed, calling Next()")
 			if next, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Keyboard → forward in history.")
 				Run([]string{next})
 			} else {
-				fmt.Println("[DEBUG] Next() returned no entry")
+				fmt.Println("[Attract] No forward entry, picking random game.")
+				RunAttractOnce(cfg, r, inputCh)
 			}
 		},
 
@@ -55,21 +52,18 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// Controller Buttons
 		// ----------------------------
 		"button1": func() {
-			fmt.Println("[DEBUG] button1 pressed, calling Next()")
 			if next, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Button1 → forward in history.")
 				Run([]string{next})
 			} else {
-				fmt.Println("[DEBUG] Next() returned no entry")
+				fmt.Println("[Attract] No forward entry, picking random game.")
+				RunAttractOnce(cfg, r, inputCh)
 			}
 		},
 		"button2": func() {
-			fmt.Println("[DEBUG] button2 pressed, calling PlayBack()")
 			if prev, ok := PlayBack(timer, cfg, r); ok {
 				fmt.Println("[Attract] Button2 ← back in history.")
 				Run([]string{prev})
-			} else {
-				fmt.Println("[DEBUG] PlayBack() returned no entry")
 			}
 		},
 
@@ -77,21 +71,18 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// Touch / Gestures
 		// ----------------------------
 		"swipe-right": func() {
-			fmt.Println("[DEBUG] swipe-right event, calling Next()")
 			if next, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Swipe → forward in history.")
 				Run([]string{next})
 			} else {
-				fmt.Println("[DEBUG] Next() returned no entry")
+				fmt.Println("[Attract] No forward entry, picking random game.")
+				RunAttractOnce(cfg, r, inputCh)
 			}
 		},
 		"swipe-left": func() {
-			fmt.Println("[DEBUG] swipe-left event, calling PlayBack()")
 			if prev, ok := PlayBack(timer, cfg, r); ok {
 				fmt.Println("[Attract] Swipe ← back in history.")
 				Run([]string{prev})
-			} else {
-				fmt.Println("[DEBUG] PlayBack() returned no entry")
 			}
 		},
 
@@ -99,21 +90,18 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, timer *time.Timer, in
 		// Analog Axis
 		// ----------------------------
 		"axis-right": func() {
-			fmt.Println("[DEBUG] axis-right event, calling Next()")
 			if next, ok := Next(timer, cfg, r); ok {
 				fmt.Println("[Attract] Axis → forward in history.")
 				Run([]string{next})
 			} else {
-				fmt.Println("[DEBUG] Next() returned no entry")
+				fmt.Println("[Attract] No forward entry, picking random game.")
+				RunAttractOnce(cfg, r, inputCh)
 			}
 		},
 		"axis-left": func() {
-			fmt.Println("[DEBUG] axis-left event, calling PlayBack()")
 			if prev, ok := PlayBack(timer, cfg, r); ok {
 				fmt.Println("[Attract] Axis ← back in history.")
 				Run([]string{prev})
-			} else {
-				fmt.Println("[DEBUG] PlayBack() returned no entry")
 			}
 		},
 	}
