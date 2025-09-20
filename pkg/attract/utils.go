@@ -748,16 +748,3 @@ func Run(args []string) error {
 	// Launch game
 	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
 }
-
-// AttractPaused is a simple global flag toggled by other modules.
-// true = paused (Attract loop and detectors should stop advancing)
-// false = running
-var AttractPaused atomic.Bool
-
-func PauseAttract() {
-	AttractPaused.Store(true)
-}
-
-func ResumeAttract() {
-	AttractPaused.Store(false)
-}
