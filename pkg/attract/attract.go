@@ -81,17 +81,20 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 		return
 	}
 
-	// Timer for automatic switching
+	// Start static detector in background (skip is wired internally)
+	go Stream(cfg)
+
+	// Kick off the ticker for the first interval
 	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
-	AttractTimer = time.NewTimer(wait)
+	ResetAttractTicker(wait)
 
 	// Input map
-	inputMap := AttractInputMap(cfg, r, AttractTimer, inputCh)
+	inputMap := AttractInputMap(cfg, r, inputCh)
 
 	// Event loop
 	for {
 		select {
-		case <-AttractTimer.C:
+		case <-AttractTickerChan():
 			// Advance automatically
 			if _, ok := Next(cfg, r); !ok {
 				fmt.Println("[Attract] Failed to pick next game.")
