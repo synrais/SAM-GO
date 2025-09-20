@@ -21,12 +21,17 @@ type GameEntry struct {
 	Path string // original line from Search.txt
 }
 
-// SearchAndPlay enters search mode and pauses attract until ESC.
+// SearchAndPlay enters search mode.
 func SearchAndPlay() {
-	fmt.Println("Attract paused, press ESC to resume")
+	fmt.Println("[SEARCH] 🔍 Entered search mode (Attract paused).")
+	fmt.Println("[SEARCH] Type to filter, ENTER to launch, ESC to exit.")
 
+	// Pause attract globally
 	utils.AttractPaused = true
-	defer func() { utils.AttractPaused = false }()
+	defer func() {
+		utils.AttractPaused = false
+		fmt.Println("[SEARCH] Exiting search mode → Attract resumed.")
+	}()
 
 	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(GameIndex))
 
@@ -38,34 +43,35 @@ func SearchAndPlay() {
 	idx := -1
 
 	for line := range ch {
+		// Look for <TOKENS>
 		matches := re.FindAllStringSubmatch(line, -1)
-
 		for _, m := range matches {
 			key := strings.ToUpper(m[1])
+
 			switch key {
 			case "SPACE":
 				sb.WriteRune(' ')
-				fmt.Printf("[SEARCH] Current: %q\n", sb.String())
+				fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
 
 			case "ENTER":
 				qn, qext := utils.NormalizeEntry(sb.String())
 				if qn != "" {
 					fmt.Printf("[SEARCH] Looking for: %q\n", sb.String())
+					fmt.Printf("[SEARCH] Searching... (%d titles)\n", len(GameIndex))
 					candidates = findMatches(qn, qext)
 					if len(candidates) > 0 {
 						idx = 0
-						fmt.Printf("[SEARCH] Launching: %s\n", candidates[idx])
+						fmt.Printf("[SEARCH] ▶ Launching: %s\n", candidates[idx])
 						launchGame(candidates[idx])
 					} else {
 						fmt.Println("[SEARCH] No match found")
 					}
 				}
 				sb.Reset()
-				fmt.Println("[SEARCH] Complete. Use ←/→ to browse, ESC to resume.")
+				fmt.Println("[SEARCH] Ready. Use ←/→ to browse, ESC to exit.")
 
 			case "ESC":
-				fmt.Println("[SEARCH] Exiting search mode")
-				return
+				return // defer unpauses attract
 
 			case "BACKSPACE":
 				s := sb.String()
@@ -73,32 +79,32 @@ func SearchAndPlay() {
 					sb.Reset()
 					sb.WriteString(s[:len(s)-1])
 				}
-				fmt.Printf("[SEARCH] Current: %q\n", sb.String())
+				fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
 
 			case "LEFT":
 				if len(candidates) > 0 && idx > 0 {
 					idx--
-					fmt.Printf("[SEARCH] Launching (prev): %s\n", candidates[idx])
+					fmt.Printf("[SEARCH] ◀ Launching: %s\n", candidates[idx])
 					launchGame(candidates[idx])
 				}
 
 			case "RIGHT":
 				if len(candidates) > 0 && idx < len(candidates)-1 {
 					idx++
-					fmt.Printf("[SEARCH] Launching (next): %s\n", candidates[idx])
+					fmt.Printf("[SEARCH] ▶ Launching: %s\n", candidates[idx])
 					launchGame(candidates[idx])
 				}
 			}
 		}
 
-		// Plain text into query
+		// Plain text input
 		l := re.ReplaceAllString(line, "")
 		for _, r := range l {
 			if r == '\n' || r == '\r' {
 				continue
 			}
 			sb.WriteRune(r)
-			fmt.Printf("[SEARCH] Current: %q\n", sb.String())
+			fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
 		}
 	}
 }
@@ -143,7 +149,7 @@ func findMatches(qn, qext string) []string {
 func launchGame(path string) {
 	exe, err := os.Executable()
 	if err != nil {
-		fmt.Println("[SEARCH] ERROR: could not resolve executable")
+		fmt.Println("[SEARCH] ERROR: could not resolve executable for launch")
 		return
 	}
 	fmt.Printf("[SEARCH] Exec: %s -run %q\n", exe, path)
@@ -154,7 +160,8 @@ func launchGame(path string) {
 }
 
 func levenshtein(a, b string) int {
-	la, lb := len(a), len(b)
+	la := len(a)
+	lb := len(b)
 	d := make([][]int, la+1)
 	for i := range d {
 		d[i] = make([]int, lb+1)
