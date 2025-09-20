@@ -541,25 +541,6 @@ func ReadStaticMap(path string) map[string]string {
 	return m
 }
 
-//
-// -----------------------------
-// Line helpers
-// -----------------------------
-//
-
-// ParseLine extracts <timestamp> prefix and remainder.
-func ParseLine(line string) (float64, string) {
-	if strings.HasPrefix(line, "<") {
-		if idx := strings.Index(line, ">"); idx > 1 {
-			tsStr := line[1:idx]
-			rest := line[idx+1:]
-			ts, _ := strconv.ParseFloat(tsStr, 64)
-			return ts, rest
-		}
-	}
-	return 0, line
-}
-
 // ReadStaticTimestamp returns the static timestamp for a game if present.
 func ReadStaticTimestamp(systemID, game string) float64 {
 	filterBase := config.FilterlistDir()
@@ -812,10 +793,6 @@ var (
 	LastPlayedName   string
 	LastStartTime    time.Time
 )
-
-func GetLastPlayed() (system games.System, path, name string, start time.Time) {
-	return LastPlayedSystem, LastPlayedPath, LastPlayedName, LastStartTime
-}
 
 func setLastPlayed(system games.System, path string) {
 	LastPlayedSystem = system
