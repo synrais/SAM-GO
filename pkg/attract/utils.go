@@ -23,9 +23,10 @@ import (
 
 // GameEntry represents one indexed game file.
 type GameEntry struct {
-	Name string `json:"name"`
-	Ext  string `json:"ext"`
-	Path string `json:"path"`
+	SystemID string `json:"system_id"`
+	Name     string `json:"name"`
+	Ext      string `json:"ext"`
+	Path     string `json:"path"`
 }
 
 // -----------------------------
@@ -537,9 +538,10 @@ func updateGameIndex(systemID string, files []string) {
 	for _, f := range unique {
 		name, ext := utils.NormalizeEntry(f)
 		entry := GameEntry{
-			Name: name,
-			Ext:  ext,
-			Path: f,
+			SystemID: systemID,
+			Name:     name,
+			Ext:      ext,
+			Path:     f,
 		}
 		AppendGameIndex(entry)
 	}
