@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/synrais/SAM-GO/pkg/config"
 )
 
 // Generic function type for mapped inputs
 type InputAction func()
 
 // --- Attract Mode Input Map ---
-func AttractInputMap(inputCh <-chan string) map[string]InputAction {
+func AttractInputMap(cfg *config.UserConfig, inputCh <-chan string) map[string]InputAction {
 	return map[string]InputAction{
 		"esc": func() {
 			fmt.Println("[Attract] Exiting attract mode.")
@@ -18,20 +20,21 @@ func AttractInputMap(inputCh <-chan string) map[string]InputAction {
 		},
 		"space": func() {
 			fmt.Println("[Attract] Skipped current game.")
-			// handled by attract loop
+			// handled in RunAttractLoop by breaking loop
 		},
 		"`": func() {
 			fmt.Println("[Attract] Entering search mode...")
 			SearchAndPlay(inputCh)
 			fmt.Println("[Attract] Resuming attract mode.")
-			// attract loop handles timer reset
+			// timer reset handled in RunAttractLoop
 		},
 		"right": func() {
 			if next, ok := Next(); ok {
 				fmt.Println("[Attract] Going forward in history.")
 				Run([]string{next})
+				// timer reset handled in RunAttractLoop
 			} else {
-				fmt.Println("[Attract] Skipped current game.")
+				fmt.Println("[Attract] No next game in history.")
 			}
 		},
 		"button1": func() { // alias for right
@@ -44,6 +47,9 @@ func AttractInputMap(inputCh <-chan string) map[string]InputAction {
 			if prev, ok := PlayBack(); ok {
 				fmt.Println("[Attract] Going back in history.")
 				Run([]string{prev})
+				// timer reset handled in RunAttractLoop
+			} else {
+				fmt.Println("[Attract] No previous game in history.")
 			}
 		},
 		"button2": func() { // alias for left
