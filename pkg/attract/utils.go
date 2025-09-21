@@ -18,6 +18,35 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
+// -----------------------------
+// Unified Write Helpers
+// -----------------------------
+
+// writeFileIfChanged writes raw bytes only if content differs.
+func writeFileIfChanged(path string, data []byte) error {
+	if old, err := os.ReadFile(path); err == nil {
+		if string(old) == string(data) {
+			return nil // identical → skip write
+		}
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+// writeLinesIfChanged writes a []string as lines to a file only if changed.
+func writeLinesIfChanged(path string, lines []string) error {
+	content := []byte(strings.Join(lines, "\n") + "\n")
+	return writeFileIfChanged(path, content)
+}
+
+// writeJSONIfChanged marshals v as JSON and writes only if changed.
+func writeJSONIfChanged(path string, v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFileIfChanged(path, data)
+}
+
 //
 // -----------------------------
 // System/group helpers
