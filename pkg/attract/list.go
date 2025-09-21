@@ -13,10 +13,11 @@ import (
 // CreateGamelists builds all gamelists, masterlist, and game index.
 //
 // Args:
-//   cfg         - user config
-//   gamelistDir - folder for lists
-//   systemPaths - results of games discovery
-//   quiet       - suppress output if true
+//
+//	cfg         - user config
+//	gamelistDir - folder for lists
+//	systemPaths - results of games discovery
+//	quiet       - suppress output if true
 func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []games.PathResult, quiet bool) int {
 	start := time.Now()
 
@@ -83,9 +84,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			freshCount++
 
 			if !quiet {
-				fmt.Printf("[List] %-12s Disk:%d Cache:%d (White:%d Black:%d Static:%d Folder:%d File:%d) [fresh]\n",
-					system.Id, len(files), len(files),
-					counts["White"], counts["Black"], counts["Static"], counts["Folder"], counts["File"])
+				printListStatus(system.Id, "fresh", len(files), len(files), counts)
 			}
 
 			// update timestamp
@@ -108,9 +107,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 					totalGames += len(lines)
 
 					if !quiet {
-						fmt.Printf("[List] %-12s Cache:%d (White:%d Black:%d Static:%d Folder:%d File:%d) [reused]\n",
-							system.Id, len(lines),
-							counts["White"], counts["Black"], counts["Static"], counts["Folder"], counts["File"])
+						printListStatus(system.Id, "reused", len(lines), len(lines), counts)
 					}
 				} else {
 					fmt.Printf("[WARN] Could not reload gamelist for %s: %v\n", system.Id, err)
