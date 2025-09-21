@@ -21,8 +21,8 @@ const (
 	BOOT_FOLDER   = MUSIC_FOLDER + "/boot"
 	INI_FILE      = MUSIC_FOLDER + "/bgm.ini"
 	LOG_FILE      = "/tmp/bgm.log"
-	HISTORY_RATIO = 0.2
 	MIDI_PORT     = "128:0"
+	HISTORY_RATIO = 0.2
 )
 
 var CONFIG_DEFAULTS = map[string]interface{}{
@@ -68,7 +68,6 @@ func GetConfig() Config {
 	if _, err := os.Stat(INI_FILE); os.IsNotExist(err) {
 		writeDefaultIni()
 	}
-
 	cfg, _ := ini.Load(INI_FILE)
 	section := cfg.Section("bgm")
 
@@ -117,7 +116,7 @@ func LogMsg(msg string, always bool) {
 	}
 }
 
-// --- MiSTer volume ---
+// --- MiSTer Volume helpers ---
 func misterVolume(level int) {
 	if level < 0 {
 		level = 0
@@ -154,7 +153,6 @@ type Player struct {
 	stop chan struct{}
 }
 
-// history management
 func (p *Player) addHistory(track string, total int) {
 	hsize := int(math.Floor(float64(total) * HISTORY_RATIO))
 	if hsize < 1 {
@@ -166,7 +164,6 @@ func (p *Player) addHistory(track string, total int) {
 	p.History = append(p.History, track)
 }
 
-// low-level runner
 func (p *Player) playFile(cmd ...string) {
 	c := exec.Command(cmd[0], cmd[1:]...)
 	stdout, _ := c.StdoutPipe()
@@ -191,7 +188,6 @@ func (p *Player) playFile(cmd ...string) {
 	p.mu.Unlock()
 }
 
-// play one track fully
 func (p *Player) Play(track string) {
 	if !IsValidFile(track) {
 		return
@@ -221,7 +217,31 @@ func (p *Player) Play(track string) {
 	p.Playing = ""
 }
 
-// track picking
+func IsValidFile(name string) bool {
+	l := strings.ToLower(name)
+	if strings.HasSuffix(l, ".mp3") ||
+		strings.HasSuffix(l, ".ogg") ||
+		strings.HasSuffix(l, ".wav") ||
+		strings.HasSuffix(l, ".mid") ||
+		strings.HasSuffix(l, ".pls") {
+		return true
+	}
+	matched, _ := regexp.MatchString(`\.(vgm|vgz|vgm\.gz)$`, l)
+	return matched
+}
+
+func GetLoopAmount(name string) int {
+	base := filepath.Base(name)
+	re := regexp.MustCompile(`^X(\d\d)_`)
+	match := re.FindStringSubmatch(base)
+	if len(match) == 2 {
+		var n int
+		fmt.Sscanf(match[1], "%d", &n)
+		return n
+	}
+	return 1
+}
+
 func GetTracks(playlist *string) []string {
 	var base string
 	if playlist == nil || *playlist == "" {
@@ -291,7 +311,7 @@ func (p *Player) StartLoop() {
 
 				select {
 				case <-p.stop:
-					return // stop immediately
+					return
 				case <-done:
 					// finished naturally
 				}
@@ -306,43 +326,12 @@ func (p *Player) StopLoop() {
 		close(p.stop)
 		p.stop = nil
 	}
-	cmd := p.cmd
-	p.cmd = nil
-	p.mu.Unlock()
-
-	if cmd != nil && cmd.Process != nil {
-		// 🔑 Block on fade, then kill like Python version
+	if p.cmd != nil && p.cmd.Process != nil {
+		// fade before kill
 		misterFadeOut(7, 0, 8, 100*time.Millisecond)
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		_ = p.cmd.Process.Kill()
+		p.cmd = nil
 	}
-
-	// Restore max volume after fade
-	misterVolume(7)
-}
-
-// --- File helpers ---
-func IsValidFile(name string) bool {
-	l := strings.ToLower(name)
-	if strings.HasSuffix(l, ".mp3") ||
-		strings.HasSuffix(l, ".ogg") ||
-		strings.HasSuffix(l, ".wav") ||
-		strings.HasSuffix(l, ".mid") ||
-		strings.HasSuffix(l, ".pls") {
-		return true
-	}
-	matched, _ := regexp.MatchString(`\.(vgm|vgz|vgm\.gz)$`, l)
-	return matched
-}
-
-func GetLoopAmount(name string) int {
-	base := filepath.Base(name)
-	re := regexp.MustCompile(`^X(\d\d)_`)
-	match := re.FindStringSubmatch(base)
-	if len(match) == 2 {
-		var n int
-		fmt.Sscanf(match[1], "%d", &n)
-		return n
-	}
-	return 1
+	p.mu.Unlock()
+	misterVolume(7) // restore volume
 }
