@@ -96,6 +96,14 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 				fmt.Printf("[DEBUG] %s initial file scan returned %d files\n", system.Id, len(files))
 			}
 
+			// 🚨 Skip if no valid files
+			if len(files) == 0 {
+				if !quiet {
+					fmt.Printf("[DEBUG] Skipping %s (0 valid files)\n", system.Id)
+				}
+				continue
+			}
+
 			// 🔥 Remove old entries first
 			beforeMaster := len(master)
 			master = removeSystemFromMaster(master, system.Id)
