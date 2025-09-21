@@ -74,30 +74,6 @@ type System struct {
 	Slots          []Slot
 }
 
-// CoreGroups is a list of common MiSTer aliases that map back to a system.
-// First in list takes precendence for simple attributes in case there's a
-// conflict in the future.
-var CoreGroups = map[string][]System{
-	"Atari7800": {Systems["Atari7800"], Systems["Atari2600"]},
-	"Coleco":    {Systems["ColecoVision"], Systems["SG1000"]},
-	"Gameboy":   {Systems["Gameboy"], Systems["GameboyColor"]},
-	"NES":       {Systems["NES"], Systems["NESMusic"], Systems["FDS"]},
-	"SMS": {Systems["MasterSystem"], Systems["GameGear"], System{
-		Name: "SG-1000",
-		Slots: []Slot{
-			{
-				Exts: []string{".sg"},
-				Mgl: &MglParams{
-					Delay:  1,
-					Method: "f",
-					Index:  1,
-				},
-			},
-		},
-	}},
-	"SNES":   {Systems["SNES"], Systems["SNESMusic"]},
-	"TGFX16": {Systems["TurboGrafx16"], Systems["SuperGrafx"]},
-}
 
 func PathToMglDef(system System, path string) (*MglParams, error) {
 	var mglDef *MglParams
