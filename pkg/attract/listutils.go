@@ -165,22 +165,6 @@ func WriteFileIfChanged(path string, data []byte) error {
 // Filter helpers
 // -----------------------------
 
-// FilterAllowed applies include/exclude restrictions case-insensitively.
-func FilterAllowed(all []string, include, exclude []string) []string {
-	var filtered []string
-	for _, sys := range all {
-		base := strings.TrimSuffix(filepath.Base(sys), "_gamelist.txt")
-		if len(include) > 0 && !ContainsInsensitive(include, base) {
-			continue
-		}
-		if ContainsInsensitive(exclude, base) {
-			continue
-		}
-		filtered = append(filtered, sys)
-	}
-	return filtered
-}
-
 // FilterUniqueWithMGL ensures .mgl takes precedence when duplicates exist.
 func FilterUniqueWithMGL(files []string) []string {
 	chosen := make(map[string]string)
