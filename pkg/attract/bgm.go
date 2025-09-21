@@ -23,6 +23,7 @@ const (
 	LOG_FILE      = "/tmp/bgm.log"
 	HISTORY_RATIO = 0.2
 	MIDI_PORT     = "128:0"
+	CMD_INTERFACE = "/dev/MiSTer_cmd"
 )
 
 var CONFIG_DEFAULTS = map[string]interface{}{
@@ -117,17 +118,6 @@ func LogMsg(msg string, always bool) {
 	}
 }
 
-// --- MiSTer volume helpers ---
-func misterVolume(level int) {
-	if level < 0 {
-		level = 0
-	}
-	if level > 7 {
-		level = 7
-	}
-	_ = exec.Command("sh", "-c", fmt.Sprintf("echo 'volume %d' > /dev/MiSTer_cmd", level)).Run()
-}
-
 // --- File helpers ---
 func IsValidFile(name string) bool {
 	l := strings.ToLower(name)
@@ -203,33 +193,38 @@ func (p *Player) playFile(cmd ...string) {
 	p.mu.Unlock()
 }
 
-// play one track fully
+// play one track fully, aborts if stop is signalled
 func (p *Player) Play(track string) {
 	if !IsValidFile(track) {
 		return
 	}
 	p.Playing = track
-	p.addHistory(track, 100) // placeholder
+	p.addHistory(track, 100)
 	loops := GetLoopAmount(track)
 	LogMsg("Now playing: "+track, true)
 
 	for loops > 0 {
-		lower := strings.ToLower(track)
-		switch {
-		case strings.HasSuffix(lower, ".mp3"), strings.HasSuffix(lower, ".pls"):
-			p.playFile("mpg123", "--no-control", track)
-		case strings.HasSuffix(lower, ".ogg"):
-			p.playFile("ogg123", track)
-		case strings.HasSuffix(lower, ".wav"):
-			p.playFile("aplay", track)
-		case strings.HasSuffix(lower, ".mid"):
-			p.playFile("aplaymidi", "--port="+MIDI_PORT, track)
+		select {
+		case <-p.stop:
+			p.Playing = ""
+			return
 		default:
-			p.playFile("vgmplay", track)
+			lower := strings.ToLower(track)
+			switch {
+			case strings.HasSuffix(lower, ".mp3"), strings.HasSuffix(lower, ".pls"):
+				p.playFile("mpg123", "--no-control", track)
+			case strings.HasSuffix(lower, ".ogg"):
+				p.playFile("ogg123", track)
+			case strings.HasSuffix(lower, ".wav"):
+				p.playFile("aplay", track)
+			case strings.HasSuffix(lower, ".mid"):
+				p.playFile("aplaymidi", "--port="+MIDI_PORT, track)
+			default:
+				p.playFile("vgmplay", track)
+			}
+			loops--
 		}
-		loops--
 	}
-
 	p.Playing = ""
 }
 
@@ -283,12 +278,6 @@ func (p *Player) StartLoop() {
 	p.stop = make(chan struct{})
 	p.mu.Unlock()
 
-	// Apply menu volume at startup if configured
-	cfg := GetConfig()
-	if cfg.MenuVolume >= 0 {
-		misterVolume(cfg.MenuVolume)
-	}
-
 	go func() {
 		for {
 			select {
@@ -300,7 +289,7 @@ func (p *Player) StartLoop() {
 					time.Sleep(time.Second)
 					continue
 				}
-				p.Play(track) // blocks until track ends
+				p.Play(track)
 			}
 		}
 	}()
@@ -314,12 +303,12 @@ func (p *Player) StopLoop() {
 	}
 
 	if p.cmd != nil && p.cmd.Process != nil {
-		// fade out before kill
+		// fade out before hard kill
 		cfg := GetConfig()
 		if cfg.MenuVolume >= 0 {
 			for v := cfg.MenuVolume; v >= 0; v-- {
 				misterVolume(v)
-				time.Sleep(150 * time.Millisecond)
+				time.Sleep(300 * time.Millisecond) // ~2.5s fade from 7→0
 			}
 		}
 		_ = p.cmd.Process.Kill()
@@ -332,4 +321,15 @@ func (p *Player) StopLoop() {
 	if cfg.DefaultVolume >= 0 {
 		misterVolume(cfg.DefaultVolume)
 	}
+}
+
+// --- MiSTer volume control ---
+func misterVolume(level int) {
+	if level < 0 {
+		level = 0
+	}
+	if level > 7 {
+		level = 7
+	}
+	_ = os.WriteFile(CMD_INTERFACE, []byte(fmt.Sprintf("volume %d\n", level)), 0644)
 }
