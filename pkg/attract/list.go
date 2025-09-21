@@ -24,7 +24,7 @@ import (
 //   5. For each system:
 //        a) Check if system folder modified.
 //        b) If modified or missing gamelist → full rebuild (dedupe, filter, update Masterlist/GameIndex).
-//        c) Else (unchanged) → reuse gamelist: only re-filter into cache.
+//        c) Else (unchanged) → reuse gamelist: reload from disk and re-filter into cache.
 //   6. Save updated timestamps.
 //   7. If any fresh/rebuilt → write Masterlist + GameIndex back to disk.
 //   8. Print summary.
@@ -139,9 +139,12 @@ func CreateGamelists(cfg *config.UserConfig,
 				continue
 			}
 
-			// Sort cache slice.
+			// Sort cache slice + update total.
 			sort.Strings(cacheFiles)
 			totalGames += len(cacheFiles)
+
+			// Seed cache slice in RAM.
+			SetList(gamelistFilename(systemId), cacheFiles)
 
 			// Write gamelist (unless RAM-only).
 			writeGamelist(gamelistDir, systemId, diskFiltered, cfg.List.RamOnly)
@@ -179,14 +182,20 @@ func CreateGamelists(cfg *config.UserConfig,
 			updateGameIndex(systemId, deduped)
 
 		} else {
-			// 5c. Reuse branch: no Masterlist/GameIndex edits.
-			lines := GetList(gamelistFilename(systemId))
+			// 5c. Reuse branch: reload gamelist from disk, re-filter into cache.
+			lines, err := utils.ReadLines(gamelistPath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[List] Failed to read %s: %v\n", gamelistPath, err)
+				continue
+			}
 
-			// Re-apply filters for cache freshness.
 			beforeDisk := len(lines)
 			diskFiltered := FilterExtensions(lines, systemId, cfg)
 			extRemoved := beforeDisk - len(diskFiltered)
 			cacheFiles, counts, _ := ApplyFilterlists(gamelistDir, systemId, diskFiltered, cfg)
+
+			// Seed cache slice in RAM.
+			SetList(gamelistFilename(systemId), cacheFiles)
 
 			totalGames += len(cacheFiles)
 			reused++
