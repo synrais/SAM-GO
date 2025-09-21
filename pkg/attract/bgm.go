@@ -117,30 +117,29 @@ func LogMsg(msg string, always bool) {
 	}
 }
 
-// --- File helpers ---
-func IsValidFile(name string) bool {
-	l := strings.ToLower(name)
-	if strings.HasSuffix(l, ".mp3") ||
-		strings.HasSuffix(l, ".ogg") ||
-		strings.HasSuffix(l, ".wav") ||
-		strings.HasSuffix(l, ".mid") ||
-		strings.HasSuffix(l, ".pls") {
-		return true
+// --- MiSTer volume ---
+func misterVolume(level int) {
+	if level < 0 {
+		level = 0
 	}
-	matched, _ := regexp.MatchString(`\.(vgm|vgz|vgm\.gz)$`, l)
-	return matched
+	if level > 7 {
+		level = 7
+	}
+	_ = os.WriteFile("/dev/MiSTer_cmd", []byte(fmt.Sprintf("volume %d\n", level)), 0644)
 }
 
-func GetLoopAmount(name string) int {
-	base := filepath.Base(name)
-	re := regexp.MustCompile(`^X(\d\d)_`)
-	match := re.FindStringSubmatch(base)
-	if len(match) == 2 {
-		var n int
-		fmt.Sscanf(match[1], "%d", &n)
-		return n
+func misterFadeOut(from, to, steps int, delay time.Duration) {
+	if steps < 1 {
+		steps = 1
 	}
-	return 1
+	stepSize := float64(from-to) / float64(steps)
+	vol := float64(from)
+	for i := 0; i < steps; i++ {
+		misterVolume(int(math.Round(vol)))
+		time.Sleep(delay)
+		vol -= stepSize
+	}
+	misterVolume(to)
 }
 
 // --- Player ---
@@ -292,9 +291,9 @@ func (p *Player) StartLoop() {
 
 				select {
 				case <-p.stop:
-					return // stop immediately, don’t loop again
+					return // stop immediately
 				case <-done:
-					// finished naturally, loop again
+					// finished naturally
 				}
 			}
 		}
@@ -307,9 +306,43 @@ func (p *Player) StopLoop() {
 		close(p.stop)
 		p.stop = nil
 	}
-	if p.cmd != nil && p.cmd.Process != nil {
-		_ = p.cmd.Process.Kill() // hard kill current track
-		p.cmd = nil
-	}
+	cmd := p.cmd
+	p.cmd = nil
 	p.mu.Unlock()
+
+	if cmd != nil && cmd.Process != nil {
+		// 🔑 Block on fade, then kill like Python version
+		misterFadeOut(7, 0, 8, 100*time.Millisecond)
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}
+
+	// Restore max volume after fade
+	misterVolume(7)
+}
+
+// --- File helpers ---
+func IsValidFile(name string) bool {
+	l := strings.ToLower(name)
+	if strings.HasSuffix(l, ".mp3") ||
+		strings.HasSuffix(l, ".ogg") ||
+		strings.HasSuffix(l, ".wav") ||
+		strings.HasSuffix(l, ".mid") ||
+		strings.HasSuffix(l, ".pls") {
+		return true
+	}
+	matched, _ := regexp.MatchString(`\.(vgm|vgz|vgm\.gz)$`, l)
+	return matched
+}
+
+func GetLoopAmount(name string) int {
+	base := filepath.Base(name)
+	re := regexp.MustCompile(`^X(\d\d)_`)
+	match := re.FindStringSubmatch(base)
+	if len(match) == 2 {
+		var n int
+		fmt.Sscanf(match[1], "%d", &n)
+		return n
+	}
+	return 1
 }
