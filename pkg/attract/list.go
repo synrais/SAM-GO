@@ -26,7 +26,7 @@ import (
 //        b) If modified or missing gamelist → full rebuild (dedupe, filter, update Masterlist/GameIndex).
 //        c) Else (unchanged) → reuse gamelist: only re-filter into cache.
 //   6. Save updated timestamps.
-//   7. If any fresh/rebuilt → write Masterlist + GameIndex back to disk.
+//   7. If any fresh/rebuilt → write Masterlist + GameIndex back to disk (only if changed).
 //   8. Print summary.
 //
 // Returns the total number of games indexed across all systems.
@@ -72,10 +72,10 @@ func CreateGamelists(cfg *config.UserConfig,
 	indexPath := filepath.Join(gamelistDir, "GameIndex")
 
 	var masterList []string
-	if fileExists(masterPath) {
+	if utils.FileExists(masterPath) {
 		masterList, _ = utils.ReadLines(masterPath)
 	}
-	if fileExists(indexPath) {
+	if utils.FileExists(indexPath) {
 		data, _ := os.ReadFile(indexPath)
 		var diskIndex []GameEntry
 		if err := json.Unmarshal(data, &diskIndex); err == nil {
@@ -92,7 +92,7 @@ func CreateGamelists(cfg *config.UserConfig,
 		sysStart := time.Now()
 
 		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
-		exists := fileExists(gamelistPath)
+		exists := utils.FileExists(gamelistPath)
 
 		var rawFiles []string
 		modified := false
@@ -143,8 +143,10 @@ func CreateGamelists(cfg *config.UserConfig,
 			sort.Strings(cacheFiles)
 			totalGames += len(cacheFiles)
 
-			// Write gamelist (unless RAM-only).
-			writeGamelist(gamelistDir, systemId, diskFiltered, cfg.List.RamOnly)
+			// Write gamelist unless RAM-only.
+			if !cfg.List.RamOnly {
+				_ = utils.WriteLinesIfChanged(gamelistPath, diskFiltered)
+			}
 
 			if exists && !cfg.List.RamOnly {
 				rebuilt++
@@ -206,7 +208,7 @@ func CreateGamelists(cfg *config.UserConfig,
 		}
 	}
 
-	// 6. Save updated timestamps (only if changed).
+	// 6. Save updated timestamps.
 	if err := saveTimestamps(gamelistDir, updatedTimestamps); err != nil {
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
@@ -215,10 +217,8 @@ func CreateGamelists(cfg *config.UserConfig,
 	if anyRebuilt {
 		SetList("Masterlist.txt", masterList)
 		if !cfg.List.RamOnly {
-			_ = writeLinesIfChanged(masterPath, masterList)
-			if err := writeJSONIfChanged(indexPath, GetGameIndex()); err != nil {
-				fmt.Fprintf(os.Stderr, "[List] Failed to write GameIndex: %v\n", err)
-			}
+			_ = utils.WriteLinesIfChanged(masterPath, masterList)
+			_ = utils.WriteJSONIfChanged(indexPath, GetGameIndex())
 		}
 	}
 
