@@ -2,8 +2,11 @@ package attract
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
