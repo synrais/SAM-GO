@@ -278,13 +278,15 @@ func (p *Player) play(track string) {
 
 func (p *Player) StartLoop() {
 	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if p.stopLoop != nil {
-		p.mu.Unlock()
+		logMsg("StartLoop called but already running", true)
 		return
 	}
+
 	p.stopLoop = make(chan struct{})
 	p.endWG.Add(1)
-	p.mu.Unlock()
 
 	go func() {
 		defer p.endWG.Done()
@@ -306,23 +308,25 @@ func (p *Player) StartLoop() {
 
 func (p *Player) StopLoop() {
 	p.mu.Lock()
-	if p.stopLoop != nil {
-		close(p.stopLoop)
-		p.stopLoop = nil
+	if p.stopLoop == nil {
+		p.mu.Unlock()
+		return
 	}
-	cmd := p.cmd
-	p.cmd = nil
-	p.Playing = ""
+
+	close(p.stopLoop)
+	p.stopLoop = nil
+	p.Playing = "" // prevent further play
+
+	if p.cmd != nil && p.cmd.Process != nil {
+		misterFadeOut(7, 0, 8, 100*time.Millisecond)
+		_ = p.cmd.Process.Kill()
+		go func(cmd *exec.Cmd) { _ = cmd.Wait() }(p.cmd) // reap
+		p.cmd = nil
+	}
 	p.mu.Unlock()
 
-	// fade out before kill (like Python)
-	if cmd != nil && cmd.Process != nil {
-		misterFadeOut(7, 0, 8, 100*time.Millisecond)
-		_ = cmd.Process.Kill()
-	}
-
 	p.endWG.Wait()
-	misterVolume(7) // restore volume
+	misterVolume(7) // restore after fade
 }
 
 // ---------- Remote socket ----------
