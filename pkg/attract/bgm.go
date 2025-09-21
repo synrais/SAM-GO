@@ -1,6 +1,7 @@
 package attract
 
 import (
+	"bufio"
 	"fmt"
 	"math"
 	"math/rand"
@@ -211,8 +212,35 @@ func (p *Player) playFile(track string) {
 	p.cmd = c
 	p.mu.Unlock()
 
-	_ = c.Start() // fire and forget (no Wait)
+	stdout, _ := c.StdoutPipe()
+	c.Stderr = c.Stdout
+	_ = c.Start()
+
+	scanner := bufio.NewScanner(stdout)
+	go func() {
+		for scanner.Scan() {
+			logMsg(scanner.Text())
+		}
+	}()
+
+	// This blocks until the process exits
+	_ = c.Wait()
+
+	p.mu.Lock()
+	if p.cmd == c {
+		p.cmd = nil
+	}
+	p.mu.Unlock()
+}
+
+func (p *Player) play(track string) {
+	if !isValidFile(track) {
+		return
+	}
+	p.Playing = track
 	logMsg("Now playing: " + track)
+	p.playFile(track)
+	p.Playing = ""
 }
 
 func (p *Player) StartLoop() {
@@ -235,9 +263,7 @@ func (p *Player) StartLoop() {
 					time.Sleep(time.Second)
 					continue
 				}
-				p.playFile(track)
-				// wait a little before trying next to avoid spawn spam
-				time.Sleep(500 * time.Millisecond)
+				p.play(track) // blocks until finished or killed
 			}
 		}
 	}()
@@ -250,7 +276,7 @@ func (p *Player) StopLoop() {
 		p.stopLoop = nil
 	}
 	if p.cmd != nil && p.cmd.Process != nil {
-		// fade out THEN kill
+		// fade out before kill
 		misterFadeOut(7, 0, 8, 100*time.Millisecond)
 		_ = p.cmd.Process.Kill()
 		p.cmd = nil
