@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/synrais/SAM-GO/pkg/assets"
 )
 
 const (
@@ -46,6 +48,14 @@ func hideCursor(vt string) { _ = writeTty(vt, "\033[?25l") }
 func showCursor(vt string) { _ = writeTty(vt, "\033[?25h") }
 
 // --- setup/cleanup ---
+func setupPlayer() error {
+	if err := os.MkdirAll(playerDir, 0755); err != nil {
+		return err
+	}
+	// Extract embedded mplayer.zip into /tmp/mrext-mplayer
+	return assets.ExtractZipBytes(assets.MPlayerZip, playerDir)
+}
+
 func setupRemotePlay() error {
 	killMister()
 	if err := fbset(640, 480); err != nil {
@@ -84,13 +94,21 @@ func main() {
 	}
 	movie := os.Args[1]
 
+	// Ensure mplayer + libs are in place
+	if err := setupPlayer(); err != nil {
+		panic(err)
+	}
+
+	// Prepare framebuffer/VT
 	if err := setupRemotePlay(); err != nil {
 		panic(err)
 	}
 
+	// Run video
 	if err := runMplayer(movie); err != nil {
 		panic(err)
 	}
 
+	// Restore MiSTer menu
 	cleanupRemotePlay()
 }
