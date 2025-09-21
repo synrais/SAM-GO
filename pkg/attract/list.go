@@ -24,6 +24,9 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	savedTimestamps, _ := loadSavedTimestamps(gamelistDir)
 	var newTimestamps []SavedTimestamp
 
+	// 🔥 reset RAM caches first
+	ResetAll()
+
 	// preload master + gameindex from disk if present
 	master, _ := utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt"))
 	gameIndex := []GameEntry{}
@@ -40,9 +43,6 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			}
 		}
 	}
-
-	// reset RAM caches
-	ResetAll()
 
 	totalGames := 0
 	freshCount := 0
@@ -95,12 +95,11 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			// Stage 2 Filters
 			stage2, c2 := Stage2Filters(stage1)
 			UpdateGameIndex(system.Id, stage2)
-			// 🔥 Write gamelist to disk after Stage 2
-			_ = WriteLinesIfChanged(gamelistPath, stage2)
 
-			// Stage 3 Filters (RAM only)
+			// Stage 3 Filters
 			stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
 			SetList(GamelistFilename(system.Id), stage3)
+			_ = WriteLinesIfChanged(gamelistPath, stage3)
 
 			counts := mergeCounts(c1, c2, c3)
 			totalGames += len(stage3)
