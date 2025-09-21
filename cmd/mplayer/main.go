@@ -42,12 +42,14 @@ func writeTty(id string, s string) error {
 func hideCursor(vt string) error { return writeTty(vt, "\033[?25l") }
 func showCursor(vt string) error { return writeTty(vt, "\033[?25h") }
 
+// killRunning kills any active MiSTer core or menu, just like the shell script.
+func killRunning() {
+	_ = exec.Command("killall", "-q", "MiSTer").Run()
+}
+
 // setupRemotePlay prepares the VT and video mode before running mplayer
 func setupRemotePlay() error {
-	// Kill any running MiSTer core/menu first
-	if err := mister.KillRunning(); err != nil {
-		fmt.Printf("[WARN] failed to kill running core: %v\n", err)
-	}
+	killRunning()
 
 	if err := setVirtualTerm("9"); err != nil {
 		return fmt.Errorf("switch VT: %w", err)
