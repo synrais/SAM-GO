@@ -226,7 +226,6 @@ func (p *Player) getRandomTrack() string {
 	}
 }
 
-// non-blocking playback
 func (p *Player) playFile(cmd ...string) {
 	c := exec.Command(cmd[0], cmd[1:]...)
 	stdout, _ := c.StdoutPipe()
@@ -236,23 +235,18 @@ func (p *Player) playFile(cmd ...string) {
 	p.cmd = c
 	p.mu.Unlock()
 
-	if err := c.Start(); err != nil {
-		return
+	_ = c.Start()
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		logMsg(scanner.Text(), false)
 	}
+	c.Wait()
 
-	// Log output asynchronously
-	go func(c *exec.Cmd) {
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			logMsg(scanner.Text(), false)
-		}
-		c.Wait()
-		p.mu.Lock()
-		if p.cmd == c {
-			p.cmd = nil
-		}
-		p.mu.Unlock()
-	}(c)
+	p.mu.Lock()
+	if p.cmd == c {
+		p.cmd = nil
+	}
+	p.mu.Unlock()
 }
 
 func (p *Player) play(track string) {
@@ -278,6 +272,13 @@ func (p *Player) play(track string) {
 			p.playFile("vgmplay", track)
 		}
 		loops--
+
+		// bail early if stop was requested mid-track
+		select {
+		case <-p.stopLoop:
+			return
+		default:
+		}
 	}
 	p.Playing = ""
 }
@@ -304,7 +305,14 @@ func (p *Player) StartLoop() {
 					time.Sleep(time.Second)
 					continue
 				}
-				p.play(track)
+
+				// Before starting track, recheck stop
+				select {
+				case <-p.stopLoop:
+					return
+				default:
+					p.play(track) // blocking until done or killed
+				}
 			}
 		}
 	}()
@@ -320,6 +328,7 @@ func (p *Player) StopLoop() {
 	p.cmd = nil
 	p.mu.Unlock()
 
+	// fade out and kill current process
 	if cmd != nil && cmd.Process != nil {
 		misterFadeOut(7, 0, 8, 100*time.Millisecond)
 		_ = cmd.Process.Kill()
