@@ -16,6 +16,10 @@ import (
 // Global timer reference for attract mode
 var AttractTimer *time.Timer
 
+// Global BGM player
+var bgmPlayer *Player
+var bgmStop chan struct{}
+
 //
 // -----------------------------
 // Prepare + Init
@@ -23,6 +27,31 @@ var AttractTimer *time.Timer
 
 // PrepareAttractLists builds gamelists in RAM, applies filters, then starts InitAttract.
 func PrepareAttractLists(cfg *config.UserConfig, showStream bool) {
+	// 🎵 Start background music during list building
+	cfgBgm := GetConfig()
+	if cfgBgm.Startup {
+		bgmPlayer = &Player{
+			Playlist: cfgBgm.Playlist,
+			Playback: cfgBgm.Playback,
+		}
+		bgmStop = make(chan struct{})
+		go func() {
+			for {
+				select {
+				case <-bgmStop:
+					return
+				default:
+					track := bgmPlayer.GetRandomTrack()
+					if track == "" {
+						time.Sleep(1 * time.Second)
+						continue
+					}
+					bgmPlayer.Play(track)
+				}
+			}
+		}()
+	}
+
 	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
 	if CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
 		fmt.Fprintln(os.Stderr, "[Attract] List build failed: no games indexed")
@@ -87,6 +116,13 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 	} else {
 		fmt.Println("[Attract] No game available to start attract mode.")
 		return
+	}
+
+	// 🎵 Stop background music before starting first game
+	if bgmStop != nil {
+		close(bgmStop)
+		bgmStop = nil
+		bgmPlayer = nil
 	}
 
 	// 🔥 Start static detector with optional draining/printing
