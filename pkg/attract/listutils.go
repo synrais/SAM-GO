@@ -14,11 +14,8 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// Stage1Filters applies structural cleanup filters only:
-// - Disabled extensions
-// - .mgl precedence
-// - Duplicate removal
-// Returns the normalized "disk copy" and count stats.
+// Stage1Filters applies extension and .mgl precedence rules.
+// Produces intermediate file set before dedupe.
 func Stage1Filters(files []string, systemID string, cfg *config.UserConfig) ([]string, map[string]int) {
     counts := map[string]int{"File": 0}
 
@@ -30,22 +27,27 @@ func Stage1Filters(files []string, systemID string, cfg *config.UserConfig) ([]s
     filtered = FilterUniqueWithMGL(filtered)
     mglRemoved := beforeMGL - len(filtered)
 
-    // Dedup normalized names
-    beforeDedupe := len(filtered)
-    filtered = utils.DedupeFiles(filtered)
-    dedupeRemoved := beforeDedupe - len(filtered)
-
-    counts["File"] = mglRemoved + dedupeRemoved
+    counts["File"] += mglRemoved
     return filtered, counts
 }
 
-// Stage2Filters applies semantic filterlists:
-// - whitelist
-// - blacklist
-// - staticlist
-// - folder/file rules
-// Returns the cache copy, counts, and flag if lists were applied.
-func Stage2Filters(gamelistDir, systemID string, diskLines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
+// Stage2Filters deduplicates normalized names.
+// Produces final diskLines for persistence.
+func Stage2Filters(files []string) ([]string, map[string]int) {
+    counts := map[string]int{"File": 0}
+
+    beforeDedupe := len(files)
+    filtered := utils.DedupeFiles(files)
+    dedupeRemoved := beforeDedupe - len(filtered)
+
+    counts["File"] = dedupeRemoved
+    return filtered, counts
+}
+
+// Stage3Filters applies semantic filterlists:
+// whitelist, blacklist, staticlist, folder/file rules.
+// Produces cache copy for in-memory use.
+func Stage3Filters(gamelistDir, systemID string, diskLines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
     return ApplyFilterlists(gamelistDir, systemID, diskLines, cfg)
 }
 
