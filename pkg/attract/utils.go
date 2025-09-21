@@ -289,8 +289,8 @@ func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.
 // List + Masterlist helpers
 // -----------------------------
 
-// removeSystemBlock strips existing # SYSTEM: block for a system.
-func removeSystemBlock(master []string, systemID string) []string {
+// RemoveSystemBlock strips existing # SYSTEM: block for a system.
+func RemoveSystemBlock(master []string, systemID string) []string {
 	var out []string
 	skip := false
 	for _, line := range master {
@@ -308,8 +308,8 @@ func removeSystemBlock(master []string, systemID string) []string {
 	return out
 }
 
-// countGames counts all non-#SYSTEM lines in masterlist.
-func countGames(master []string) int {
+// CountGames counts all non-#SYSTEM lines in masterlist.
+func CountGames(master []string) int {
 	count := 0
 	for _, line := range master {
 		if !strings.HasPrefix(line, "# SYSTEM:") {
@@ -319,8 +319,8 @@ func countGames(master []string) int {
 	return count
 }
 
-// updateGameIndex builds GameEntry objects and pushes to cache.
-func updateGameIndex(systemID string, files []string) {
+// UpdateGameIndex builds GameEntry objects and pushes to cache.
+func UpdateGameIndex(systemID string, files []string) {
 	unique := utils.DedupeFiles(files)
 	for _, f := range unique {
 		name, ext := utils.NormalizeEntry(f)
@@ -338,19 +338,34 @@ func updateGameIndex(systemID string, files []string) {
 // Unified Write Helpers
 // -----------------------------
 
-// fileExists checks if path exists and is not a dir.
-func fileExists(path string) bool {
+// FileExists checks if a path exists and is not a dir.
+func FileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
 }
 
-// gamelistFilename returns standard system gamelist filename.
-func gamelistFilename(systemID string) string {
+// GamelistFilename returns standard system gamelist filename.
+func GamelistFilename(systemID string) string {
 	return systemID + "_gamelist.txt"
 }
 
-// writeFileIfChanged writes raw bytes only if content differs.
-func writeFileIfChanged(path string, data []byte) error {
+// WriteLinesIfChanged writes lines only if content differs.
+func WriteLinesIfChanged(path string, lines []string) error {
+	content := []byte(strings.Join(lines, "\n") + "\n")
+	return WriteFileIfChanged(path, content)
+}
+
+// WriteJSONIfChanged marshals v as JSON and writes only if changed.
+func WriteJSONIfChanged(path string, v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	return WriteFileIfChanged(path, data)
+}
+
+// WriteFileIfChanged writes raw bytes only if content differs.
+func WriteFileIfChanged(path string, data []byte) error {
 	if old, err := os.ReadFile(path); err == nil {
 		if string(old) == string(data) {
 			return nil // identical → skip write
@@ -358,22 +373,6 @@ func writeFileIfChanged(path string, data []byte) error {
 	}
 	return os.WriteFile(path, data, 0644)
 }
-
-// writeLinesIfChanged writes a []string as lines to a file only if changed.
-func writeLinesIfChanged(path string, lines []string) error {
-	content := []byte(strings.Join(lines, "\n") + "\n")
-	return writeFileIfChanged(path, content)
-}
-
-// writeJSONIfChanged marshals v as JSON and writes only if changed.
-func writeJSONIfChanged(path string, v any) error {
-	data, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return err
-	}
-	return writeFileIfChanged(path, data)
-}
-
 
 //
 // -----------------------------
