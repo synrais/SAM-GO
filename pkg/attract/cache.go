@@ -43,7 +43,7 @@ func ReloadAll(dir string) error {
 	// Reset everything
 	lists = make(map[string][]string)
 	masters = make(map[string][]string)
-	gameIndex = []GameEntry{} // 🔥 also reset index
+	gameIndex = []GameEntry{} // 🔥 index reset unified
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -131,14 +131,20 @@ func DeleteKey(name string) {
 	// leave masters untouched so ResetAll can restore it later
 }
 
-// ResetAll restores all working lists back to their master originals.
+// ResetAll restores all working lists back to their master originals,
+// and also clears the GameIndex.
 func ResetAll() {
 	mu.Lock()
 	defer mu.Unlock()
+
+	// reset lists
 	lists = make(map[string][]string, len(masters))
 	for k, v := range masters {
 		lists[k] = append([]string(nil), v...)
 	}
+
+	// 🔥 also reset index
+	gameIndex = []GameEntry{}
 }
 
 // -----------------------------
@@ -157,13 +163,6 @@ func GetGameIndex() []GameEntry {
 	mu.RLock()
 	defer mu.RUnlock()
 	return append([]GameEntry(nil), gameIndex...)
-}
-
-// ResetGameIndex clears the in-RAM index.
-func ResetGameIndex() {
-	mu.Lock()
-	defer mu.Unlock()
-	gameIndex = []GameEntry{}
 }
 
 // 🔥 ReloadGameIndexFromDisk repopulates index if it's empty (for reused runs).
