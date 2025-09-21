@@ -102,7 +102,7 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 		return
 	}
 
-	// 🎵 Stop background music before starting first game
+	// 🎵 Stop background music with fade before starting first game
 	if bgmPlayer != nil {
 		bgmPlayer.StopLoop()
 		bgmPlayer = nil
