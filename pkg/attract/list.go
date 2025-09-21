@@ -67,7 +67,17 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 				continue
 			}
 
-			diskLines, cacheLines, counts, _ := BuildSystemLists(gamelistDir, system.Id, files, cfg)
+			// Stage 1 — structural filters
+			diskLines, baseCounts := Stage1Filters(files, system.Id, cfg)
+
+			// Stage 2 — semantic filters
+			cacheLines, filterCounts, _ := Stage2Filters(gamelistDir, system.Id, diskLines, cfg)
+
+			// Merge counts
+			counts := baseCounts
+			for k, v := range filterCounts {
+				counts[k] += v
+			}
 
 			// write gamelist (if changed)
 			_ = WriteLinesIfChanged(gamelistPath, diskLines)
@@ -78,7 +88,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			// record raw lines for later master build and index
 			rawLists[system.Id] = diskLines
 
-			// update index from disk lines (extension + dedupe only)
+			// update index from disk lines
 			UpdateGameIndex(system.Id, diskLines)
 
 			totalGames += len(cacheLines)
@@ -96,8 +106,18 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			if FileExists(gamelistPath) {
 				lines, err := utils.ReadLines(gamelistPath)
 				if err == nil {
-					diskLines, cacheLines, counts, _ := BuildSystemLists(gamelistDir, system.Id, lines, cfg)
-					
+					// Stage 1 — structural filters
+					diskLines, baseCounts := Stage1Filters(lines, system.Id, cfg)
+
+					// Stage 2 — semantic filters
+					cacheLines, filterCounts, _ := Stage2Filters(gamelistDir, system.Id, diskLines, cfg)
+
+					// Merge counts
+					counts := baseCounts
+					for k, v := range filterCounts {
+						counts[k] += v
+					}
+
 					// ensure on-disk list matches normalized disk copy
 					_ = WriteLinesIfChanged(gamelistPath, diskLines)
 
