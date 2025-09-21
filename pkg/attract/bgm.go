@@ -118,6 +118,17 @@ func LogMsg(msg string, always bool) {
 	}
 }
 
+// --- Volume helpers ---
+func misterVolume(level int) {
+	if level < 0 {
+		return
+	}
+	if level > 7 {
+		level = 7
+	}
+	_ = os.WriteFile(CMD_INTERFACE, []byte(fmt.Sprintf("volume %d", level)), 0644)
+}
+
 // --- File helpers ---
 func IsValidFile(name string) bool {
 	l := strings.ToLower(name)
@@ -193,7 +204,7 @@ func (p *Player) playFile(cmd ...string) {
 	p.mu.Unlock()
 }
 
-// play one track fully, aborts if stop is signalled
+// play one track fully
 func (p *Player) Play(track string) {
 	if !IsValidFile(track) {
 		return
@@ -204,27 +215,22 @@ func (p *Player) Play(track string) {
 	LogMsg("Now playing: "+track, true)
 
 	for loops > 0 {
-		select {
-		case <-p.stop:
-			p.Playing = ""
-			return
+		lower := strings.ToLower(track)
+		switch {
+		case strings.HasSuffix(lower, ".mp3"), strings.HasSuffix(lower, ".pls"):
+			p.playFile("mpg123", "--no-control", track)
+		case strings.HasSuffix(lower, ".ogg"):
+			p.playFile("ogg123", track)
+		case strings.HasSuffix(lower, ".wav"):
+			p.playFile("aplay", track)
+		case strings.HasSuffix(lower, ".mid"):
+			p.playFile("aplaymidi", "--port="+MIDI_PORT, track)
 		default:
-			lower := strings.ToLower(track)
-			switch {
-			case strings.HasSuffix(lower, ".mp3"), strings.HasSuffix(lower, ".pls"):
-				p.playFile("mpg123", "--no-control", track)
-			case strings.HasSuffix(lower, ".ogg"):
-				p.playFile("ogg123", track)
-			case strings.HasSuffix(lower, ".wav"):
-				p.playFile("aplay", track)
-			case strings.HasSuffix(lower, ".mid"):
-				p.playFile("aplaymidi", "--port="+MIDI_PORT, track)
-			default:
-				p.playFile("vgmplay", track)
-			}
-			loops--
+			p.playFile("vgmplay", track)
 		}
+		loops--
 	}
+
 	p.Playing = ""
 }
 
@@ -273,7 +279,7 @@ func (p *Player) StartLoop() {
 	p.mu.Lock()
 	if p.stop != nil {
 		p.mu.Unlock()
-		return // already running
+		return
 	}
 	p.stop = make(chan struct{})
 	p.mu.Unlock()
@@ -301,35 +307,25 @@ func (p *Player) StopLoop() {
 		close(p.stop)
 		p.stop = nil
 	}
+	cmd := p.cmd
+	p.cmd = nil
+	p.mu.Unlock()
 
-	if p.cmd != nil && p.cmd.Process != nil {
+	if cmd != nil && cmd.Process != nil {
 		// fade out before hard kill
 		cfg := GetConfig()
 		if cfg.MenuVolume >= 0 {
 			for v := cfg.MenuVolume; v >= 0; v-- {
 				misterVolume(v)
-				time.Sleep(300 * time.Millisecond) // ~2.5s fade from 7→0
+				time.Sleep(300 * time.Millisecond)
 			}
 		}
-		_ = p.cmd.Process.Kill()
-		p.cmd = nil
+		_ = cmd.Process.Kill()
 	}
-	p.mu.Unlock()
 
 	// restore default volume after fade
 	cfg := GetConfig()
 	if cfg.DefaultVolume >= 0 {
 		misterVolume(cfg.DefaultVolume)
 	}
-}
-
-// --- MiSTer volume control ---
-func misterVolume(level int) {
-	if level < 0 {
-		level = 0
-	}
-	if level > 7 {
-		level = 7
-	}
-	_ = os.WriteFile(CMD_INTERFACE, []byte(fmt.Sprintf("volume %d\n", level)), 0644)
 }
