@@ -182,6 +182,28 @@ func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) [
 	return filtered
 }
 
+// BuildSystemLists normalizes raw file results into disk and cache copies.
+// It ensures extension and dedupe filters always run and returns the
+// post-filtered variants alongside the per-filter statistics.
+func BuildSystemLists(gamelistDir, systemID string, input []string, cfg *config.UserConfig) ([]string, []string, map[string]int, bool) {
+	// Always apply extension rules first.
+	filtered := FilterExtensions(input, systemID, cfg)
+
+	// Dedupe so .mgl takes precedence and duplicate normalized names drop out.
+	beforeMGL := len(filtered)
+	filtered = FilterUniqueWithMGL(filtered)
+	mglRemoved := beforeMGL - len(filtered)
+
+	beforeDedupe := len(filtered)
+	filtered = utils.DedupeFiles(filtered)
+	dedupeRemoved := beforeDedupe - len(filtered)
+
+	cache, counts, hadLists := ApplyFilterlists(gamelistDir, systemID, filtered, cfg)
+	counts["File"] += mglRemoved + dedupeRemoved
+
+	return filtered, cache, counts, hadLists
+}
+
 // ApplyFilterlists applies whitelist/blacklist/staticlist and updates counters.
 func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
 	filterBase := config.FilterlistDir()
@@ -240,11 +262,6 @@ func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.
 	lines = FilterFoldersAndFiles(lines, systemID, cfg)
 	counts["Folder"] = before - len(lines)
 
-	before = len(lines)
-	lines = FilterUniqueWithMGL(lines)
-	counts["File"] = before - len(lines)
-
-	SetList(systemID+"_gamelist.txt", lines)
 	return lines, counts, hadLists
 }
 
