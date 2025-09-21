@@ -1,348 +1,146 @@
 package attract
 
 import (
-	"bufio"
 	"fmt"
-	"math"
 	"math/rand"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
-	"sync"
 	"time"
 
-	"gopkg.in/ini.v1"
+	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/games"
+	"github.com/synrais/SAM-GO/pkg/input"
 )
 
-const (
-	MUSIC_FOLDER  = "/media/fat/music"
-	BOOT_FOLDER   = MUSIC_FOLDER + "/boot"
-	INI_FILE      = MUSIC_FOLDER + "/bgm.ini"
-	LOG_FILE      = "/tmp/bgm.log"
-	HISTORY_RATIO = 0.2
-	MIDI_PORT     = "128:0"
-)
+// Global timer reference for attract mode
+var AttractTimer *time.Timer
 
-var CONFIG_DEFAULTS = map[string]interface{}{
-	"playback":      "random",
-	"playlist":      nil,
-	"startup":       true,
-	"playincore":    false,
-	"corebootdelay": 0,
-	"menuvolume":    -1,
-	"defaultvolume": -1,
-	"debug":         false,
-}
+// Global BGM player
+var bgmPlayer *Player
 
-type Config struct {
-	Playback      string
-	Playlist      *string
-	Startup       bool
-	PlayInCore    bool
-	CoreBootDelay float64
-	MenuVolume    int
-	DefaultVolume int
-	Debug         bool
-}
+//
+// -----------------------------
+// Prepare + Init
+// -----------------------------
 
-// --- Config handling ---
-func writeDefaultIni() {
-	os.MkdirAll(MUSIC_FOLDER, 0755)
-	f, _ := os.Create(INI_FILE)
-	defer f.Close()
-	f.WriteString(`[bgm]
-playback = random
-playlist = none
-startup = yes
-playincore = no
-corebootdelay = 0
-menuvolume = -1
-defaultvolume = -1
-debug = no
-`)
-}
-
-func GetConfig() Config {
-	if _, err := os.Stat(INI_FILE); os.IsNotExist(err) {
-		writeDefaultIni()
-	}
-
-	cfg, _ := ini.Load(INI_FILE)
-	section := cfg.Section("bgm")
-
-	playback := section.Key("playback").MustString("random")
-	playlist := section.Key("playlist").MustString("none")
-	if playlist == "none" {
-		playlist = ""
-	}
-	startup := section.Key("startup").MustBool(true)
-	playincore := section.Key("playincore").MustBool(false)
-	corebootdelay := section.Key("corebootdelay").MustFloat64(0)
-	menuvol := section.Key("menuvolume").MustInt(-1)
-	defvol := section.Key("defaultvolume").MustInt(-1)
-	debug := section.Key("debug").MustBool(false)
-
-	var playlistPtr *string
-	if playlist != "" {
-		playlistPtr = &playlist
-	}
-
-	return Config{
-		Playback:      playback,
-		Playlist:      playlistPtr,
-		Startup:       startup,
-		PlayInCore:    playincore,
-		CoreBootDelay: corebootdelay,
-		MenuVolume:    menuvol,
-		DefaultVolume: defvol,
-		Debug:         debug,
-	}
-}
-
-// --- Logging ---
-func LogMsg(msg string, always bool) {
-	cfg := GetConfig()
-	if msg == "" {
-		return
-	}
-	if always || cfg.Debug {
-		fmt.Println(msg)
-	}
-	if cfg.Debug {
-		f, _ := os.OpenFile(LOG_FILE, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		defer f.Close()
-		f.WriteString(fmt.Sprintf("[%s] %s\n", time.Now().Format(time.RFC3339), msg))
-	}
-}
-
-// --- MiSTer volume ---
-func misterVolume(level int) {
-	if level < 0 {
-		level = 0
-	}
-	if level > 7 {
-		level = 7
-	}
-	_ = os.WriteFile("/dev/MiSTer_cmd", []byte(fmt.Sprintf("volume %d\n", level)), 0644)
-}
-
-func misterFadeOut(from, to, steps int, delay time.Duration) {
-	if steps < 1 {
-		steps = 1
-	}
-	stepSize := float64(from-to) / float64(steps)
-	vol := float64(from)
-	for i := 0; i < steps; i++ {
-		misterVolume(int(math.Round(vol)))
-		time.Sleep(delay)
-		vol -= stepSize
-	}
-	misterVolume(to)
-}
-
-// --- Player ---
-type Player struct {
-	History  []string
-	Playing  string
-	Playlist *string
-	Playback string
-
-	mu   sync.Mutex
-	cmd  *exec.Cmd
-	stop chan struct{}
-}
-
-// history management
-func (p *Player) addHistory(track string, total int) {
-	hsize := int(math.Floor(float64(total) * HISTORY_RATIO))
-	if hsize < 1 {
-		return
-	}
-	if len(p.History) >= hsize {
-		p.History = p.History[1:]
-	}
-	p.History = append(p.History, track)
-}
-
-// low-level runner
-func (p *Player) playFile(cmd ...string) {
-	c := exec.Command(cmd[0], cmd[1:]...)
-	stdout, _ := c.StdoutPipe()
-	c.Stderr = c.Stdout
-
-	p.mu.Lock()
-	p.cmd = c
-	p.mu.Unlock()
-
-	_ = c.Start()
-
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		LogMsg(scanner.Text(), false)
-	}
-	c.Wait()
-
-	p.mu.Lock()
-	if p.cmd == c {
-		p.cmd = nil
-	}
-	p.mu.Unlock()
-}
-
-// play one track fully
-func (p *Player) Play(track string) {
-	if !IsValidFile(track) {
-		return
-	}
-	p.Playing = track
-	p.addHistory(track, 100) // placeholder
-	loops := GetLoopAmount(track)
-	LogMsg("Now playing: "+track, true)
-
-	for loops > 0 {
-		lower := strings.ToLower(track)
-		switch {
-		case strings.HasSuffix(lower, ".mp3"), strings.HasSuffix(lower, ".pls"):
-			p.playFile("mpg123", "--no-control", track)
-		case strings.HasSuffix(lower, ".ogg"):
-			p.playFile("ogg123", track)
-		case strings.HasSuffix(lower, ".wav"):
-			p.playFile("aplay", track)
-		case strings.HasSuffix(lower, ".mid"):
-			p.playFile("aplaymidi", "--port="+MIDI_PORT, track)
-		default:
-			p.playFile("vgmplay", track)
+// PrepareAttractLists builds gamelists in RAM, applies filters, then starts InitAttract.
+func PrepareAttractLists(cfg *config.UserConfig, showStream bool) {
+	// 🎵 Start background music during list building
+	cfgBgm := GetConfig()
+	if cfgBgm.Startup {
+		bgmPlayer = &Player{
+			Playlist: cfgBgm.Playlist,
+			Playback: cfgBgm.Playback,
 		}
-		loops--
+		go bgmPlayer.StartLoop()
 	}
 
-	p.Playing = ""
+	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
+	if CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
+		fmt.Fprintln(os.Stderr, "[Attract] List build failed: no games indexed")
+		os.Exit(1)
+	}
+
+	// 🔥 RAM-only gamelist keys
+	files := ListKeys()
+	if len(files) == 0 {
+		fmt.Println("[Attract] No gamelists found in memory.")
+		os.Exit(1)
+	}
+
+	fmt.Printf("[DEBUG] Found %d gamelists in memory: %v\n", len(files), files)
+
+	include, err := ExpandGroups(cfg.Attract.Include)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[Attract] Error expanding include groups: %v\n", err)
+		os.Exit(1)
+	}
+	exclude, err := ExpandGroups(cfg.Attract.Exclude)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[Attract] Error expanding exclude groups: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("[DEBUG] Include groups expanded to: %v\n", include)
+	fmt.Printf("[DEBUG] Exclude groups expanded to: %v\n", exclude)
+
+	files = FilterAllowed(files, include, exclude)
+	if len(files) == 0 {
+		fmt.Println("[Attract] No allowed gamelists after filtering")
+		os.Exit(1)
+	}
+
+	fmt.Printf("[DEBUG] Allowed gamelists after filtering: %v\n", files)
+
+	InitAttract(cfg, files, showStream)
 }
 
-// track picking
-func GetTracks(playlist *string) []string {
-	var base string
-	if playlist == nil || *playlist == "" {
-		base = MUSIC_FOLDER
-	} else if *playlist == "all" {
-		base = MUSIC_FOLDER
+// InitAttract sets up input relay and runs the main loop.
+func InitAttract(cfg *config.UserConfig, files []string, showStream bool) {
+	inputCh := make(chan string, 32) // shared channel for all input events
+	go input.RelayInputs(inputCh)
+
+	RunAttractLoop(cfg, files, inputCh, showStream)
+}
+
+//
+// -----------------------------
+// Main Attract Loop
+// -----------------------------
+
+// RunAttractLoop runs the attract mode loop until interrupted.
+func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan string, showStream bool) {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	fmt.Println("[Attract] Running. Press ESC to exit.")
+
+	// Pick first game using Next()
+	if first, ok := Next(cfg, r); ok {
+		fmt.Printf("[Attract] First pick -> %s\n", filepath.Base(first))
 	} else {
-		base = filepath.Join(MUSIC_FOLDER, *playlist)
+		fmt.Println("[Attract] No game available to start attract mode.")
+		return
 	}
-	var tracks []string
-	filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
-		if err == nil && !info.IsDir() && IsValidFile(info.Name()) && !strings.HasPrefix(info.Name(), "_") {
-			tracks = append(tracks, path)
-		}
-		return nil
-	})
-	return tracks
-}
 
-func (p *Player) GetRandomTrack() string {
-	tracks := GetTracks(p.Playlist)
-	if len(tracks) == 0 {
-		return ""
+	// 🎵 Stop background music with fade before starting first game
+	if bgmPlayer != nil {
+		bgmPlayer.StopLoop()
+		bgmPlayer = nil
 	}
-	for {
-		track := tracks[rand.Intn(len(tracks))]
-		found := false
-		for _, h := range p.History {
-			if h == track {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return track
-		}
-	}
-}
 
-// --- Loop control ---
-func (p *Player) StartLoop() {
-	p.mu.Lock()
-	if p.stop != nil {
-		p.mu.Unlock()
-		return // already running
-	}
-	p.stop = make(chan struct{})
-	p.mu.Unlock()
-
+	// 🔥 Start static detector with optional draining/printing
 	go func() {
-		for {
-			select {
-			case <-p.stop:
-				return
-			default:
-				track := p.GetRandomTrack()
-				if track == "" {
-					time.Sleep(time.Second)
-					continue
-				}
-
-				done := make(chan struct{})
-				go func() {
-					p.Play(track)
-					close(done)
-				}()
-
-				select {
-				case <-p.stop:
-					return // stop immediately
-				case <-done:
-					// finished naturally
-				}
+		for ev := range Stream(cfg) {
+			if showStream {
+				fmt.Println(ev.String()) // full diagnostic string
 			}
+			// else: silently drain
 		}
 	}()
-}
 
-func (p *Player) StopLoop() {
-	p.mu.Lock()
-	if p.stop != nil {
-		close(p.stop)
-		p.stop = nil
+	// Kick off the ticker for the first interval
+	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
+	ResetAttractTicker(wait)
+
+	// Input map
+	inputMap := AttractInputMap(cfg, r, inputCh)
+
+	// Event loop
+	for {
+		select {
+		case <-AttractTickerChan():
+			// Advance automatically
+			if _, ok := Next(cfg, r); !ok {
+				fmt.Println("[Attract] Failed to pick next game.")
+			}
+
+		case ev := <-inputCh:
+			evLower := strings.ToLower(ev)
+			fmt.Printf("[DEBUG] Event received: %q\n", evLower)
+
+			if action, ok := inputMap[evLower]; ok {
+				action()
+			}
+		}
 	}
-	cmd := p.cmd
-	p.cmd = nil
-	p.mu.Unlock()
-
-	if cmd != nil && cmd.Process != nil {
-		// 🔑 Block on fade, then kill like Python version
-		misterFadeOut(7, 0, 8, 100*time.Millisecond)
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	}
-
-	// Restore max volume after fade
-	misterVolume(7)
-}
-
-// --- File helpers ---
-func IsValidFile(name string) bool {
-	l := strings.ToLower(name)
-	if strings.HasSuffix(l, ".mp3") ||
-		strings.HasSuffix(l, ".ogg") ||
-		strings.HasSuffix(l, ".wav") ||
-		strings.HasSuffix(l, ".mid") ||
-		strings.HasSuffix(l, ".pls") {
-		return true
-	}
-	matched, _ := regexp.MatchString(`\.(vgm|vgz|vgm\.gz)$`, l)
-	return matched
-}
-
-func GetLoopAmount(name string) int {
-	base := filepath.Base(name)
-	re := regexp.MustCompile(`^X(\d\d)_`)
-	match := re.FindStringSubmatch(base)
-	if len(match) == 2 {
-		var n int
-		fmt.Sscanf(match[1], "%d", &n)
-		return n
-	}
-	return 1
 }
