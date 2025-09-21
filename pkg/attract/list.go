@@ -29,7 +29,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	gameIndex := []GameEntry{}
 	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "GameIndex")); err == nil {
 		for _, l := range lines {
-			parts := utils.SplitNTrim(l, "|", 4)
+			parts := SplitNTrim(l, "|", 4)
 			if len(parts) == 4 {
 				gameIndex = append(gameIndex, GameEntry{
 					SystemID: parts[0],
