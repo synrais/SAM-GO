@@ -29,7 +29,7 @@ import (
 //       - Apply extension filters.
 //       - Apply filterlists (whitelist/blacklist/static).
 //       - Write gamelist + update masterlist & GameIndex.
-//    c) Else (not modified) → reuse cached list.
+//    c) Else (not modified) → reuse cached list only (no disk fallback).
 // 6. Save updated timestamps.
 // 7. Save masterlist + GameIndex back to disk (unless RAM-only).
 // 8. Print summary of build results.
@@ -180,13 +180,8 @@ func CreateGamelists(cfg *config.UserConfig,
 			updateGameIndex(systemId, deduped)
 
 		} else {
-			// 5c. Reuse cached gamelist.
+			// 5c. Reuse cached gamelist (cache only, no disk fallback).
 			lines := GetList(gamelistFilename(systemId))
-			if len(lines) == 0 {
-				// Fall back to disk if cache empty.
-				lines, _ = utils.ReadLines(gamelistPath)
-				SetList(gamelistFilename(systemId), lines)
-			}
 
 			// Apply extension filter + filterlists.
 			beforeDisk := len(lines)
