@@ -24,31 +24,24 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	savedTimestamps, _ := loadSavedTimestamps(gamelistDir)
 	var newTimestamps []SavedTimestamp
 
-	// --------------------------------
-	// preload master + gameindex from disk if present
-	// --------------------------------
-	master, _ := utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt"))
-	if len(master) > 0 {
-		SetList("Masterlist.txt", master)
-	}
+	// reset RAM caches first
+	ResetAll()
 
+	// preload master + gameindex from disk if present
+	master, _ := utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt"))
 	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "GameIndex")); err == nil {
 		for _, l := range lines {
 			parts := SplitNTrim(l, "|", 4)
 			if len(parts) == 4 {
-				entry := GameEntry{
+				AppendGameIndex(GameEntry{
 					SystemID: parts[0],
 					Name:     parts[1],
 					Ext:      parts[2],
 					Path:     parts[3],
-				}
-				AppendGameIndex(entry)
+				})
 			}
 		}
 	}
-
-	// reset RAM caches back to master + index
-	ResetAll()
 
 	totalGames := 0
 	freshCount := 0
@@ -130,9 +123,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		}
 	}
 
-	// --------------------------------
 	// write master + index ONCE at the end
-	// --------------------------------
 	_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "Masterlist.txt"), master)
 
 	gi := GetGameIndex()
