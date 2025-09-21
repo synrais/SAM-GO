@@ -24,11 +24,15 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	savedTimestamps, _ := loadSavedTimestamps(gamelistDir)
 	var newTimestamps []SavedTimestamp
 
-	// reset RAM caches first
+	// 🔥 reset RAM caches first
 	ResetAll()
 
-	// preload master + gameindex from disk if present
-	master, _ := utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt"))
+	// 🔥 preload Masterlist into cache if present
+	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt")); err == nil {
+		SetList("Masterlist.txt", lines)
+	}
+
+	// 🔥 preload GameIndex into cache if present
 	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "GameIndex")); err == nil {
 		for _, l := range lines {
 			parts := SplitNTrim(l, "|", 4)
@@ -73,8 +77,10 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 
 			// Stage 1 Filters
 			stage1, c1 := Stage1Filters(files, system.Id, cfg)
+			master := GetList("Masterlist.txt")
 			master = append(master, "# SYSTEM: "+system.Id)
 			master = append(master, stage1...)
+			SetList("Masterlist.txt", master)
 
 			// Stage 2 Filters
 			stage2, c2 := Stage2Filters(stage1)
@@ -123,8 +129,8 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		}
 	}
 
-	// write master + index ONCE at the end
-	_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "Masterlist.txt"), master)
+	// write master + index ONCE at the end, from cache
+	_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "Masterlist.txt"), GetList("Masterlist.txt"))
 
 	gi := GetGameIndex()
 	giLines := []string{}
@@ -138,7 +144,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	_ = saveTimestamps(gamelistDir, newTimestamps)
 
 	if !quiet {
-		fmt.Printf("[List] Masterlist contains %d titles\n", CountGames(master))
+		fmt.Printf("[List] Masterlist contains %d titles\n", CountGames(GetList("Masterlist.txt")))
 		fmt.Printf("[List] GameIndex contains %d titles\n", len(gi))
 		fmt.Printf("[List] Done in %.1fs (%d fresh, %d reused systems)\n",
 			time.Since(start).Seconds(), freshCount, reuseCount)
