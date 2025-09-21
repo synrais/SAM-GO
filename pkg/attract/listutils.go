@@ -14,6 +14,11 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
+//
+// -----------------------------
+// Master/GameIndex helpers
+// -----------------------------
+
 // removeSystemFromMaster removes the entire block for a given system from Masterlist slice.
 func removeSystemFromMaster(master []string, systemID string) []string {
 	out := []string{}
@@ -55,40 +60,45 @@ func mergeCounts(c1, c2, c3 map[string]int) map[string]int {
 	return out
 }
 
-/// Stage1Filters applies structural filters.
+//
+// -----------------------------
+// Stage Filters
+// -----------------------------
+
+// Stage1Filters applies structural filters.
 // - Extension filtering only.
 // Returns stage1 lines (disk-ready) and counts (File = extensions removed).
 func Stage1Filters(files []string, systemID string, cfg *config.UserConfig) ([]string, map[string]int) {
-    counts := map[string]int{"File": 0}
+	counts := map[string]int{"File": 0}
 
-    // Extensions only
-    beforeExt := len(files)
-    filtered := FilterExtensions(files, systemID, cfg)
-    extRemoved := beforeExt - len(filtered)
+	// Extensions only
+	beforeExt := len(files)
+	filtered := FilterExtensions(files, systemID, cfg)
+	extRemoved := beforeExt - len(filtered)
 
-    counts["File"] = extRemoved
-    return filtered, counts
+	counts["File"] = extRemoved
+	return filtered, counts
 }
 
 // Stage2Filters applies deduplication filters.
 // - .mgl precedence (FilterUniqueWithMGL)
 // - Normalized name deduplication (utils.DedupeFiles)
 // Returns the diskLines and counts (File = mglRemoved + dedupeRemoved).
-func Stage2Filters(files []string) ([]string, map[string]int) {
-    counts := map[string]int{"File": 0}
+func Stage2Filters(files []string, systemID string) ([]string, map[string]int) {
+	counts := map[string]int{"File": 0}
 
-    // .mgl precedence
-    beforeMGL := len(files)
-    filtered := FilterUniqueWithMGL(files)
-    mglRemoved := beforeMGL - len(filtered)
+	// .mgl precedence
+	beforeMGL := len(files)
+	filtered := FilterUniqueWithMGL(files)
+	mglRemoved := beforeMGL - len(filtered)
 
-    // Normalized dedup
-    beforeDedupe := len(filtered)
-    filtered = utils.DedupeFiles(filtered)
-    dedupeRemoved := beforeDedupe - len(filtered)
+	// Normalized dedup
+	beforeDedupe := len(filtered)
+	filtered = utils.DedupeFiles(filtered)
+	dedupeRemoved := beforeDedupe - len(filtered)
 
-    counts["File"] = mglRemoved + dedupeRemoved
-    return filtered, counts
+	counts["File"] = mglRemoved + dedupeRemoved
+	return filtered, counts
 }
 
 // Stage3Filters applies semantic filterlists.
@@ -96,8 +106,13 @@ func Stage2Filters(files []string) ([]string, map[string]int) {
 // - folder/file rules
 // Returns cacheLines, counts, and hadLists flag.
 func Stage3Filters(gamelistDir, systemID string, diskLines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
-    return ApplyFilterlists(gamelistDir, systemID, diskLines, cfg)
+	return ApplyFilterlists(gamelistDir, systemID, diskLines, cfg)
 }
+
+//
+// -----------------------------
+// File helpers
+// -----------------------------
 
 // GamelistFilename returns the standard gamelist filename for a system.
 func GamelistFilename(systemID string) string {
@@ -134,6 +149,11 @@ func WriteFileIfChanged(path string, data []byte) error {
 	}
 	return os.WriteFile(path, data, 0o644)
 }
+
+//
+// -----------------------------
+// Filter helpers
+// -----------------------------
 
 // FilterAllowed applies include/exclude restrictions case-insensitively.
 func FilterAllowed(all []string, include, exclude []string) []string {
@@ -267,14 +287,15 @@ func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) [
 	return filtered
 }
 
-// BuildSystemLists normalizes raw file results into disk and cache copies.
-// It ensures extension and dedupe filters always run and returns the
-// post-filtered variants alongside the per-filter statistics.
+//
+// -----------------------------
+// Filterlist pipeline
+// -----------------------------
+
+// BuildSystemLists keeps the legacy filter pipeline (if needed elsewhere).
 func BuildSystemLists(gamelistDir, systemID string, input []string, cfg *config.UserConfig) ([]string, []string, map[string]int, bool) {
-	// Always apply extension rules first.
 	filtered := FilterExtensions(input, systemID, cfg)
 
-	// Dedupe so .mgl takes precedence and duplicate normalized names drop out.
 	beforeMGL := len(filtered)
 	filtered = FilterUniqueWithMGL(filtered)
 	mglRemoved := beforeMGL - len(filtered)
@@ -350,6 +371,11 @@ func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.
 	return lines, counts, hadLists
 }
 
+//
+// -----------------------------
+// Index + Master helpers
+// -----------------------------
+
 // CountGames counts all non-#SYSTEM lines in masterlist.
 func CountGames(master []string) int {
 	count := 0
@@ -375,6 +401,11 @@ func UpdateGameIndex(systemID string, files []string) {
 		AppendGameIndex(entry)
 	}
 }
+
+//
+// -----------------------------
+// Timestamps
+// -----------------------------
 
 // SavedTimestamp tracks last-modified info for system folders.
 type SavedTimestamp struct {
@@ -459,6 +490,11 @@ func updateTimestamp(list []SavedTimestamp, systemID, path string, mod time.Time
 		ModTime:  mod,
 	})
 }
+
+//
+// -----------------------------
+// Misc helpers
+// -----------------------------
 
 // ContainsInsensitive checks if list contains item, ignoring case/whitespace.
 func ContainsInsensitive(list []string, item string) bool {
@@ -591,12 +627,11 @@ func matchRule(rule, candidate string) bool {
 	return candidate == rule
 }
 
-// helper to unify lists status message output for fresh rebuild resused systems
+// printListStatus standardises log output for fresh/reused system processing.
 func printListStatus(systemID, action string, diskCount, cacheCount int, counts map[string]int) {
 	if counts == nil {
 		counts = map[string]int{}
 	}
-
 	fmt.Printf("[List] %-12s Disk:%d Cache:%d (White:%d Black:%d Static:%d Folder:%d File:%d) [%s]\n",
 		systemID, diskCount, cacheCount,
 		counts["White"], counts["Black"], counts["Static"], counts["Folder"], counts["File"], action)
