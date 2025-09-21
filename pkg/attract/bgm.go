@@ -313,20 +313,18 @@ func (p *Player) StopLoop() {
 
 	close(p.stopLoop)
 	p.stopLoop = nil
-	p.Playing = "" // stop any queued playback
+	p.Playing = ""
 
 	cmd := p.cmd
 	p.cmd = nil
 	p.mu.Unlock()
 
 	if cmd != nil && cmd.Process != nil {
-		// fade out, then kill
-		go func(c *exec.Cmd) {
-			misterFadeOut(7, 0, 8, 100*time.Millisecond)
-			_ = c.Process.Kill()
-			_ = c.Wait()
-			misterVolume(7)
-		}(cmd)
+		// fade out then kill, synchronously
+		misterFadeOut(7, 0, 8, 100*time.Millisecond)
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		misterVolume(7)
 	}
 
 	p.endWG.Wait()
