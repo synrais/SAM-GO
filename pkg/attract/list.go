@@ -2,8 +2,8 @@ package attract
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/synrais/SAM-GO/pkg/config"
@@ -11,64 +11,13 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// -----------------------------
-// Filters Pipeline
-// -----------------------------
-
-// Stage1Filters applies structural filtering:
-// - Extension filtering
-// Returns: cleaned file list + counts.
-func Stage1Filters(files []string, systemID string, cfg *config.UserConfig) ([]string, map[string]int) {
-	counts := map[string]int{"File": 0}
-
-	// Filter by extensions
-	filtered := FilterExtensions(files, systemID, cfg)
-
-	return filtered, counts
-}
-
-// Stage2Filters applies deduplication rules:
-// - .mgl precedence
-// - Normalized deduplication
-// Returns: diskLines + counts.
-func Stage2Filters(files []string) ([]string, map[string]int) {
-	counts := map[string]int{"File": 0}
-
-	// Dedup .mgl precedence
-	beforeMGL := len(files)
-	files = FilterUniqueWithMGL(files)
-	mglRemoved := beforeMGL - len(files)
-
-	// Dedup normalized names
-	beforeDedupe := len(files)
-	files = utils.DedupeFiles(files)
-	dedupeRemoved := beforeDedupe - len(files)
-
-	counts["File"] = mglRemoved + dedupeRemoved
-	return files, counts
-}
-
-// Stage3Filters applies semantic filterlists:
-// - whitelist
-// - blacklist
-// - staticlist
-// - folder/file rules
-// Returns: cacheLines + counts + flag if lists were applied.
-func Stage3Filters(gamelistDir, systemID string, diskLines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
-	return ApplyFilterlists(gamelistDir, systemID, diskLines, cfg)
-}
-
-// -----------------------------
-// Main entrypoint
-// -----------------------------
-
 // CreateGamelists builds all gamelists, masterlist, and game index.
 //
 // Args:
-//	cfg         - user config
-//	gamelistDir - folder for lists
-//	systemPaths - results of games discovery
-//	quiet       - suppress output if true
+//   cfg         - user config
+//   gamelistDir - folder for lists
+//   systemPaths - results of games discovery
+//   quiet       - suppress output if true
 func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []games.PathResult, quiet bool) int {
 	start := time.Now()
 
@@ -76,14 +25,40 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	savedTimestamps, _ := loadSavedTimestamps(gamelistDir)
 	var newTimestamps []SavedTimestamp
 
-	// reset cache before building (lists + index together now)
+	// reset cache before building
 	ResetAll()
+	ResetGameIndex()
+
+	// preload existing Masterlist + GameIndex if they exist
+	master := []string{}
+	masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
+	if FileExists(masterPath) {
+		if lines, err := utils.ReadLines(masterPath); err == nil {
+			master = append(master, lines...)
+			SetList("Masterlist.txt", lines)
+		}
+	}
+	giPath := filepath.Join(gamelistDir, "GameIndex")
+	if FileExists(giPath) {
+		if lines, err := utils.ReadLines(giPath); err == nil {
+			for _, line := range lines {
+				parts := utils.SplitNTrim(line, "|", 4)
+				if len(parts) == 4 {
+					entry := GameEntry{
+						SystemID: parts[0],
+						Name:     parts[1],
+						Ext:      parts[2],
+						Path:     parts[3],
+					}
+					AppendGameIndex(entry)
+				}
+			}
+		}
+	}
 
 	totalGames := 0
 	freshCount := 0
 	reuseCount := 0
-
-	rawLists := make(map[string][]string)
 
 	for _, sp := range systemPaths {
 		system := sp.System
@@ -103,97 +78,63 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			action = "fresh"
 		}
 
-		// build paths
 		gamelistPath := filepath.Join(gamelistDir, GamelistFilename(system.Id))
 
 		switch action {
 		case "fresh":
-			// scan filesystem for games
+			// Stage 1 filters
 			files, err := games.GetFiles(system.Id, romPath)
 			if err != nil {
 				fmt.Printf("[List] %s\n", err.Error())
 				continue
 			}
+			stage1, counts1 := Stage1Filters(files, system.Id, cfg)
+			if len(stage1) > 0 {
+				master = append(master, "# SYSTEM: "+system.Id)
+				master = append(master, stage1...)
+			}
 
-			// Stage1: extensions only
-			stage1, _ := Stage1Filters(files, system.Id, cfg)
+			// Stage 2 filters
+			stage2, counts2 := Stage2Filters(stage1, system.Id)
+			_ = WriteLinesIfChanged(gamelistPath, stage2)
+			UpdateGameIndex(system.Id, stage2)
 
-			// Stage2: dedupe rules
-			diskLines, counts2 := Stage2Filters(stage1)
+			// Stage 3 filters
+			stage3, counts3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
+			SetList(GamelistFilename(system.Id), stage3)
 
-			// Write gamelist to disk after Stage2
-			_ = WriteLinesIfChanged(gamelistPath, diskLines)
-
-			// Update masterlist in memory
-			rawLists[system.Id] = diskLines
-
-			// Update GameIndex from diskLines
-			UpdateGameIndex(system.Id, diskLines)
-
-			// Stage3: semantic filterlists
-			cacheLines, counts3, _ := Stage3Filters(gamelistDir, system.Id, diskLines, cfg)
-
-			// Seed cache with filtered copy
-			SetList(GamelistFilename(system.Id), cacheLines)
-
-			totalGames += len(cacheLines)
+			// stats + counts
+			totalGames += len(stage3)
 			freshCount++
-
 			if !quiet {
-				// merge counts
-				merged := map[string]int{
-					"File":   counts2["File"] + counts3["File"],
-					"White":  counts3["White"],
-					"Black":  counts3["Black"],
-					"Static": counts3["Static"],
-					"Folder": counts3["Folder"],
-				}
-				printListStatus(system.Id, "fresh", len(files), len(cacheLines), merged)
+				merged := mergeCounts(counts1, counts2, counts3)
+				printListStatus(system.Id, "fresh", len(files), len(stage3), merged)
 			}
 
 			// update timestamp
 			newTimestamps = updateTimestamp(newTimestamps, system.Id, romPath, latestMod)
 
 		case "reused":
-			// ensure gamelist file exists
+			// must have a gamelist on disk
 			if FileExists(gamelistPath) {
 				lines, err := utils.ReadLines(gamelistPath)
 				if err == nil {
-					// Stage1
-					stage1, _ := Stage1Filters(lines, system.Id, cfg)
+					stage1, counts1 := Stage1Filters(lines, system.Id, cfg)
+					stage2, counts2 := Stage2Filters(stage1, system.Id)
+					_ = WriteLinesIfChanged(gamelistPath, stage2)
+					stage3, counts3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
+					SetList(GamelistFilename(system.Id), stage3)
 
-					// Stage2
-					diskLines, counts2 := Stage2Filters(stage1)
-
-					// Write gamelist to disk (noop if unchanged)
-					_ = WriteLinesIfChanged(gamelistPath, diskLines)
-
-					// Stage3
-					cacheLines, counts3, _ := Stage3Filters(gamelistDir, system.Id, diskLines, cfg)
-
-					// Seed cache with fully filtered copy
-					SetList(GamelistFilename(system.Id), cacheLines)
-
-					// ⚠️ Do NOT update rawLists or GameIndex in reused mode
-					// Disk already has Masterlist + GameIndex
-					totalGames += len(cacheLines)
-
+					totalGames += len(stage3)
 					if !quiet {
-						merged := map[string]int{
-							"File":   counts2["File"] + counts3["File"],
-							"White":  counts3["White"],
-							"Black":  counts3["Black"],
-							"Static": counts3["Static"],
-							"Folder": counts3["Folder"],
-						}
-						printListStatus(system.Id, "reused", len(diskLines), len(cacheLines), merged)
+						merged := mergeCounts(counts1, counts2, counts3)
+						printListStatus(system.Id, "reused", len(stage2), len(stage3), merged)
 					}
 				} else {
 					fmt.Printf("[WARN] Could not reload gamelist for %s: %v\n", system.Id, err)
 				}
 			}
 			reuseCount++
-
 			// keep old timestamp
 			for _, ts := range savedTimestamps {
 				if ts.SystemID == system.Id {
@@ -203,48 +144,20 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		}
 	}
 
-	// build masterlist (only if fresh systems appended to rawLists)
-	master := []string{}
-	for _, sp := range systemPaths {
-		sys := sp.System
-		list := rawLists[sys.Id]
-		if len(list) == 0 {
-			continue
-		}
-		master = append(master, "# SYSTEM: "+sys.Id)
-		master = append(master, list...)
-	}
-
-	// write masterlist if fresh systems contributed
+	// write Masterlist
+	_ = WriteLinesIfChanged(masterPath, master)
 	if len(master) > 0 {
-		_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "Masterlist.txt"), master)
-		// 🔥 seed into cache
 		SetList("Masterlist.txt", master)
-	} else {
-		// 🔥 reused-only run: reload from disk if exists
-		if FileExists(filepath.Join(gamelistDir, "Masterlist.txt")) {
-			lines, err := utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt"))
-			if err == nil {
-				SetList("Masterlist.txt", lines)
-				master = lines
-			}
-		}
 	}
 
 	// write GameIndex
 	gi := GetGameIndex()
-	if len(gi) > 0 {
-		giLines := []string{}
-		for _, entry := range gi {
-			giLines = append(giLines, fmt.Sprintf("%s|%s|%s|%s",
-				entry.SystemID, entry.Name, entry.Ext, entry.Path))
-		}
-		_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "GameIndex"), giLines)
-	} else {
-		// 🔥 reused-only run: reload index from disk if exists
-		ReloadGameIndexFromDisk(filepath.Join(gamelistDir, "GameIndex"))
-		gi = GetGameIndex()
+	giLines := []string{}
+	for _, entry := range gi {
+		giLines = append(giLines, fmt.Sprintf("%s|%s|%s|%s",
+			entry.SystemID, entry.Name, entry.Ext, entry.Path))
 	}
+	_ = WriteLinesIfChanged(giPath, giLines)
 
 	// save updated timestamps
 	_ = saveTimestamps(gamelistDir, newTimestamps)
@@ -260,4 +173,15 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		fmt.Println("[Attract] List build failed: no games indexed")
 	}
 	return totalGames
+}
+
+// mergeCounts merges three sets of filter counts
+func mergeCounts(c1, c2, c3 map[string]int) map[string]int {
+	out := map[string]int{}
+	for _, c := range []map[string]int{c1, c2, c3} {
+		for k, v := range c {
+			out[k] += v
+		}
+	}
+	return out
 }
