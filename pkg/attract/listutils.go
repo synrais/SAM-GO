@@ -14,6 +14,41 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
+// Stage1Filters applies structural cleanup filters only:
+// - Disabled extensions
+// - .mgl precedence
+// - Duplicate removal
+// Returns the normalized "disk copy" and count stats.
+func Stage1Filters(files []string, systemID string, cfg *config.UserConfig) ([]string, map[string]int) {
+    counts := map[string]int{"File": 0}
+
+    // Extensions
+    filtered := FilterExtensions(files, systemID, cfg)
+
+    // Dedup .mgl precedence
+    beforeMGL := len(filtered)
+    filtered = FilterUniqueWithMGL(filtered)
+    mglRemoved := beforeMGL - len(filtered)
+
+    // Dedup normalized names
+    beforeDedupe := len(filtered)
+    filtered = utils.DedupeFiles(filtered)
+    dedupeRemoved := beforeDedupe - len(filtered)
+
+    counts["File"] = mglRemoved + dedupeRemoved
+    return filtered, counts
+}
+
+// Stage2Filters applies semantic filterlists:
+// - whitelist
+// - blacklist
+// - staticlist
+// - folder/file rules
+// Returns the cache copy, counts, and flag if lists were applied.
+func Stage2Filters(gamelistDir, systemID string, diskLines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
+    return ApplyFilterlists(gamelistDir, systemID, diskLines, cfg)
+}
+
 // GamelistFilename returns the standard gamelist filename for a system.
 func GamelistFilename(systemID string) string {
 	return systemID + "_gamelist.txt"
