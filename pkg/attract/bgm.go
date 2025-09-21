@@ -226,6 +226,7 @@ func (p *Player) getRandomTrack() string {
 	}
 }
 
+// non-blocking playback
 func (p *Player) playFile(cmd ...string) {
 	c := exec.Command(cmd[0], cmd[1:]...)
 	stdout, _ := c.StdoutPipe()
@@ -235,18 +236,23 @@ func (p *Player) playFile(cmd ...string) {
 	p.cmd = c
 	p.mu.Unlock()
 
-	_ = c.Start()
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		logMsg(scanner.Text(), false)
+	if err := c.Start(); err != nil {
+		return
 	}
-	c.Wait()
 
-	p.mu.Lock()
-	if p.cmd == c {
-		p.cmd = nil
-	}
-	p.mu.Unlock()
+	// Log output asynchronously
+	go func(c *exec.Cmd) {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			logMsg(scanner.Text(), false)
+		}
+		c.Wait()
+		p.mu.Lock()
+		if p.cmd == c {
+			p.cmd = nil
+		}
+		p.mu.Unlock()
+	}(c)
 }
 
 func (p *Player) play(track string) {
@@ -306,24 +312,18 @@ func (p *Player) StartLoop() {
 
 func (p *Player) StopLoop() {
 	p.mu.Lock()
-	if p.stopLoop == nil {
-		p.mu.Unlock()
-		return
+	if p.stopLoop != nil {
+		close(p.stopLoop)
+		p.stopLoop = nil
 	}
-
-	close(p.stopLoop)
-	p.stopLoop = nil
-	p.Playing = ""
-
 	cmd := p.cmd
 	p.cmd = nil
 	p.mu.Unlock()
 
 	if cmd != nil && cmd.Process != nil {
-		// fade out then kill, synchronously
 		misterFadeOut(7, 0, 8, 100*time.Millisecond)
 		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		cmd.Wait()
 		misterVolume(7)
 	}
 
