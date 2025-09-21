@@ -22,7 +22,7 @@ var AttractTimer *time.Timer
 // -----------------------------
 
 // PrepareAttractLists builds gamelists in RAM, applies filters, then starts InitAttract.
-func PrepareAttractLists(cfg *config.UserConfig) {
+func PrepareAttractLists(cfg *config.UserConfig, showStream bool) {
 	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
 	if CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
 		fmt.Fprintln(os.Stderr, "[Attract] List build failed: no games indexed")
@@ -60,15 +60,15 @@ func PrepareAttractLists(cfg *config.UserConfig) {
 
 	fmt.Printf("[DEBUG] Allowed gamelists after filtering: %v\n", files)
 
-	InitAttract(cfg, files)
+	InitAttract(cfg, files, showStream)
 }
 
 // InitAttract sets up input relay and runs the main loop.
-func InitAttract(cfg *config.UserConfig, files []string) {
+func InitAttract(cfg *config.UserConfig, files []string, showStream bool) {
 	inputCh := make(chan string, 32) // shared channel for all input events
 	go input.RelayInputs(inputCh)
 
-	RunAttractLoop(cfg, files, inputCh)
+	RunAttractLoop(cfg, files, inputCh, showStream)
 }
 
 //
@@ -77,7 +77,7 @@ func InitAttract(cfg *config.UserConfig, files []string) {
 // -----------------------------
 
 // RunAttractLoop runs the attract mode loop until interrupted.
-func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan string) {
+func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan string, showStream bool) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	fmt.Println("[Attract] Running. Press ESC to exit.")
 
@@ -89,8 +89,15 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 		return
 	}
 
-	// Start static detector in background (skip is wired internally)
-	go Stream(cfg)
+	// 🔥 Start static detector with optional draining/printing
+	go func() {
+		for ev := range Stream(cfg) {
+			if showStream {
+				fmt.Println(ev.String()) // full diagnostic string
+			}
+			// else: silently drain
+		}
+	}()
 
 	// Kick off the ticker for the first interval
 	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
