@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/ini.v1"
@@ -150,6 +151,7 @@ type Player struct {
 	Playback string
 }
 
+// history management
 func (p *Player) addHistory(track string, total int) {
 	hsize := int(math.Floor(float64(total) * HISTORY_RATIO))
 	if hsize < 1 {
@@ -240,5 +242,44 @@ func (p *Player) GetRandomTrack() string {
 		if !found {
 			return track
 		}
+	}
+}
+
+// --- Loop control ---
+var (
+	stopCh   chan struct{}
+	stopMu   sync.Mutex
+)
+
+func (p *Player) StartLoop() {
+	stopMu.Lock()
+	defer stopMu.Unlock()
+	if stopCh != nil {
+		return // already running
+	}
+	stopCh = make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-stopCh:
+				return
+			default:
+				track := p.GetRandomTrack()
+				if track == "" {
+					time.Sleep(time.Second)
+					continue
+				}
+				p.Play(track) // blocks until track finishes
+			}
+		}
+	}()
+}
+
+func (p *Player) StopLoop() {
+	stopMu.Lock()
+	defer stopMu.Unlock()
+	if stopCh != nil {
+		close(stopCh)
+		stopCh = nil
 	}
 }
