@@ -2,7 +2,6 @@ package attract
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
