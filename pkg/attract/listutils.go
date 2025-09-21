@@ -14,39 +14,46 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// Stage1Filters applies extension and .mgl precedence rules.
-// Produces intermediate file set before dedupe.
+/// Stage1Filters applies structural filters.
+// - Extension filtering only.
+// Returns stage1 lines (disk-ready) and counts (File = extensions removed).
 func Stage1Filters(files []string, systemID string, cfg *config.UserConfig) ([]string, map[string]int) {
     counts := map[string]int{"File": 0}
 
-    // Extensions
+    // Extensions only
+    beforeExt := len(files)
     filtered := FilterExtensions(files, systemID, cfg)
+    extRemoved := beforeExt - len(filtered)
 
-    // Dedup .mgl precedence
-    beforeMGL := len(filtered)
-    filtered = FilterUniqueWithMGL(filtered)
-    mglRemoved := beforeMGL - len(filtered)
-
-    counts["File"] += mglRemoved
+    counts["File"] = extRemoved
     return filtered, counts
 }
 
-// Stage2Filters deduplicates normalized names.
-// Produces final diskLines for persistence.
+// Stage2Filters applies deduplication filters.
+// - .mgl precedence (FilterUniqueWithMGL)
+// - Normalized name deduplication (utils.DedupeFiles)
+// Returns the diskLines and counts (File = mglRemoved + dedupeRemoved).
 func Stage2Filters(files []string) ([]string, map[string]int) {
     counts := map[string]int{"File": 0}
 
-    beforeDedupe := len(files)
-    filtered := utils.DedupeFiles(files)
+    // .mgl precedence
+    beforeMGL := len(files)
+    filtered := FilterUniqueWithMGL(files)
+    mglRemoved := beforeMGL - len(filtered)
+
+    // Normalized dedup
+    beforeDedupe := len(filtered)
+    filtered = utils.DedupeFiles(filtered)
     dedupeRemoved := beforeDedupe - len(filtered)
 
-    counts["File"] = dedupeRemoved
+    counts["File"] = mglRemoved + dedupeRemoved
     return filtered, counts
 }
 
-// Stage3Filters applies semantic filterlists:
-// whitelist, blacklist, staticlist, folder/file rules.
-// Produces cache copy for in-memory use.
+// Stage3Filters applies semantic filterlists.
+// - whitelist, blacklist, staticlist
+// - folder/file rules
+// Returns cacheLines, counts, and hadLists flag.
 func Stage3Filters(gamelistDir, systemID string, diskLines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
     return ApplyFilterlists(gamelistDir, systemID, diskLines, cfg)
 }
