@@ -117,6 +117,17 @@ func LogMsg(msg string, always bool) {
 	}
 }
 
+// --- MiSTer volume helpers ---
+func misterVolume(level int) {
+	if level < 0 {
+		level = 0
+	}
+	if level > 7 {
+		level = 7
+	}
+	_ = exec.Command("sh", "-c", fmt.Sprintf("echo 'volume %d' > /dev/MiSTer_cmd", level)).Run()
+}
+
 // --- File helpers ---
 func IsValidFile(name string) bool {
 	l := strings.ToLower(name)
@@ -272,6 +283,12 @@ func (p *Player) StartLoop() {
 	p.stop = make(chan struct{})
 	p.mu.Unlock()
 
+	// Apply menu volume at startup if configured
+	cfg := GetConfig()
+	if cfg.MenuVolume >= 0 {
+		misterVolume(cfg.MenuVolume)
+	}
+
 	go func() {
 		for {
 			select {
@@ -283,19 +300,7 @@ func (p *Player) StartLoop() {
 					time.Sleep(time.Second)
 					continue
 				}
-
-				done := make(chan struct{})
-				go func() {
-					p.Play(track)
-					close(done)
-				}()
-
-				select {
-				case <-p.stop:
-					return // stop immediately, don’t loop again
-				case <-done:
-					// finished naturally, loop again
-				}
+				p.Play(track) // blocks until track ends
 			}
 		}
 	}()
@@ -307,9 +312,24 @@ func (p *Player) StopLoop() {
 		close(p.stop)
 		p.stop = nil
 	}
+
 	if p.cmd != nil && p.cmd.Process != nil {
-		_ = p.cmd.Process.Kill() // hard kill current track
+		// fade out before kill
+		cfg := GetConfig()
+		if cfg.MenuVolume >= 0 {
+			for v := cfg.MenuVolume; v >= 0; v-- {
+				misterVolume(v)
+				time.Sleep(150 * time.Millisecond)
+			}
+		}
+		_ = p.cmd.Process.Kill()
 		p.cmd = nil
 	}
 	p.mu.Unlock()
+
+	// restore default volume after fade
+	cfg := GetConfig()
+	if cfg.DefaultVolume >= 0 {
+		misterVolume(cfg.DefaultVolume)
+	}
 }
