@@ -283,7 +283,19 @@ func (p *Player) StartLoop() {
 					time.Sleep(time.Second)
 					continue
 				}
-				p.Play(track) // blocks until track ends
+
+				done := make(chan struct{})
+				go func() {
+					p.Play(track)
+					close(done)
+				}()
+
+				select {
+				case <-p.stop:
+					return // stop immediately, don’t loop again
+				case <-done:
+					// finished naturally, loop again
+				}
 			}
 		}
 	}()
