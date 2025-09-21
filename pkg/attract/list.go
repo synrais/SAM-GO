@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"time"
+	"os"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
@@ -20,6 +21,11 @@ import (
 func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []games.PathResult, quiet bool) int {
 	start := time.Now()
 
+	// Ensure gamelistDir exists before any file I/O
+	if err := os.MkdirAll(gamelistDir, 0o755); err != nil {
+    	return 0 // or handle error more aggressively
+	}
+	
 	// load saved folder timestamps
 	tsStart := time.Now()
 	savedTimestamps, _ := loadSavedTimestamps(gamelistDir)
