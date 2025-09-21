@@ -29,7 +29,7 @@ import (
 //       - Apply extension filters.
 //       - Apply filterlists (whitelist/blacklist/static).
 //       - Write gamelist + update masterlist & GameIndex.
-//    c) Else (not modified) → reuse cached list only (no disk fallback).
+//    c) Else (not modified) → reuse cached list only (never read raw disk files).
 // 6. Save updated timestamps.
 // 7. Save masterlist + GameIndex back to disk (unless RAM-only).
 // 8. Print summary of build results.
@@ -125,7 +125,7 @@ func CreateGamelists(cfg *config.UserConfig,
 				rawFiles = append(rawFiles, files...)
 			}
 
-			// Deduplicate.
+			// Deduplicate raw file list.
 			deduped := utils.DedupeFiles(rawFiles)
 
 			// Extension filter stage.
@@ -140,11 +140,11 @@ func CreateGamelists(cfg *config.UserConfig,
 				continue
 			}
 
-			// Sort final list for consistency.
+			// Sort final cache list for consistency.
 			sort.Strings(cacheFiles)
 			totalGames += len(cacheFiles)
 
-			// Write gamelist (unless RAM-only mode).
+			// Write gamelist to disk (unless RAM-only mode).
 			writeGamelist(gamelistDir, systemId, diskFiltered, cfg.List.RamOnly)
 
 			if exists && !cfg.List.RamOnly {
@@ -180,10 +180,11 @@ func CreateGamelists(cfg *config.UserConfig,
 			updateGameIndex(systemId, deduped)
 
 		} else {
-			// 5c. Reuse cached gamelist (cache only, no disk fallback).
+			// 5c. Reuse cached gamelist.
+			// IMPORTANT: no disk fallback here — cache is always the source of truth.
 			lines := GetList(gamelistFilename(systemId))
 
-			// Apply extension filter + filterlists.
+			// Apply extension filter + filterlists to cached list.
 			beforeDisk := len(lines)
 			diskFiltered := FilterExtensions(lines, systemId, cfg)
 			extRemoved := beforeDisk - len(diskFiltered)
@@ -212,7 +213,7 @@ func CreateGamelists(cfg *config.UserConfig,
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
 
-	// 7. Save masterlist and GameIndex to disk (unless RAM-only mode).
+	// 7. Save masterlist and GameIndex to disk (unless RAM-only).
 	SetList("Masterlist.txt", masterList)
 	if !cfg.List.RamOnly {
 		writeSimpleList(masterPath, masterList)
