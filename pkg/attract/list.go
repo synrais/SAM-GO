@@ -2,7 +2,6 @@ package attract
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -25,36 +24,26 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	savedTimestamps, _ := loadSavedTimestamps(gamelistDir)
 	var newTimestamps []SavedTimestamp
 
-	// reset cache before building
-	ResetAll()
-	ResetGameIndex()
-
-	// preload existing Masterlist + GameIndex if they exist
-	master := []string{}
-	masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
-	if FileExists(masterPath) {
-		if lines, err := utils.ReadLines(masterPath); err == nil {
-			master = append(master, lines...)
-			SetList("Masterlist.txt", lines)
-		}
-	}
-	giPath := filepath.Join(gamelistDir, "GameIndex")
-	if FileExists(giPath) {
-		if lines, err := utils.ReadLines(giPath); err == nil {
-			for _, line := range lines {
-				parts := utils.SplitNTrim(line, "|", 4)
-				if len(parts) == 4 {
-					entry := GameEntry{
-						SystemID: parts[0],
-						Name:     parts[1],
-						Ext:      parts[2],
-						Path:     parts[3],
-					}
-					AppendGameIndex(entry)
-				}
+	// preload master + gameindex from disk if present
+	master, _ := utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt"))
+	gameIndex := []GameEntry{}
+	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "GameIndex")); err == nil {
+		for _, l := range lines {
+			parts := utils.SplitNTrim(l, "|", 4)
+			if len(parts) == 4 {
+				gameIndex = append(gameIndex, GameEntry{
+					SystemID: parts[0],
+					Name:     parts[1],
+					Ext:      parts[2],
+					Path:     parts[3],
+				})
 			}
 		}
 	}
+
+	// reset RAM caches
+	ResetAll()
+	ResetGameIndex()
 
 	totalGames := 0
 	freshCount := 0
@@ -73,69 +62,62 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		// detect if folder has changed
 		modified, latestMod, _ := isFolderModified(system.Id, romPath, savedTimestamps)
 
-		action := "reused"
-		if modified {
-			action = "fresh"
-		}
-
+		// build paths
 		gamelistPath := filepath.Join(gamelistDir, GamelistFilename(system.Id))
 
-		switch action {
-		case "fresh":
-			// Stage 1 filters
+		if modified {
+			// -------- Fresh system --------
 			files, err := games.GetFiles(system.Id, romPath)
 			if err != nil {
 				fmt.Printf("[List] %s\n", err.Error())
 				continue
 			}
-			stage1, counts1 := Stage1Filters(files, system.Id, cfg)
-			if len(stage1) > 0 {
-				master = append(master, "# SYSTEM: "+system.Id)
-				master = append(master, stage1...)
-			}
 
-			// Stage 2 filters
-			stage2, counts2 := Stage2Filters(stage1, system.Id)
-			_ = WriteLinesIfChanged(gamelistPath, stage2)
+			// Stage 1 Filters
+			stage1, c1 := Stage1Filters(files, system.Id, cfg)
+			master = append(master, "# SYSTEM: "+system.Id)
+			master = append(master, stage1...)
+
+			// Stage 2 Filters
+			stage2, c2 := Stage2Filters(stage1, system.Id)
 			UpdateGameIndex(system.Id, stage2)
+			_ = WriteLinesIfChanged(gamelistPath, stage2)
 
-			// Stage 3 filters
-			stage3, counts3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
+			// Stage 3 Filters
+			stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
 			SetList(GamelistFilename(system.Id), stage3)
 
-			// stats + counts
+			counts := mergeCounts(c1, c2, c3)
 			totalGames += len(stage3)
 			freshCount++
+
 			if !quiet {
-				merged := mergeCounts(counts1, counts2, counts3)
-				printListStatus(system.Id, "fresh", len(files), len(stage3), merged)
+				printListStatus(system.Id, "fresh", len(files), len(stage3), counts)
 			}
 
-			// update timestamp
 			newTimestamps = updateTimestamp(newTimestamps, system.Id, romPath, latestMod)
 
-		case "reused":
-			// must have a gamelist on disk
+		} else {
+			// -------- Reused system --------
 			if FileExists(gamelistPath) {
 				lines, err := utils.ReadLines(gamelistPath)
 				if err == nil {
-					stage1, counts1 := Stage1Filters(lines, system.Id, cfg)
-					stage2, counts2 := Stage2Filters(stage1, system.Id)
-					_ = WriteLinesIfChanged(gamelistPath, stage2)
-					stage3, counts3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
+					// reuse disk gamelist, reapply filters for cache only
+					stage2, c2 := Stage2Filters(lines, system.Id)
+					stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
 					SetList(GamelistFilename(system.Id), stage3)
 
+					counts := mergeCounts(map[string]int{}, c2, c3)
 					totalGames += len(stage3)
+
 					if !quiet {
-						merged := mergeCounts(counts1, counts2, counts3)
-						printListStatus(system.Id, "reused", len(stage2), len(stage3), merged)
+						printListStatus(system.Id, "reused", len(stage2), len(stage3), counts)
 					}
 				} else {
 					fmt.Printf("[WARN] Could not reload gamelist for %s: %v\n", system.Id, err)
 				}
 			}
 			reuseCount++
-			// keep old timestamp
 			for _, ts := range savedTimestamps {
 				if ts.SystemID == system.Id {
 					newTimestamps = append(newTimestamps, ts)
@@ -144,20 +126,16 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		}
 	}
 
-	// write Masterlist
-	_ = WriteLinesIfChanged(masterPath, master)
-	if len(master) > 0 {
-		SetList("Masterlist.txt", master)
-	}
+	// write master + index
+	_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "Masterlist.txt"), master)
 
-	// write GameIndex
 	gi := GetGameIndex()
 	giLines := []string{}
 	for _, entry := range gi {
 		giLines = append(giLines, fmt.Sprintf("%s|%s|%s|%s",
 			entry.SystemID, entry.Name, entry.Ext, entry.Path))
 	}
-	_ = WriteLinesIfChanged(giPath, giLines)
+	_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "GameIndex"), giLines)
 
 	// save updated timestamps
 	_ = saveTimestamps(gamelistDir, newTimestamps)
@@ -173,15 +151,4 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		fmt.Println("[Attract] List build failed: no games indexed")
 	}
 	return totalGames
-}
-
-// mergeCounts merges three sets of filter counts
-func mergeCounts(c1, c2, c3 map[string]int) map[string]int {
-	out := map[string]int{}
-	for _, c := range []map[string]int{c1, c2, c3} {
-		for k, v := range c {
-			out[k] += v
-		}
-	}
-	return out
 }
