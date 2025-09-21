@@ -84,21 +84,21 @@ func Stage1Filters(files []string, systemID string, cfg *config.UserConfig) ([]s
 // - .mgl precedence (FilterUniqueWithMGL)
 // - Normalized name deduplication (utils.DedupeFiles)
 // Returns the diskLines and counts (File = mglRemoved + dedupeRemoved).
-func Stage2Filters(files []string, systemID string) ([]string, map[string]int) {
-	counts := map[string]int{"File": 0}
+func Stage2Filters(files []string) ([]string, map[string]int) {
+    counts := map[string]int{"File": 0}
 
-	// .mgl precedence
-	beforeMGL := len(files)
-	filtered := FilterUniqueWithMGL(files)
-	mglRemoved := beforeMGL - len(filtered)
-
+	// .mgl precedence	
+    beforeMGL := len(files)
+    filtered := FilterUniqueWithMGL(files)
+    mglRemoved := beforeMGL - len(filtered)
+	
 	// Normalized dedup
-	beforeDedupe := len(filtered)
-	filtered = utils.DedupeFiles(filtered)
-	dedupeRemoved := beforeDedupe - len(filtered)
+    beforeDedupe := len(filtered)
+    filtered = utils.DedupeFiles(filtered)
+    dedupeRemoved := beforeDedupe - len(filtered)
 
-	counts["File"] = mglRemoved + dedupeRemoved
-	return filtered, counts
+    counts["File"] = mglRemoved + dedupeRemoved
+    return filtered, counts
 }
 
 // Stage3Filters applies semantic filterlists.
@@ -291,24 +291,6 @@ func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) [
 // -----------------------------
 // Filterlist pipeline
 // -----------------------------
-
-// BuildSystemLists keeps the legacy filter pipeline (if needed elsewhere).
-func BuildSystemLists(gamelistDir, systemID string, input []string, cfg *config.UserConfig) ([]string, []string, map[string]int, bool) {
-	filtered := FilterExtensions(input, systemID, cfg)
-
-	beforeMGL := len(filtered)
-	filtered = FilterUniqueWithMGL(filtered)
-	mglRemoved := beforeMGL - len(filtered)
-
-	beforeDedupe := len(filtered)
-	filtered = utils.DedupeFiles(filtered)
-	dedupeRemoved := beforeDedupe - len(filtered)
-
-	cache, counts, hadLists := ApplyFilterlists(gamelistDir, systemID, filtered, cfg)
-	counts["File"] += mglRemoved + dedupeRemoved
-
-	return filtered, cache, counts, hadLists
-}
 
 // ApplyFilterlists applies whitelist/blacklist/staticlist and updates counters.
 func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
