@@ -24,26 +24,27 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	savedTimestamps, _ := loadSavedTimestamps(gamelistDir)
 	var newTimestamps []SavedTimestamp
 
-	// 🔥 reset RAM caches first
+	// reset RAM caches
 	ResetAll()
 
-	// 🔥 preload Masterlist into cache if present
-	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt")); err == nil {
-		SetList("Masterlist.txt", lines)
-	}
-
-	// 🔥 preload GameIndex into cache if present
+	// preload master + gameindex from disk if present (after reset so caches are empty)
+	master, _ := utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt"))
+	gameIndex := []GameEntry{}
 	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "GameIndex")); err == nil {
 		for _, l := range lines {
 			parts := SplitNTrim(l, "|", 4)
 			if len(parts) == 4 {
-				AppendGameIndex(GameEntry{
+				gameIndex = append(gameIndex, GameEntry{
 					SystemID: parts[0],
 					Name:     parts[1],
 					Ext:      parts[2],
 					Path:     parts[3],
 				})
 			}
+		}
+		// push any loaded entries into RAM cache
+		for _, ge := range gameIndex {
+			AppendGameIndex(ge)
 		}
 	}
 
@@ -77,10 +78,8 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 
 			// Stage 1 Filters
 			stage1, c1 := Stage1Filters(files, system.Id, cfg)
-			master := GetList("Masterlist.txt")
 			master = append(master, "# SYSTEM: "+system.Id)
 			master = append(master, stage1...)
-			SetList("Masterlist.txt", master)
 
 			// Stage 2 Filters
 			stage2, c2 := Stage2Filters(stage1)
@@ -89,6 +88,9 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			// Stage 3 Filters
 			stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
 			SetList(GamelistFilename(system.Id), stage3)
+
+			// 🔥 persist per-system gamelist to disk
+			_ = WriteLinesIfChanged(gamelistPath, stage3)
 
 			counts := mergeCounts(c1, c2, c3)
 			totalGames += len(stage3)
@@ -129,8 +131,8 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		}
 	}
 
-	// write master + index ONCE at the end, from cache
-	_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "Masterlist.txt"), GetList("Masterlist.txt"))
+	// write master + index ONCE at the end
+	_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "Masterlist.txt"), master)
 
 	gi := GetGameIndex()
 	giLines := []string{}
@@ -144,7 +146,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	_ = saveTimestamps(gamelistDir, newTimestamps)
 
 	if !quiet {
-		fmt.Printf("[List] Masterlist contains %d titles\n", CountGames(GetList("Masterlist.txt")))
+		fmt.Printf("[List] Masterlist contains %d titles\n", CountGames(master))
 		fmt.Printf("[List] GameIndex contains %d titles\n", len(gi))
 		fmt.Printf("[List] Done in %.1fs (%d fresh, %d reused systems)\n",
 			time.Since(start).Seconds(), freshCount, reuseCount)
