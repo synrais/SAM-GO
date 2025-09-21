@@ -95,11 +95,11 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			// Stage 2 Filters
 			stage2, c2 := Stage2Filters(stage1)
 			UpdateGameIndex(system.Id, stage2)
+			_ = WriteLinesIfChanged(gamelistPath, stage2)
 
 			// Stage 3 Filters
 			stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
 			SetList(GamelistFilename(system.Id), stage3)
-			_ = WriteLinesIfChanged(gamelistPath, stage3)
 
 			counts := mergeCounts(c1, c2, c3)
 			totalGames += len(stage3)
