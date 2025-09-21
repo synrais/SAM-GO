@@ -14,6 +14,47 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
+// removeSystemFromMaster removes the entire block for a given system from Masterlist slice.
+func removeSystemFromMaster(master []string, systemID string) []string {
+	out := []string{}
+	skip := false
+	for _, line := range master {
+		if len(line) > 9 && line[:9] == "# SYSTEM:" {
+			if line == "# SYSTEM: "+systemID {
+				skip = true
+				continue
+			}
+			skip = false
+		}
+		if !skip {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// removeSystemFromGameIndex removes all entries for a given system from GameIndex slice.
+func removeSystemFromGameIndex(entries []GameEntry, systemID string) []GameEntry {
+	out := []GameEntry{}
+	for _, e := range entries {
+		if e.SystemID != systemID {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// mergeCounts merges three sets of filter counts into a single summary map.
+func mergeCounts(c1, c2, c3 map[string]int) map[string]int {
+	out := map[string]int{}
+	for _, c := range []map[string]int{c1, c2, c3} {
+		for k, v := range c {
+			out[k] += v
+		}
+	}
+	return out
+}
+
 /// Stage1Filters applies structural filters.
 // - Extension filtering only.
 // Returns stage1 lines (disk-ready) and counts (File = extensions removed).
