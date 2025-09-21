@@ -161,6 +161,7 @@ type Player struct {
 	endWG    sync.WaitGroup
 }
 
+// valid extensions
 func isValidFile(name string) bool {
 	l := strings.ToLower(name)
 	if strings.HasSuffix(l, ".mp3") ||
@@ -256,7 +257,7 @@ func (p *Player) play(track string) {
 	loops := getLoopAmount(track)
 	logMsg("Now playing: "+track, true)
 
-	for loops > 0 {
+	for loops > 0 && p.Playing != "" {
 		lower := strings.ToLower(track)
 		switch {
 		case strings.HasSuffix(lower, ".mp3"), strings.HasSuffix(lower, ".pls"):
@@ -309,15 +310,19 @@ func (p *Player) StopLoop() {
 		close(p.stopLoop)
 		p.stopLoop = nil
 	}
-	if p.cmd != nil && p.cmd.Process != nil {
-		// fade out before kill
-		misterFadeOut(7, 0, 12, 120*time.Millisecond) // ~1.5s fade
-		_ = p.cmd.Process.Kill()
-		p.cmd = nil
-	}
+	cmd := p.cmd
+	p.cmd = nil
+	p.Playing = ""
 	p.mu.Unlock()
+
+	// fade out before kill (like Python)
+	if cmd != nil && cmd.Process != nil {
+		misterFadeOut(7, 0, 8, 100*time.Millisecond)
+		_ = cmd.Process.Kill()
+	}
+
 	p.endWG.Wait()
-	misterVolume(7) // restore max
+	misterVolume(7) // restore volume
 }
 
 // ---------- Remote socket ----------
