@@ -24,7 +24,7 @@ import (
 //   5. For each system:
 //        a) Check if system folder modified.
 //        b) If modified or missing gamelist → full rebuild (dedupe, filter, update Masterlist/GameIndex).
-//        c) Else (unchanged) → reuse gamelist: reload from disk and re-filter into cache.
+//        c) Else (unchanged) → reuse gamelist: only re-filter into cache.
 //   6. Save updated timestamps.
 //   7. If any fresh/rebuilt → write Masterlist + GameIndex back to disk.
 //   8. Print summary.
@@ -139,12 +139,9 @@ func CreateGamelists(cfg *config.UserConfig,
 				continue
 			}
 
-			// Sort cache slice + update total.
+			// Sort cache slice.
 			sort.Strings(cacheFiles)
 			totalGames += len(cacheFiles)
-
-			// Seed cache slice in RAM.
-			SetList(gamelistFilename(systemId), cacheFiles)
 
 			// Write gamelist (unless RAM-only).
 			writeGamelist(gamelistDir, systemId, diskFiltered, cfg.List.RamOnly)
@@ -182,20 +179,14 @@ func CreateGamelists(cfg *config.UserConfig,
 			updateGameIndex(systemId, deduped)
 
 		} else {
-			// 5c. Reuse branch: reload gamelist from disk, re-filter into cache.
-			lines, err := utils.ReadLines(gamelistPath)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[List] Failed to read %s: %v\n", gamelistPath, err)
-				continue
-			}
+			// 5c. Reuse branch: no Masterlist/GameIndex edits.
+			lines := GetList(gamelistFilename(systemId))
 
+			// Re-apply filters for cache freshness.
 			beforeDisk := len(lines)
 			diskFiltered := FilterExtensions(lines, systemId, cfg)
 			extRemoved := beforeDisk - len(diskFiltered)
 			cacheFiles, counts, _ := ApplyFilterlists(gamelistDir, systemId, diskFiltered, cfg)
-
-			// Seed cache slice in RAM.
-			SetList(gamelistFilename(systemId), cacheFiles)
 
 			totalGames += len(cacheFiles)
 			reused++
@@ -215,7 +206,7 @@ func CreateGamelists(cfg *config.UserConfig,
 		}
 	}
 
-	// 6. Save updated timestamps.
+	// 6. Save updated timestamps (only if changed).
 	if err := saveTimestamps(gamelistDir, updatedTimestamps); err != nil {
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
@@ -224,9 +215,9 @@ func CreateGamelists(cfg *config.UserConfig,
 	if anyRebuilt {
 		SetList("Masterlist.txt", masterList)
 		if !cfg.List.RamOnly {
-			writeSimpleList(masterPath, masterList)
-			if data, err := json.MarshalIndent(GetGameIndex(), "", "  "); err == nil {
-				_ = os.WriteFile(indexPath, data, 0644)
+			_ = writeLinesIfChanged(masterPath, masterList)
+			if err := writeJSONIfChanged(indexPath, GetGameIndex()); err != nil {
+				fmt.Fprintf(os.Stderr, "[List] Failed to write GameIndex: %v\n", err)
 			}
 		}
 	}
