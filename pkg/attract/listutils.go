@@ -488,3 +488,14 @@ func matchRule(rule, candidate string) bool {
 	}
 	return candidate == rule
 }
+
+// helper to unify lists status message output for fresh rebuild resused systems
+func printListStatus(systemID, action string, diskCount, cacheCount int, counts map[string]int) {
+	if counts == nil {
+		counts = map[string]int{}
+	}
+
+	fmt.Printf("[List] %-12s Disk:%d Cache:%d (White:%d Black:%d Static:%d Folder:%d File:%d) [%s]\n",
+		systemID, diskCount, cacheCount,
+		counts["White"], counts["Black"], counts["Static"], counts["Folder"], counts["File"], action)
+}
