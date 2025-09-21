@@ -18,35 +18,6 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// -----------------------------
-// Unified Write Helpers
-// -----------------------------
-
-// writeFileIfChanged writes raw bytes only if content differs.
-func writeFileIfChanged(path string, data []byte) error {
-	if old, err := os.ReadFile(path); err == nil {
-		if string(old) == string(data) {
-			return nil // identical → skip write
-		}
-	}
-	return os.WriteFile(path, data, 0644)
-}
-
-// writeLinesIfChanged writes a []string as lines to a file only if changed.
-func writeLinesIfChanged(path string, lines []string) error {
-	content := []byte(strings.Join(lines, "\n") + "\n")
-	return writeFileIfChanged(path, content)
-}
-
-// writeJSONIfChanged marshals v as JSON and writes only if changed.
-func writeJSONIfChanged(path string, v any) error {
-	data, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return err
-	}
-	return writeFileIfChanged(path, data)
-}
-
 //
 // -----------------------------
 // System/group helpers
@@ -314,36 +285,9 @@ func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.
 	return lines, counts, hadLists
 }
 
-//
 // -----------------------------
 // List + Masterlist helpers
 // -----------------------------
-//
-
-// fileExists checks if path exists and is not a dir.
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
-// gamelistFilename returns standard system gamelist filename.
-func gamelistFilename(systemID string) string {
-	return systemID + "_gamelist.txt"
-}
-
-func writeGamelist(dir, systemId string, files []string, ramOnly bool) {
-    if ramOnly {
-        return
-    }
-    _ = os.MkdirAll(dir, 0777) // ensure gamelistDir exists
-    path := filepath.Join(dir, gamelistFilename(systemId))
-    _ = os.WriteFile(path, []byte(strings.Join(files, "\n")), 0644)
-}
-
-// writeSimpleList saves a text file list.
-func writeSimpleList(path string, lines []string) {
-	_ = os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
-}
 
 // removeSystemBlock strips existing # SYSTEM: block for a system.
 func removeSystemBlock(master []string, systemID string) []string {
@@ -389,6 +333,47 @@ func updateGameIndex(systemID string, files []string) {
 		AppendGameIndex(entry)
 	}
 }
+
+// -----------------------------
+// Unified Write Helpers
+// -----------------------------
+
+// fileExists checks if path exists and is not a dir.
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+// gamelistFilename returns standard system gamelist filename.
+func gamelistFilename(systemID string) string {
+	return systemID + "_gamelist.txt"
+}
+
+// writeFileIfChanged writes raw bytes only if content differs.
+func writeFileIfChanged(path string, data []byte) error {
+	if old, err := os.ReadFile(path); err == nil {
+		if string(old) == string(data) {
+			return nil // identical → skip write
+		}
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+// writeLinesIfChanged writes a []string as lines to a file only if changed.
+func writeLinesIfChanged(path string, lines []string) error {
+	content := []byte(strings.Join(lines, "\n") + "\n")
+	return writeFileIfChanged(path, content)
+}
+
+// writeJSONIfChanged marshals v as JSON and writes only if changed.
+func writeJSONIfChanged(path string, v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFileIfChanged(path, data)
+}
+
 
 //
 // -----------------------------
