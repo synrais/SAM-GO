@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,10 +14,14 @@ import (
 
 const iniFileName = "SAM.ini"
 
+var streamDebug = flag.Bool("s", false, "Enable static detector stream debug output")
+
 // main is the entrypoint for SAM.
 // It ensures config exists, loads it, and then hands off to Attract Mode.
 func main() {
 	debug.SetMemoryLimit(128 * 1024 * 1024) // 128MB soft limit
+
+	flag.Parse()
 
 	exePath, _ := os.Executable()
 	iniPath := filepath.Join(filepath.Dir(exePath), iniFileName)
@@ -42,5 +47,5 @@ func main() {
 	fmt.Println("[MAIN] Loaded config from:", cfg.IniPath)
 
 	// Hand off directly to attract mode
-	attract.PrepareAttractLists(cfg)
+	attract.PrepareAttractLists(cfg, *streamDebug)
 }
