@@ -257,7 +257,7 @@ func (p *Player) play(track string) {
 	loops := getLoopAmount(track)
 	logMsg("Now playing: "+track, true)
 
-	for loops > 0 && p.Playing != "" {
+	for loops > 0 {
 		lower := strings.ToLower(track)
 		switch {
 		case strings.HasSuffix(lower, ".mp3"), strings.HasSuffix(lower, ".pls"):
@@ -278,15 +278,13 @@ func (p *Player) play(track string) {
 
 func (p *Player) StartLoop() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	if p.stopLoop != nil {
-		logMsg("StartLoop called but already running", true)
+		p.mu.Unlock()
 		return
 	}
-
 	p.stopLoop = make(chan struct{})
 	p.endWG.Add(1)
+	p.mu.Unlock()
 
 	go func() {
 		defer p.endWG.Done()
@@ -315,18 +313,23 @@ func (p *Player) StopLoop() {
 
 	close(p.stopLoop)
 	p.stopLoop = nil
-	p.Playing = "" // prevent further play
+	p.Playing = "" // stop any queued playback
 
-	if p.cmd != nil && p.cmd.Process != nil {
-		misterFadeOut(7, 0, 8, 100*time.Millisecond)
-		_ = p.cmd.Process.Kill()
-		go func(cmd *exec.Cmd) { _ = cmd.Wait() }(p.cmd) // reap
-		p.cmd = nil
-	}
+	cmd := p.cmd
+	p.cmd = nil
 	p.mu.Unlock()
 
+	if cmd != nil && cmd.Process != nil {
+		// fade out, then kill
+		go func(c *exec.Cmd) {
+			misterFadeOut(7, 0, 8, 100*time.Millisecond)
+			_ = c.Process.Kill()
+			_ = c.Wait()
+			misterVolume(7)
+		}(cmd)
+	}
+
 	p.endWG.Wait()
-	misterVolume(7) // restore after fade
 }
 
 // ---------- Remote socket ----------
