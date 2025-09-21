@@ -149,7 +149,10 @@ type Player struct {
 	Playing  string
 	Playlist *string
 	Playback string
-	cmd      *exec.Cmd
+
+	mu   sync.Mutex
+	cmd  *exec.Cmd
+	stop chan struct{}
 }
 
 // history management
@@ -164,12 +167,16 @@ func (p *Player) addHistory(track string, total int) {
 	p.History = append(p.History, track)
 }
 
+// low-level runner
 func (p *Player) playFile(cmd ...string) {
 	c := exec.Command(cmd[0], cmd[1:]...)
-	p.cmd = c
-
 	stdout, _ := c.StdoutPipe()
 	c.Stderr = c.Stdout
+
+	p.mu.Lock()
+	p.cmd = c
+	p.mu.Unlock()
+
 	_ = c.Start()
 
 	scanner := bufio.NewScanner(stdout)
@@ -177,15 +184,21 @@ func (p *Player) playFile(cmd ...string) {
 		LogMsg(scanner.Text(), false)
 	}
 	c.Wait()
-	p.cmd = nil
+
+	p.mu.Lock()
+	if p.cmd == c {
+		p.cmd = nil
+	}
+	p.mu.Unlock()
 }
 
+// play one track fully
 func (p *Player) Play(track string) {
 	if !IsValidFile(track) {
 		return
 	}
 	p.Playing = track
-	p.addHistory(track, 100) // placeholder for total track count
+	p.addHistory(track, 100) // placeholder
 	loops := GetLoopAmount(track)
 	LogMsg("Now playing: "+track, true)
 
@@ -209,6 +222,7 @@ func (p *Player) Play(track string) {
 	p.Playing = ""
 }
 
+// track picking
 func GetTracks(playlist *string) []string {
 	var base string
 	if playlist == nil || *playlist == "" {
@@ -235,7 +249,6 @@ func (p *Player) GetRandomTrack() string {
 	}
 	for {
 		track := tracks[rand.Intn(len(tracks))]
-		// avoid repeats
 		found := false
 		for _, h := range p.History {
 			if h == track {
@@ -250,22 +263,19 @@ func (p *Player) GetRandomTrack() string {
 }
 
 // --- Loop control ---
-var (
-	stopCh chan struct{}
-	stopMu sync.Mutex
-)
-
 func (p *Player) StartLoop() {
-	stopMu.Lock()
-	defer stopMu.Unlock()
-	if stopCh != nil {
+	p.mu.Lock()
+	if p.stop != nil {
+		p.mu.Unlock()
 		return // already running
 	}
-	stopCh = make(chan struct{})
+	p.stop = make(chan struct{})
+	p.mu.Unlock()
+
 	go func() {
 		for {
 			select {
-			case <-stopCh:
+			case <-p.stop:
 				return
 			default:
 				track := p.GetRandomTrack()
@@ -273,22 +283,21 @@ func (p *Player) StartLoop() {
 					time.Sleep(time.Second)
 					continue
 				}
-				p.Play(track) // blocks until track finishes
+				p.Play(track) // blocks until track ends
 			}
 		}
 	}()
 }
 
 func (p *Player) StopLoop() {
-	stopMu.Lock()
-	defer stopMu.Unlock()
-	if stopCh != nil {
-		close(stopCh)
-		stopCh = nil
+	p.mu.Lock()
+	if p.stop != nil {
+		close(p.stop)
+		p.stop = nil
 	}
 	if p.cmd != nil && p.cmd.Process != nil {
-		_ = p.cmd.Process.Kill()
+		_ = p.cmd.Process.Kill() // hard kill current track
+		p.cmd = nil
 	}
-	p.cmd = nil
-	p.Playing = ""
+	p.mu.Unlock()
 }
