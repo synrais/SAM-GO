@@ -3,6 +3,7 @@ package attract
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/synrais/SAM-GO/pkg/config"
@@ -29,7 +30,10 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	gameIndex := []GameEntry{}
 	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "GameIndex")); err == nil {
 		for _, l := range lines {
-			parts := utils.SplitNTrim(l, "|", 4)
+			parts := strings.SplitN(l, "|", 4)
+			for i := range parts {
+				parts[i] = strings.TrimSpace(parts[i])
+			}
 			if len(parts) == 4 {
 				gameIndex = append(gameIndex, GameEntry{
 					SystemID: parts[0],
@@ -79,7 +83,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			master = append(master, stage1...)
 
 			// Stage 2 Filters
-			stage2, c2 := Stage2Filters(stage1, system.Id)
+			stage2, c2 := Stage2Filters(stage1)
 			UpdateGameIndex(system.Id, stage2)
 			_ = WriteLinesIfChanged(gamelistPath, stage2)
 
@@ -103,7 +107,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 				lines, err := utils.ReadLines(gamelistPath)
 				if err == nil {
 					// reuse disk gamelist, reapply filters for cache only
-					stage2, c2 := Stage2Filters(lines, system.Id)
+					stage2, c2 := Stage2Filters(lines)
 					stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
 					SetList(GamelistFilename(system.Id), stage3)
 
