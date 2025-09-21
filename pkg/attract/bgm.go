@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"gopkg.in/ini.v1"
@@ -25,20 +26,9 @@ const (
 	MIDI_PORT     = "128:0"
 )
 
-var CONFIG_DEFAULTS = map[string]interface{}{
-	"playback":      "random",
-	"playlist":      nil,
-	"startup":       true,
-	"playincore":    false,
-	"corebootdelay": 0,
-	"menuvolume":    -1,
-	"defaultvolume": -1,
-	"debug":         false,
-}
-
 type Config struct {
 	Playback      string
-	Playlist      *string
+	Playlist      string
 	Startup       bool
 	PlayInCore    bool
 	CoreBootDelay float64
@@ -49,7 +39,7 @@ type Config struct {
 
 // --- Config handling ---
 func writeDefaultIni() {
-	os.MkdirAll(MUSIC_FOLDER, 0755)
+	_ = os.MkdirAll(MUSIC_FOLDER, 0755)
 	f, _ := os.Create(INI_FILE)
 	defer f.Close()
 	f.WriteString(`[bgm]
@@ -73,7 +63,7 @@ func GetConfig() Config {
 	section := cfg.Section("bgm")
 
 	playback := section.Key("playback").MustString("random")
-	playlist := section.Key("playlist").MustString("none")
+	playlist := section.Key("playlist").MustString("")
 	if playlist == "none" {
 		playlist = ""
 	}
@@ -84,14 +74,9 @@ func GetConfig() Config {
 	defvol := section.Key("defaultvolume").MustInt(-1)
 	debug := section.Key("debug").MustBool(false)
 
-	var playlistPtr *string
-	if playlist != "" {
-		playlistPtr = &playlist
-	}
-
 	return Config{
 		Playback:      playback,
-		Playlist:      playlistPtr,
+		Playlist:      playlist,
 		Startup:       startup,
 		PlayInCore:    playincore,
 		CoreBootDelay: corebootdelay,
@@ -145,14 +130,13 @@ func GetLoopAmount(name string) int {
 
 // --- Player ---
 type Player struct {
+	mu       sync.Mutex
 	History  []string
 	Playing  string
-	Playlist *string
+	Playlist string
 	Playback string
-
-	mu   sync.Mutex
-	cmd  *exec.Cmd
-	stop chan struct{}
+	cmd      *exec.Cmd
+	stop     chan struct{}
 }
 
 // history management
@@ -161,6 +145,8 @@ func (p *Player) addHistory(track string, total int) {
 	if hsize < 1 {
 		return
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if len(p.History) >= hsize {
 		p.History = p.History[1:]
 	}
@@ -177,13 +163,16 @@ func (p *Player) playFile(cmd ...string) {
 	p.cmd = c
 	p.mu.Unlock()
 
-	_ = c.Start()
+	if err := c.Start(); err != nil {
+		LogMsg(fmt.Sprintf("Failed to start player: %v", err), true)
+		return
+	}
 
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		LogMsg(scanner.Text(), false)
 	}
-	c.Wait()
+	_ = c.Wait()
 
 	p.mu.Lock()
 	if p.cmd == c {
@@ -197,8 +186,17 @@ func (p *Player) Play(track string) {
 	if !IsValidFile(track) {
 		return
 	}
+
+	// Ensure no other track is playing
+	p.StopCurrent()
+
+	p.mu.Lock()
 	p.Playing = track
-	p.addHistory(track, 100) // placeholder
+	p.mu.Unlock()
+
+	tracks := GetTracks(p.Playlist)
+	p.addHistory(track, len(tracks))
+
 	loops := GetLoopAmount(track)
 	LogMsg("Now playing: "+track, true)
 
@@ -219,21 +217,21 @@ func (p *Player) Play(track string) {
 		loops--
 	}
 
+	p.mu.Lock()
 	p.Playing = ""
+	p.mu.Unlock()
 }
 
 // track picking
-func GetTracks(playlist *string) []string {
+func GetTracks(playlist string) []string {
 	var base string
-	if playlist == nil || *playlist == "" {
-		base = MUSIC_FOLDER
-	} else if *playlist == "all" {
+	if playlist == "" || playlist == "all" {
 		base = MUSIC_FOLDER
 	} else {
-		base = filepath.Join(MUSIC_FOLDER, *playlist)
+		base = filepath.Join(MUSIC_FOLDER, playlist)
 	}
 	var tracks []string
-	filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
 		if err == nil && !info.IsDir() && IsValidFile(info.Name()) && !strings.HasPrefix(info.Name(), "_") {
 			tracks = append(tracks, path)
 		}
@@ -249,6 +247,7 @@ func (p *Player) GetRandomTrack() string {
 	}
 	for {
 		track := tracks[rand.Intn(len(tracks))]
+		p.mu.Lock()
 		found := false
 		for _, h := range p.History {
 			if h == track {
@@ -256,6 +255,7 @@ func (p *Player) GetRandomTrack() string {
 				break
 			}
 		}
+		p.mu.Unlock()
 		if !found {
 			return track
 		}
@@ -292,13 +292,25 @@ func (p *Player) StartLoop() {
 
 				select {
 				case <-p.stop:
-					return // stop immediately, don’t loop again
+					return
 				case <-done:
-					// finished naturally, loop again
 				}
 			}
 		}
 	}()
+}
+
+// Stop only current track, but keep loop logic
+func (p *Player) StopCurrent() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cmd != nil && p.cmd.Process != nil {
+		_ = p.cmd.Process.Signal(syscall.SIGTERM)
+		time.Sleep(200 * time.Millisecond)
+		_ = p.cmd.Process.Kill()
+		p.cmd = nil
+		p.Playing = ""
+	}
 }
 
 func (p *Player) StopLoop() {
@@ -307,9 +319,15 @@ func (p *Player) StopLoop() {
 		close(p.stop)
 		p.stop = nil
 	}
-	if p.cmd != nil && p.cmd.Process != nil {
-		_ = p.cmd.Process.Kill() // hard kill current track
-		p.cmd = nil
-	}
 	p.mu.Unlock()
+	p.StopCurrent()
+}
+
+// --- New API: PlayNow ---
+func (p *Player) PlayNow(track string) {
+	// Stop loop if running
+	p.StopLoop()
+
+	// Play requested track immediately
+	go p.Play(track)
 }
