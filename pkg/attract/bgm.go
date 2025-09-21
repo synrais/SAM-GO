@@ -18,11 +18,23 @@ import (
 
 const (
 	MUSIC_FOLDER  = "/media/fat/music"
+	BOOT_FOLDER   = MUSIC_FOLDER + "/boot"
 	INI_FILE      = MUSIC_FOLDER + "/bgm.ini"
 	LOG_FILE      = "/tmp/bgm.log"
-	MIDI_PORT     = "128:0"
 	HISTORY_RATIO = 0.2
+	MIDI_PORT     = "128:0"
 )
+
+var CONFIG_DEFAULTS = map[string]interface{}{
+	"playback":      "random",
+	"playlist":      nil,
+	"startup":       true,
+	"playincore":    false,
+	"corebootdelay": 0,
+	"menuvolume":    -1,
+	"defaultvolume": -1,
+	"debug":         false,
+}
 
 type Config struct {
 	Playback      string
@@ -35,8 +47,7 @@ type Config struct {
 	Debug         bool
 }
 
-// ---------------- Config ----------------
-
+// --- Config handling ---
 func writeDefaultIni() {
 	os.MkdirAll(MUSIC_FOLDER, 0755)
 	f, _ := os.Create(INI_FILE)
@@ -57,6 +68,7 @@ func GetConfig() Config {
 	if _, err := os.Stat(INI_FILE); os.IsNotExist(err) {
 		writeDefaultIni()
 	}
+
 	cfg, _ := ini.Load(INI_FILE)
 	section := cfg.Section("bgm")
 
@@ -89,58 +101,24 @@ func GetConfig() Config {
 	}
 }
 
-// ---------------- Logging ----------------
-
-func logMsg(msg string) {
+// --- Logging ---
+func LogMsg(msg string, always bool) {
+	cfg := GetConfig()
 	if msg == "" {
 		return
 	}
-	fmt.Println(msg)
-	f, _ := os.OpenFile(LOG_FILE, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	defer f.Close()
-	f.WriteString(fmt.Sprintf("[%s] %s\n", time.Now().Format(time.RFC3339), msg))
+	if always || cfg.Debug {
+		fmt.Println(msg)
+	}
+	if cfg.Debug {
+		f, _ := os.OpenFile(LOG_FILE, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		defer f.Close()
+		f.WriteString(fmt.Sprintf("[%s] %s\n", time.Now().Format(time.RFC3339), msg))
+	}
 }
 
-// ---------------- Volume ----------------
-
-func misterVolume(level int) {
-	if level < 0 {
-		level = 0
-	}
-	if level > 7 {
-		level = 7
-	}
-	_ = os.WriteFile("/dev/MiSTer_cmd", []byte(fmt.Sprintf("volume %d\n", level)), 0644)
-}
-
-func misterFadeOut(from, to, steps int, delay time.Duration) {
-	if steps < 1 {
-		steps = 1
-	}
-	stepSize := float64(from-to) / float64(steps)
-	vol := float64(from)
-	for i := 0; i < steps; i++ {
-		misterVolume(int(math.Round(vol)))
-		time.Sleep(delay)
-		vol -= stepSize
-	}
-	misterVolume(to)
-}
-
-// ---------------- Player ----------------
-
-type Player struct {
-	History  []string
-	Playing  string
-	Playlist *string
-	Playback string
-
-	mu       sync.Mutex
-	cmd      *exec.Cmd
-	stopLoop chan struct{}
-}
-
-func isValidFile(name string) bool {
+// --- File helpers ---
+func IsValidFile(name string) bool {
 	l := strings.ToLower(name)
 	if strings.HasSuffix(l, ".mp3") ||
 		strings.HasSuffix(l, ".ogg") ||
@@ -153,7 +131,99 @@ func isValidFile(name string) bool {
 	return matched
 }
 
-func getTracks(playlist *string) []string {
+func GetLoopAmount(name string) int {
+	base := filepath.Base(name)
+	re := regexp.MustCompile(`^X(\d\d)_`)
+	match := re.FindStringSubmatch(base)
+	if len(match) == 2 {
+		var n int
+		fmt.Sscanf(match[1], "%d", &n)
+		return n
+	}
+	return 1
+}
+
+// --- Player ---
+type Player struct {
+	History  []string
+	Playing  string
+	Playlist *string
+	Playback string
+
+	mu   sync.Mutex
+	cmd  *exec.Cmd
+	stop chan struct{}
+}
+
+// history management
+func (p *Player) addHistory(track string, total int) {
+	hsize := int(math.Floor(float64(total) * HISTORY_RATIO))
+	if hsize < 1 {
+		return
+	}
+	if len(p.History) >= hsize {
+		p.History = p.History[1:]
+	}
+	p.History = append(p.History, track)
+}
+
+// low-level runner
+func (p *Player) playFile(cmd ...string) {
+	c := exec.Command(cmd[0], cmd[1:]...)
+	stdout, _ := c.StdoutPipe()
+	c.Stderr = c.Stdout
+
+	p.mu.Lock()
+	p.cmd = c
+	p.mu.Unlock()
+
+	_ = c.Start()
+
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		LogMsg(scanner.Text(), false)
+	}
+	c.Wait()
+
+	p.mu.Lock()
+	if p.cmd == c {
+		p.cmd = nil
+	}
+	p.mu.Unlock()
+}
+
+// play one track fully
+func (p *Player) Play(track string) {
+	if !IsValidFile(track) {
+		return
+	}
+	p.Playing = track
+	p.addHistory(track, 100) // placeholder
+	loops := GetLoopAmount(track)
+	LogMsg("Now playing: "+track, true)
+
+	for loops > 0 {
+		lower := strings.ToLower(track)
+		switch {
+		case strings.HasSuffix(lower, ".mp3"), strings.HasSuffix(lower, ".pls"):
+			p.playFile("mpg123", "--no-control", track)
+		case strings.HasSuffix(lower, ".ogg"):
+			p.playFile("ogg123", track)
+		case strings.HasSuffix(lower, ".wav"):
+			p.playFile("aplay", track)
+		case strings.HasSuffix(lower, ".mid"):
+			p.playFile("aplaymidi", "--port="+MIDI_PORT, track)
+		default:
+			p.playFile("vgmplay", track)
+		}
+		loops--
+	}
+
+	p.Playing = ""
+}
+
+// track picking
+func GetTracks(playlist *string) []string {
 	var base string
 	if playlist == nil || *playlist == "" {
 		base = MUSIC_FOLDER
@@ -164,7 +234,7 @@ func getTracks(playlist *string) []string {
 	}
 	var tracks []string
 	filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
-		if err == nil && !info.IsDir() && isValidFile(info.Name()) && !strings.HasPrefix(info.Name(), "_") {
+		if err == nil && !info.IsDir() && IsValidFile(info.Name()) && !strings.HasPrefix(info.Name(), "_") {
 			tracks = append(tracks, path)
 		}
 		return nil
@@ -172,8 +242,8 @@ func getTracks(playlist *string) []string {
 	return tracks
 }
 
-func (p *Player) getRandomTrack() string {
-	tracks := getTracks(p.Playlist)
+func (p *Player) GetRandomTrack() string {
+	tracks := GetTracks(p.Playlist)
 	if len(tracks) == 0 {
 		return ""
 	}
@@ -192,78 +262,40 @@ func (p *Player) getRandomTrack() string {
 	}
 }
 
-func (p *Player) playFile(track string) {
-	lower := strings.ToLower(track)
-	var c *exec.Cmd
-	switch {
-	case strings.HasSuffix(lower, ".mp3"), strings.HasSuffix(lower, ".pls"):
-		c = exec.Command("mpg123", "--no-control", track)
-	case strings.HasSuffix(lower, ".ogg"):
-		c = exec.Command("ogg123", track)
-	case strings.HasSuffix(lower, ".wav"):
-		c = exec.Command("aplay", track)
-	case strings.HasSuffix(lower, ".mid"):
-		c = exec.Command("aplaymidi", "--port="+MIDI_PORT, track)
-	default:
-		c = exec.Command("vgmplay", track)
-	}
-
-	p.mu.Lock()
-	p.cmd = c
-	p.mu.Unlock()
-
-	stdout, _ := c.StdoutPipe()
-	c.Stderr = c.Stdout
-	_ = c.Start()
-
-	scanner := bufio.NewScanner(stdout)
-	go func() {
-		for scanner.Scan() {
-			logMsg(scanner.Text())
-		}
-	}()
-
-	// This blocks until the process exits
-	_ = c.Wait()
-
-	p.mu.Lock()
-	if p.cmd == c {
-		p.cmd = nil
-	}
-	p.mu.Unlock()
-}
-
-func (p *Player) play(track string) {
-	if !isValidFile(track) {
-		return
-	}
-	p.Playing = track
-	logMsg("Now playing: " + track)
-	p.playFile(track)
-	p.Playing = ""
-}
-
+// --- Loop control ---
 func (p *Player) StartLoop() {
 	p.mu.Lock()
-	if p.stopLoop != nil {
+	if p.stop != nil {
 		p.mu.Unlock()
 		return // already running
 	}
-	p.stopLoop = make(chan struct{})
+	p.stop = make(chan struct{})
 	p.mu.Unlock()
 
 	go func() {
 		for {
 			select {
-			case <-p.stopLoop:
+			case <-p.stop:
 				return
 			default:
-				track := p.getRandomTrack()
+				track := p.GetRandomTrack()
 				if track == "" {
 					time.Sleep(time.Second)
 					continue
 				}
-				p.play(track) // blocks until finished or killed
+
+				done := make(chan struct{})
+				go func() {
+					p.Play(track)
+					close(done)
+				}()
+
+				select {
+				case <-p.stop:
+					return // stop immediately, don’t loop again
+				case <-done:
+					// finished naturally, loop again
+				}
 			}
 		}
 	}()
@@ -271,16 +303,13 @@ func (p *Player) StartLoop() {
 
 func (p *Player) StopLoop() {
 	p.mu.Lock()
-	if p.stopLoop != nil {
-		close(p.stopLoop)
-		p.stopLoop = nil
+	if p.stop != nil {
+		close(p.stop)
+		p.stop = nil
 	}
 	if p.cmd != nil && p.cmd.Process != nil {
-		// fade out before kill
-		misterFadeOut(7, 0, 8, 100*time.Millisecond)
-		_ = p.cmd.Process.Kill()
+		_ = p.cmd.Process.Kill() // hard kill current track
 		p.cmd = nil
 	}
 	p.mu.Unlock()
-	misterVolume(7) // restore max
 }
