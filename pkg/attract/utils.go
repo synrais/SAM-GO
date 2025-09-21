@@ -302,13 +302,13 @@ func gamelistFilename(systemID string) string {
 	return systemID + "_gamelist.txt"
 }
 
-// writeGamelist saves a gamelist (unless RAM-only).
-func writeGamelist(dir, systemID string, files []string, ramOnly bool) {
-	if ramOnly {
-		return
-	}
-	path := filepath.Join(dir, gamelistFilename(systemID))
-	_ = os.WriteFile(path, []byte(strings.Join(files, "\n")), 0644)
+func writeGamelist(dir, systemId string, files []string, ramOnly bool) {
+    if ramOnly {
+        return
+    }
+    _ = os.MkdirAll(dir, 0777) // ensure gamelistDir exists
+    path := filepath.Join(dir, gamelistFilename(systemId))
+    _ = os.WriteFile(path, []byte(strings.Join(files, "\n")), 0644)
 }
 
 // writeSimpleList saves a text file list.
