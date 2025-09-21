@@ -35,13 +35,15 @@ type GameEntry struct {
 // -----------------------------
 
 // ReloadAll clears and reloads all .txt files from a directory into RAM.
-// Both working and master copies are initialized.
+// Both working and master copies are initialized, and GameIndex is reset too.
 func ReloadAll(dir string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
+	// Reset everything
 	lists = make(map[string][]string)
 	masters = make(map[string][]string)
+	gameIndex = []GameEntry{} // 🔥 full wipe of index too
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
