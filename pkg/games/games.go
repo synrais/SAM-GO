@@ -21,33 +21,8 @@ func GetSystem(id string) (*System, error) {
 	}
 }
 
-func GetGroup(groupId string) (System, error) {
-	var merged System
-	if _, ok := CoreGroups[groupId]; !ok {
-		return merged, fmt.Errorf("no system group found for %s", groupId)
-	}
-
-	if len(CoreGroups[groupId]) < 1 {
-		return merged, fmt.Errorf("no systems in %s", groupId)
-	} else if len(CoreGroups[groupId]) == 1 {
-		return CoreGroups[groupId][0], nil
-	}
-
-	merged = CoreGroups[groupId][0]
-	merged.Slots = make([]Slot, 0)
-	for _, s := range CoreGroups[groupId] {
-		merged.Slots = append(merged.Slots, s.Slots...)
-	}
-
-	return merged, nil
-}
-
 // LookupSystem case-insensitively looks up system ID definition including aliases.
 func LookupSystem(id string) (*System, error) {
-	if system, err := GetGroup(id); err == nil {
-		return &system, nil
-	}
-
 	for k, v := range Systems {
 		if strings.EqualFold(k, id) {
 			return &v, nil
@@ -59,7 +34,6 @@ func LookupSystem(id string) (*System, error) {
 			}
 		}
 	}
-
 	return nil, fmt.Errorf("unknown system: %s", id)
 }
 
@@ -77,7 +51,6 @@ func MatchSystemFile(system System, path string) bool {
 			}
 		}
 	}
-
 	return false
 }
 
@@ -88,7 +61,6 @@ func AllSystems() []System {
 	for _, k := range keys {
 		systems = append(systems, Systems[k])
 	}
-
 	return systems
 }
 
@@ -123,7 +95,6 @@ func AllSystemsExcept(excluded []string) []System {
 
 		systems = append(systems, sys)
 	}
-
 	return systems
 }
 
@@ -157,9 +128,7 @@ func (r *resultsStack) get() (*[]string, error) {
 	return &(*r)[len(*r)-1], nil
 }
 
-// GetFiles searches for all valid games in a given path and returns a list of
-// files. This function deep searches .zip files and handles symlinks at all
-// levels, and applies edge cases for special systems.
+// GetFiles searches for all valid games in a given path and returns a list of files.
 func GetFiles(systemId string, path string) ([]string, error) {
 	var allResults []string
 	var stack resultsStack
@@ -225,7 +194,6 @@ func GetFiles(systemId string, path string) ([]string, error) {
 				for i := range *results {
 					allResults = append(allResults, strings.Replace((*results)[i], realPath, path, 1))
 				}
-
 				return nil
 			}
 		}
@@ -251,20 +219,16 @@ func GetFiles(systemId string, path string) ([]string, error) {
 			}
 		} else {
 			// regular files
-
-			// Edge case hook (e.g. AmigaVision games.txt / demos.txt)
 			if resultsEdge, err, ok := RunEdgeCase(system.Id, path); ok {
 				if err == nil && len(resultsEdge) > 0 {
 					*results = append(*results, resultsEdge...)
 				}
 			} else {
-				// fallback: normal extension matching
 				if MatchSystemFile(*system, path) {
 					*results = append(*results, path)
 				}
 			}
 		}
-
 		return nil
 	}
 
@@ -281,7 +245,6 @@ func GetFiles(systemId string, path string) ([]string, error) {
 		return nil, err
 	}
 
-	// handle symlinks on root game folder because WalkDir fails silently on them
 	var realPath string
 	if root.Mode()&os.ModeSymlink == 0 {
 		realPath = path
@@ -296,7 +259,6 @@ func GetFiles(systemId string, path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	if !realRoot.IsDir() {
 		return nil, fmt.Errorf("root is not a directory")
 	}
@@ -310,10 +272,8 @@ func GetFiles(systemId string, path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	allResults = append(allResults, *results...)
 
-	// change root back to symlink
 	if realPath != path {
 		for i := range allResults {
 			allResults[i] = strings.Replace(allResults[i], realPath, path, 1)
@@ -330,7 +290,6 @@ func GetFiles(systemId string, path string) ([]string, error) {
 
 func GetAllFiles(systemPaths map[string][]string, statusFn func(systemId string, path string)) ([][2]string, error) {
 	var allFiles [][2]string
-
 	for systemId, paths := range systemPaths {
 		for i := range paths {
 			statusFn(systemId, paths[i])
@@ -345,7 +304,6 @@ func GetAllFiles(systemPaths map[string][]string, statusFn func(systemId string,
 			}
 		}
 	}
-
 	return allFiles, nil
 }
 
@@ -356,10 +314,9 @@ func FilterUniqueFilenames(files []string) []string {
 		fn := filepath.Base(files[i])
 		if _, ok := filenames[fn]; ok {
 			continue
-		} else {
-			filenames[fn] = struct{}{}
-			filtered = append(filtered, files[i])
 		}
+		filenames[fn] = struct{}{}
+		filtered = append(filtered, files[i])
 	}
 	return filtered
 }
@@ -388,15 +345,14 @@ func FileExists(path string) bool {
 			}
 		}
 	}
-
 	return false
 }
 
 type RbfInfo struct {
-	Path      string // full path to RBF file
-	Filename  string // base filename of RBF file
-	ShortName string // base filename without date or extension
-	MglName   string // relative path launch-able from MGL file
+	Path      string
+	Filename  string
+	ShortName string
+	MglName   string
 }
 
 func ParseRbf(path string) RbfInfo {
@@ -417,34 +373,28 @@ func ParseRbf(path string) RbfInfo {
 	} else {
 		info.MglName = path
 	}
-
 	return info
 }
 
 // Find all rbf files in the top 2 menu levels of the SD card.
 func shallowScanRbf() ([]RbfInfo, error) {
 	results := make([]RbfInfo, 0)
-
 	isRbf := func(file os.DirEntry) bool {
 		return filepath.Ext(strings.ToLower(file.Name())) == ".rbf"
 	}
-
 	infoSymlink := func(path string) (RbfInfo, error) {
 		info, err := os.Lstat(path)
 		if err != nil {
 			return RbfInfo{}, err
 		}
-
 		if info.Mode()&os.ModeSymlink != 0 {
 			newPath, err := os.Readlink(path)
 			if err != nil {
 				return RbfInfo{}, err
 			}
-
 			return ParseRbf(newPath), nil
-		} else {
-			return ParseRbf(path), nil
 		}
+		return ParseRbf(path), nil
 	}
 
 	files, err := os.ReadDir(config.SdFolder)
@@ -458,7 +408,6 @@ func shallowScanRbf() ([]RbfInfo, error) {
 			if err != nil {
 				continue
 			}
-
 			for _, subFile := range subFiles {
 				if isRbf(subFile) {
 					path := filepath.Join(config.SdFolder, file.Name(), subFile.Name())
@@ -478,15 +427,12 @@ func shallowScanRbf() ([]RbfInfo, error) {
 			results = append(results, info)
 		}
 	}
-
 	return results, nil
 }
 
 // SystemsWithRbf returns a map of all system IDs which have an existing rbf file.
 func SystemsWithRbf() map[string]RbfInfo {
-	// TODO: include alt rbfs somehow?
 	results := make(map[string]RbfInfo)
-
 	rbfFiles, err := shallowScanRbf()
 	if err != nil {
 		return results
@@ -495,16 +441,13 @@ func SystemsWithRbf() map[string]RbfInfo {
 	for _, rbfFile := range rbfFiles {
 		for _, system := range Systems {
 			shortName := system.Rbf
-
 			if strings.Contains(shortName, "/") {
 				shortName = shortName[strings.LastIndex(shortName, "/")+1:]
 			}
-
 			if strings.EqualFold(rbfFile.ShortName, shortName) {
 				results[system.Id] = rbfFile
 			}
 		}
 	}
-
 	return results
 }
