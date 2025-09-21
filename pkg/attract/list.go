@@ -25,23 +25,36 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	var newTimestamps []SavedTimestamp
 
 	// 🔥 reset RAM caches first
+	if !quiet {
+		fmt.Println("[DEBUG] Resetting in-RAM caches (lists + GameIndex)")
+	}
 	ResetAll()
 
 	// preload master + gameindex from disk if present
 	master, _ := utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt"))
-	gameIndex := []GameEntry{}
+	if !quiet {
+		fmt.Printf("[DEBUG] Preloaded Masterlist with %d lines\n", len(master))
+	}
+
 	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "GameIndex")); err == nil {
+		count := 0
 		for _, l := range lines {
 			parts := SplitNTrim(l, "|", 4)
 			if len(parts) == 4 {
-				gameIndex = append(gameIndex, GameEntry{
+				AppendGameIndex(GameEntry{
 					SystemID: parts[0],
 					Name:     parts[1],
 					Ext:      parts[2],
 					Path:     parts[3],
 				})
+				count++
 			}
 		}
+		if !quiet {
+			fmt.Printf("[DEBUG] Preloaded GameIndex with %d entries\n", count)
+		}
+	} else if !quiet {
+		fmt.Printf("[DEBUG] No GameIndex file found, starting fresh\n")
 	}
 
 	totalGames := 0
@@ -53,52 +66,83 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		romPath := sp.Path
 		if romPath == "" {
 			if !quiet {
-				fmt.Printf("[List] %s skipped (no path)\n", system.Id)
+				fmt.Printf("[DEBUG] Skipping %s (no ROM path)\n", system.Id)
 			}
 			continue
 		}
 
 		// detect if folder has changed
 		modified, latestMod, _ := isFolderModified(system.Id, romPath, savedTimestamps)
+		if !quiet {
+			fmt.Printf("[DEBUG] System %s folder modified=%v latestMod=%s\n",
+				system.Id, modified, latestMod.Format(time.RFC3339))
+		}
 
 		// build paths
 		gamelistPath := filepath.Join(gamelistDir, GamelistFilename(system.Id))
 
 		if modified || !FileExists(gamelistPath) {
 			// -------- Fresh system --------
+			if !quiet {
+				fmt.Printf("[DEBUG] Processing system %s as FRESH (path=%s)\n", system.Id, romPath)
+			}
+
 			files, err := games.GetFiles(system.Id, romPath)
 			if err != nil {
-				fmt.Printf("[List] %s\n", err.Error())
+				fmt.Printf("[ERROR] %s: %v\n", system.Id, err)
 				continue
+			}
+			if !quiet {
+				fmt.Printf("[DEBUG] %s initial file scan returned %d files\n", system.Id, len(files))
 			}
 
 			// 🔥 Remove old entries first
 			beforeMaster := len(master)
 			master = removeSystemFromMaster(master, system.Id)
-			afterMaster := len(master)
 			if !quiet {
-				fmt.Printf("[DEBUG] Masterlist cleanup: %s (%d → %d lines)\n", system.Id, beforeMaster, afterMaster)
+				fmt.Printf("[DEBUG] %s Masterlist cleanup %d → %d lines\n",
+					system.Id, beforeMaster, len(master))
 			}
 
-			beforeIndex := len(gameIndex)
-			gameIndex = removeSystemFromGameIndex(gameIndex, system.Id)
-			afterIndex := len(gameIndex)
+			beforeIndex := len(GetGameIndex())
+			gameIndex := removeSystemFromGameIndex(GetGameIndex(), system.Id)
+			ResetAll() // clear again to repopulate clean
+			for _, entry := range gameIndex {
+				AppendGameIndex(entry)
+			}
 			if !quiet {
-				fmt.Printf("[DEBUG] GameIndex cleanup: %s (%d → %d entries)\n", system.Id, beforeIndex, afterIndex)
+				fmt.Printf("[DEBUG] %s GameIndex cleanup %d → %d entries\n",
+					system.Id, beforeIndex, len(gameIndex))
 			}
 
 			// Stage 1 Filters
 			stage1, c1 := Stage1Filters(files, system.Id, cfg)
+			if !quiet {
+				fmt.Printf("[DEBUG] %s Stage1 complete: %d files survive (removed %d)\n",
+					system.Id, len(stage1), c1["File"])
+			}
 			master = append(master, "# SYSTEM: "+system.Id)
 			master = append(master, stage1...)
 
 			// Stage 2 Filters
 			stage2, c2 := Stage2Filters(stage1)
+			if !quiet {
+				fmt.Printf("[DEBUG] %s Stage2 complete: %d files survive (removed %d)\n",
+					system.Id, len(stage2), c2["File"])
+			}
 			UpdateGameIndex(system.Id, stage2)
 			_ = WriteLinesIfChanged(gamelistPath, stage2)
+			if !quiet {
+				fmt.Printf("[DEBUG] %s gamelist written to %s (Stage2 output)\n", system.Id, gamelistPath)
+			}
 
 			// Stage 3 Filters
 			stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
+			if !quiet {
+				fmt.Printf("[DEBUG] %s Stage3 complete: %d files survive (removed: white=%d black=%d static=%d folder=%d file=%d)\n",
+					system.Id, len(stage3),
+					c3["White"], c3["Black"], c3["Static"], c3["Folder"], c3["File"])
+			}
 			SetList(GamelistFilename(system.Id), stage3)
 
 			counts := mergeCounts(c1, c2, c3)
@@ -113,12 +157,28 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 
 		} else {
 			// -------- Reused system --------
+			if !quiet {
+				fmt.Printf("[DEBUG] Processing system %s as REUSED (path=%s)\n", system.Id, romPath)
+			}
+
 			if FileExists(gamelistPath) {
 				lines, err := utils.ReadLines(gamelistPath)
 				if err == nil {
+					if !quiet {
+						fmt.Printf("[DEBUG] %s reloaded gamelist with %d entries\n", system.Id, len(lines))
+					}
 					// reuse disk gamelist, reapply filters for cache only
 					stage2, c2 := Stage2Filters(lines)
+					if !quiet {
+						fmt.Printf("[DEBUG] %s Stage2 (reuse) complete: %d files survive (removed %d)\n",
+							system.Id, len(stage2), c2["File"])
+					}
 					stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
+					if !quiet {
+						fmt.Printf("[DEBUG] %s Stage3 (reuse) complete: %d files survive (removed: white=%d black=%d static=%d folder=%d file=%d)\n",
+							system.Id, len(stage3),
+							c3["White"], c3["Black"], c3["Static"], c3["Folder"], c3["File"])
+					}
 					SetList(GamelistFilename(system.Id), stage3)
 
 					counts := mergeCounts(map[string]int{}, c2, c3)
@@ -141,6 +201,9 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	}
 
 	// write master + index ONCE at the end
+	if !quiet {
+		fmt.Printf("[DEBUG] Writing Masterlist with %d lines\n", len(master))
+	}
 	_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "Masterlist.txt"), master)
 
 	gi := GetGameIndex()
@@ -149,9 +212,15 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		giLines = append(giLines, fmt.Sprintf("%s|%s|%s|%s",
 			entry.SystemID, entry.Name, entry.Ext, entry.Path))
 	}
+	if !quiet {
+		fmt.Printf("[DEBUG] Writing GameIndex with %d entries\n", len(gi))
+	}
 	_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "GameIndex"), giLines)
 
 	// save updated timestamps
+	if !quiet {
+		fmt.Printf("[DEBUG] Saving %d updated timestamps\n", len(newTimestamps))
+	}
 	_ = saveTimestamps(gamelistDir, newTimestamps)
 
 	if !quiet {
