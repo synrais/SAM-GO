@@ -34,6 +34,8 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	rebuildCount := 0
 	reuseCount := 0
 
+	rawLists := make(map[string][]string)
+
 	for _, sp := range systemPaths {
 		system := sp.System
 		romPath := sp.Path
@@ -65,22 +67,21 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 				continue
 			}
 
-			// filter extensions
-			files = FilterExtensions(files, system.Id, cfg)
-
-			// apply filterlists (whitelist/blacklist/static)
-			files, counts, _ := ApplyFilterlists(gamelistDir, system.Id, files, cfg)
+			diskLines, cacheLines, counts, _ := BuildSystemLists(gamelistDir, system.Id, files, cfg)
 
 			// write gamelist (if changed)
-			_ = WriteLinesIfChanged(gamelistPath, files)
+			_ = WriteLinesIfChanged(gamelistPath, diskLines)
 
 			// seed cache
-			SetList(GamelistFilename(system.Id), files)
+			SetList(GamelistFilename(system.Id), cacheLines)
 
-			// update index
-			UpdateGameIndex(system.Id, files)
+			// record raw lines for later master build and index
+			rawLists[system.Id] = diskLines
 
-			totalGames += len(files)
+			// update index from disk lines (extension + dedupe only)
+			UpdateGameIndex(system.Id, diskLines)
+
+			totalGames += len(cacheLines)
 			freshCount++
 
 			if !quiet {
@@ -95,19 +96,24 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			if FileExists(gamelistPath) {
 				lines, err := utils.ReadLines(gamelistPath)
 				if err == nil {
-					// apply filterlists to keep consistent
-					lines, counts, _ := ApplyFilterlists(gamelistDir, system.Id, lines, cfg)
+					diskLines, cacheLines, counts, _ := BuildSystemLists(gamelistDir, system.Id, lines, cfg)
 
-					// seed cache
-					SetList(GamelistFilename(system.Id), lines)
+					// ensure on-disk list matches normalized disk copy
+					_ = WriteLinesIfChanged(gamelistPath, diskLines)
 
-					// update index
-					UpdateGameIndex(system.Id, lines)
+					// seed cache with fully filtered copy
+					SetList(GamelistFilename(system.Id), cacheLines)
 
-					totalGames += len(lines)
+					// record raw copy for master/index generation
+					rawLists[system.Id] = diskLines
+
+					// update index with disk lines
+					UpdateGameIndex(system.Id, diskLines)
+
+					totalGames += len(cacheLines)
 
 					if !quiet {
-						printListStatus(system.Id, "reused", len(lines), len(lines), counts)
+						printListStatus(system.Id, "reused", len(diskLines), len(cacheLines), counts)
 					}
 				} else {
 					fmt.Printf("[WARN] Could not reload gamelist for %s: %v\n", system.Id, err)
@@ -127,7 +133,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	master := []string{}
 	for _, sp := range systemPaths {
 		sys := sp.System
-		list := GetList(GamelistFilename(sys.Id))
+		list := rawLists[sys.Id]
 		if len(list) == 0 {
 			continue
 		}
