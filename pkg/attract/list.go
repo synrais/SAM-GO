@@ -26,7 +26,7 @@ import (
 //        b) If modified or missing gamelist → full rebuild (dedupe, filter, update Masterlist/GameIndex).
 //        c) Else (unchanged) → reuse gamelist: only re-filter into cache.
 //   6. Save updated timestamps.
-//   7. If any fresh/rebuilt → write Masterlist + GameIndex back to disk (only if changed).
+//   7. If any fresh/rebuilt → write Masterlist + GameIndex back to disk.
 //   8. Print summary.
 //
 // Returns the total number of games indexed across all systems.
@@ -91,7 +91,7 @@ func CreateGamelists(cfg *config.UserConfig,
 		paths := systemPathMap[systemId]
 		sysStart := time.Now()
 
-		gamelistPath := filepath.Join(gamelistDir, gamelistFilename(systemId))
+		gamelistPath := filepath.Join(gamelistDir, utils.GamelistFilename(systemId))
 		exists := utils.FileExists(gamelistPath)
 
 		var rawFiles []string
@@ -143,9 +143,12 @@ func CreateGamelists(cfg *config.UserConfig,
 			sort.Strings(cacheFiles)
 			totalGames += len(cacheFiles)
 
-			// Write gamelist unless RAM-only.
+			// Write gamelist (unless RAM-only).
 			if !cfg.List.RamOnly {
-				_ = utils.WriteLinesIfChanged(gamelistPath, diskFiltered)
+				_ = utils.WriteLinesIfChanged(
+					filepath.Join(gamelistDir, utils.GamelistFilename(systemId)),
+					diskFiltered,
+				)
 			}
 
 			if exists && !cfg.List.RamOnly {
@@ -175,14 +178,14 @@ func CreateGamelists(cfg *config.UserConfig,
 			}
 
 			// Update Masterlist + GameIndex in RAM.
-			masterList = removeSystemBlock(masterList, systemId)
+			masterList = utils.RemoveSystemBlock(masterList, systemId)
 			masterList = append(masterList, "# SYSTEM: "+systemId+" #")
 			masterList = append(masterList, rawFiles...)
-			updateGameIndex(systemId, deduped)
+			utils.UpdateGameIndex(systemId, deduped)
 
 		} else {
 			// 5c. Reuse branch: no Masterlist/GameIndex edits.
-			lines := GetList(gamelistFilename(systemId))
+			lines := GetList(utils.GamelistFilename(systemId))
 
 			// Re-apply filters for cache freshness.
 			beforeDisk := len(lines)
@@ -208,7 +211,7 @@ func CreateGamelists(cfg *config.UserConfig,
 		}
 	}
 
-	// 6. Save updated timestamps.
+	// 6. Save updated timestamps (only if changed).
 	if err := saveTimestamps(gamelistDir, updatedTimestamps); err != nil {
 		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
 	}
@@ -224,14 +227,14 @@ func CreateGamelists(cfg *config.UserConfig,
 
 	// 8. Summary.
 	if !quiet {
-		fmt.Printf("[List] Masterlist contains %d titles\n", countGames(masterList))
+		fmt.Printf("[List] Masterlist contains %d titles\n", utils.CountGames(masterList))
 		fmt.Printf("[List] GameIndex contains %d titles\n", len(GetGameIndex()))
 
 		state := "reused"
 		if fresh > 0 || rebuilt > 0 {
 			state = "fresh"
 		}
-		fmt.Printf("[List] %-12s %7d entries [%s]\n", "Masterlist.txt", countGames(masterList), state)
+		fmt.Printf("[List] %-12s %7d entries [%s]\n", "Masterlist.txt", utils.CountGames(masterList), state)
 		fmt.Printf("[List] %-12s %7d entries [%s]\n", "GameIndex", len(GetGameIndex()), state)
 
 		taken := time.Since(start).Seconds()
