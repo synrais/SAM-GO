@@ -14,6 +14,16 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
+// SplitNTrim splits s into at most n substrings separated by sep,
+// trims spaces from each substring, and returns the slice.
+func SplitNTrim(s, sep string, n int) []string {
+	parts := strings.SplitN(s, sep, n)
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
+}
+
 //
 // -----------------------------
 // Master/GameIndex helpers
