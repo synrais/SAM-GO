@@ -416,40 +416,22 @@ func loadSavedTimestamps(gamelistDir string) ([]SavedTimestamp, error) {
 	return timestamps, nil
 }
 
-// isFolderModified checks if any subfolder was modified since the saved timestamp.
+// isFolderModified checks if the root folder was modified since the saved timestamp.
 func isFolderModified(systemID, path string, saved []SavedTimestamp) (bool, time.Time, error) {
-	var latestMod time.Time
+    info, err := os.Stat(path)
+    if err != nil {
+        return false, time.Time{}, fmt.Errorf("[Modtime] Failed to stat %s: %w", path, err)
+    }
+    latestMod := info.ModTime()
 
-	err := filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		rel, _ := filepath.Rel(path, p)
-		depth := strings.Count(rel, string(os.PathSeparator))
-		if depth > 2 {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		modTime := info.ModTime()
-		if modTime.After(latestMod) {
-			latestMod = modTime
-		}
-		return nil
-	})
-	if err != nil {
-		return false, time.Time{}, fmt.Errorf("[Modtime] Failed to scan %s: %w", path, err)
-	}
+    for _, ts := range saved {
+        if ts.SystemID == systemID && ts.Path == path {
+            return latestMod.After(ts.ModTime), latestMod, nil
+        }
+    }
 
-	for _, ts := range saved {
-		if ts.SystemID == systemID && ts.Path == path {
-			return latestMod.After(ts.ModTime), latestMod, nil
-		}
-	}
-
-	return true, latestMod, nil
+    // No record for this system → treat as modified
+    return true, latestMod, nil
 }
 
 // updateTimestamp updates or adds an entry to the SavedTimestamp list.
