@@ -26,6 +26,7 @@ var MPlayerZip []byte
 // --- Helpers ---
 
 // ExtractZipBytes extracts an embedded zip (like MPlayerZip) into destDir.
+// It also forces +x (execute) permission on extracted files to ensure binaries run.
 func ExtractZipBytes(data []byte, destDir string) error {
 	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -66,6 +67,11 @@ func ExtractZipBytes(data []byte, destDir string) error {
 
 		dst.Close()
 		rc.Close()
+
+		// Force +x on extracted files to avoid permission denied
+		if err := os.Chmod(fpath, f.Mode()|0111); err != nil {
+			return err
+		}
 	}
 	return nil
 }
