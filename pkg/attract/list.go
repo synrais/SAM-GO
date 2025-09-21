@@ -78,9 +78,8 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			master = append(master, stage1...)
 
 			// Stage 2 Filters
-			stage2, c2 := Stage2Filters(stage1, system.Id)
+			stage2, c2 := Stage2Filters(stage1)
 			UpdateGameIndex(system.Id, stage2)
-			_ = WriteLinesIfChanged(gamelistPath, stage2)
 
 			// Stage 3 Filters
 			stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
@@ -102,7 +101,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 				lines, err := utils.ReadLines(gamelistPath)
 				if err == nil {
 					// reuse disk gamelist, reapply filters for cache only
-					stage2, c2 := Stage2Filters(lines, system.Id)
+					stage2, c2 := Stage2Filters(lines)
 					stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
 					SetList(GamelistFilename(system.Id), stage3)
 
@@ -125,7 +124,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		}
 	}
 
-	// write master + index
+	// write master + index ONCE at the end
 	_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "Masterlist.txt"), master)
 
 	gi := GetGameIndex()
