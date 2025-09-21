@@ -18,7 +18,6 @@ var AttractTimer *time.Timer
 
 // Global BGM player
 var bgmPlayer *Player
-var bgmStop chan struct{}
 
 //
 // -----------------------------
@@ -34,22 +33,7 @@ func PrepareAttractLists(cfg *config.UserConfig, showStream bool) {
 			Playlist: cfgBgm.Playlist,
 			Playback: cfgBgm.Playback,
 		}
-		bgmStop = make(chan struct{})
-		go func() {
-			for {
-				select {
-				case <-bgmStop:
-					return
-				default:
-					track := bgmPlayer.GetRandomTrack()
-					if track == "" {
-						time.Sleep(1 * time.Second)
-						continue
-					}
-					bgmPlayer.Play(track)
-				}
-			}
-		}()
+		go bgmPlayer.StartLoop()
 	}
 
 	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
@@ -119,9 +103,8 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 	}
 
 	// 🎵 Stop background music before starting first game
-	if bgmStop != nil {
-		close(bgmStop)
-		bgmStop = nil
+	if bgmPlayer != nil {
+		bgmPlayer.StopLoop()
 		bgmPlayer = nil
 	}
 
