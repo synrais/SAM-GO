@@ -21,7 +21,7 @@ var AttractTimer *time.Timer
 // Prepare + Init
 // -----------------------------
 
-// PrepareAttractLists builds gamelists, applies filters, then starts InitAttract.
+// PrepareAttractLists builds gamelists in RAM, applies filters, then starts InitAttract.
 func PrepareAttractLists(cfg *config.UserConfig) {
 	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
 	if CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
@@ -29,11 +29,14 @@ func PrepareAttractLists(cfg *config.UserConfig) {
 		os.Exit(1)
 	}
 
-	files, _ := filepath.Glob(filepath.Join(config.GamelistDir(), "*_gamelist.txt"))
+	// 🔥 RAM-only gamelist keys
+	files := ListKeys()
 	if len(files) == 0 {
-		fmt.Println("[Attract] No gamelists found.")
+		fmt.Println("[Attract] No gamelists found in memory.")
 		os.Exit(1)
 	}
+
+	fmt.Printf("[DEBUG] Found %d gamelists in memory: %v\n", len(files), files)
 
 	include, err := ExpandGroups(cfg.Attract.Include)
 	if err != nil {
@@ -46,11 +49,16 @@ func PrepareAttractLists(cfg *config.UserConfig) {
 		os.Exit(1)
 	}
 
+	fmt.Printf("[DEBUG] Include groups expanded to: %v\n", include)
+	fmt.Printf("[DEBUG] Exclude groups expanded to: %v\n", exclude)
+
 	files = FilterAllowed(files, include, exclude)
 	if len(files) == 0 {
 		fmt.Println("[Attract] No allowed gamelists after filtering")
 		os.Exit(1)
 	}
+
+	fmt.Printf("[DEBUG] Allowed gamelists after filtering: %v\n", files)
 
 	InitAttract(cfg, files)
 }
