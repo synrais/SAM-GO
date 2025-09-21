@@ -2,6 +2,7 @@ package attract
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -18,7 +19,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	savedTimestamps, _ := loadSavedTimestamps(gamelistDir)
 	var newTimestamps []SavedTimestamp
 
-	// 🔥 reset RAM caches first
+	// reset RAM caches first
 	if !quiet {
 		fmt.Println("[DEBUG] Resetting in-RAM caches (lists + GameIndex)")
 	}
@@ -165,7 +166,6 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 					if !quiet {
 						fmt.Printf("[DEBUG] %s reloaded gamelist with %d entries\n", system.Id, len(lines))
 					}
-					// reuse disk gamelist, reapply filters for cache only
 					stage2, c2 := Stage2Filters(lines)
 					stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
 					SetList(GamelistFilename(system.Id), stage3)
@@ -191,12 +191,15 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 
 	gi := GetGameIndex()
 
+	masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
+	indexPath := filepath.Join(gamelistDir, "GameIndex")
+
 	if freshCount > 0 {
-		// Only write if there were changes
+		// Always write when fresh systems exist
 		if !quiet {
 			fmt.Printf("[DEBUG] Writing Masterlist with %d lines\n", len(master))
 		}
-		_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "Masterlist.txt"), master)
+		_ = WriteLinesIfChanged(masterPath, master)
 
 		giLines := []string{}
 		for _, entry := range gi {
@@ -206,16 +209,39 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		if !quiet {
 			fmt.Printf("[DEBUG] Writing GameIndex with %d entries\n", len(gi))
 		}
-		_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "GameIndex"), giLines)
+		_ = WriteLinesIfChanged(indexPath, giLines)
 
 		if !quiet {
 			fmt.Printf("[DEBUG] Saving %d updated timestamps\n", len(newTimestamps))
 		}
 		_ = saveTimestamps(gamelistDir, newTimestamps)
+
 	} else {
-		// Skip disk writes entirely
-		if !quiet {
-			fmt.Println("[DEBUG] No fresh systems → skipped writing Masterlist/GameIndex/timestamps to disk")
+		// No fresh systems, only write if files are missing
+		missingMaster := !FileExists(masterPath)
+		missingIndex := !FileExists(indexPath)
+
+		if missingMaster || missingIndex {
+			if missingMaster {
+				if !quiet {
+					fmt.Printf("[DEBUG] Masterlist missing → writing %d lines\n", len(master))
+				}
+				_ = WriteLinesIfChanged(masterPath, master)
+			}
+			if missingIndex {
+				giLines := []string{}
+				for _, entry := range gi {
+					giLines = append(giLines, fmt.Sprintf("%s|%s|%s|%s",
+						entry.SystemID, entry.Name, entry.Ext, entry.Path))
+				}
+				if !quiet {
+					fmt.Printf("[DEBUG] GameIndex missing → writing %d entries\n", len(gi))
+				}
+				_ = WriteLinesIfChanged(indexPath, giLines)
+			}
+			_ = saveTimestamps(gamelistDir, newTimestamps)
+		} else if !quiet {
+			fmt.Println("[DEBUG] No fresh systems and cache files present → skipped writing Masterlist/GameIndex/timestamps")
 		}
 	}
 
