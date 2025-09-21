@@ -2,7 +2,6 @@ package attract
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -12,7 +11,13 @@ import (
 )
 
 // CreateGamelists builds all gamelists, masterlist, and game index.
-func CreateGamelists(cfg *config.UserConfig, gamelistDir string, forceRebuild bool) error {
+//
+// Args:
+//   cfg         - user config
+//   gamelistDir - folder for lists
+//   systemPaths - results of games discovery
+//   quiet       - suppress output if true
+func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []games.PathResult, quiet bool) int {
 	start := time.Now()
 
 	// load saved folder timestamps
@@ -23,15 +28,18 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, forceRebuild bo
 	ResetAll()
 	ResetGameIndex()
 
-	allSystems := games.AllSystems()
+	totalGames := 0
 	freshCount := 0
 	rebuildCount := 0
 	reuseCount := 0
 
-	for _, system := range allSystems {
-		romPath := system.Path
+	for _, sp := range systemPaths {
+		system := sp.System
+		romPath := sp.Path
 		if romPath == "" {
-			fmt.Printf("[List] %s skipped (no path)\n", system.Id)
+			if !quiet {
+				fmt.Printf("[List] %s skipped (no path)\n", system.Id)
+			}
 			continue
 		}
 
@@ -40,9 +48,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, forceRebuild bo
 
 		// decide action
 		action := "reused"
-		if forceRebuild {
-			action = "rebuilt"
-		} else if modified {
+		if modified {
 			action = "fresh"
 		}
 
@@ -50,9 +56,13 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, forceRebuild bo
 		gamelistPath := filepath.Join(gamelistDir, GamelistFilename(system.Id))
 
 		switch action {
-		case "fresh", "rebuilt":
+		case "fresh":
 			// scan filesystem for games
-			files := utils.ScanForGames(romPath)
+			files, err := games.GetFiles(system.Id, romPath)
+			if err != nil {
+				fmt.Printf("[List] %s\n", err.Error())
+				continue
+			}
 
 			// filter extensions
 			files = FilterExtensions(files, system.Id, cfg)
@@ -69,15 +79,14 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, forceRebuild bo
 			// update index
 			UpdateGameIndex(system.Id, files)
 
-			if action == "fresh" {
-				freshCount++
-			} else {
-				rebuildCount++
-			}
+			totalGames += len(files)
+			freshCount++
 
-			fmt.Printf("[List] %s Disk:%d Cache:%d (White:%d Black:%d Static:%d Folder:%d File:%d) [%s]\n",
-				system.Id, len(files), len(files),
-				counts["White"], counts["Black"], counts["Static"], counts["Folder"], counts["File"], action)
+			if !quiet {
+				fmt.Printf("[List] %-12s Disk:%d Cache:%d (White:%d Black:%d Static:%d Folder:%d File:%d) [fresh]\n",
+					system.Id, len(files), len(files),
+					counts["White"], counts["Black"], counts["Static"], counts["Folder"], counts["File"])
+			}
 
 			// update timestamp
 			newTimestamps = updateTimestamp(newTimestamps, system.Id, romPath, latestMod)
@@ -96,9 +105,13 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, forceRebuild bo
 					// update index
 					UpdateGameIndex(system.Id, lines)
 
-					fmt.Printf("[List] %s Cache:%d (White:%d Black:%d Static:%d Folder:%d File:%d) [reused]\n",
-						system.Id, len(lines),
-						counts["White"], counts["Black"], counts["Static"], counts["Folder"], counts["File"])
+					totalGames += len(lines)
+
+					if !quiet {
+						fmt.Printf("[List] %-12s Cache:%d (White:%d Black:%d Static:%d Folder:%d File:%d) [reused]\n",
+							system.Id, len(lines),
+							counts["White"], counts["Black"], counts["Static"], counts["Folder"], counts["File"])
+					}
 				} else {
 					fmt.Printf("[WARN] Could not reload gamelist for %s: %v\n", system.Id, err)
 				}
@@ -115,7 +128,8 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, forceRebuild bo
 
 	// build masterlist + index
 	master := []string{}
-	for _, sys := range allSystems {
+	for _, sp := range systemPaths {
+		sys := sp.System
 		list := GetList(GamelistFilename(sys.Id))
 		if len(list) == 0 {
 			continue
@@ -138,13 +152,15 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, forceRebuild bo
 	// save updated timestamps (only if changed)
 	_ = saveTimestamps(gamelistDir, newTimestamps)
 
-	fmt.Printf("[List] Masterlist contains %d titles\n", countGames(master))
-	fmt.Printf("[List] GameIndex contains %d titles\n", len(gi))
-	fmt.Printf("[List] Done in %.1fs (%d fresh, %d rebuilt, %d reused systems)\n",
-		time.Since(start).Seconds(), freshCount, rebuildCount, reuseCount)
+	if !quiet {
+		fmt.Printf("[List] Masterlist contains %d titles\n", countGames(master))
+		fmt.Printf("[List] GameIndex contains %d titles\n", len(gi))
+		fmt.Printf("[List] Done in %.1fs (%d fresh, %d rebuilt, %d reused systems)\n",
+			time.Since(start).Seconds(), freshCount, rebuildCount, reuseCount)
+	}
 
 	if len(gi) == 0 {
-		return fmt.Errorf("[Attract] List build failed: no games indexed")
+		fmt.Println("[Attract] List build failed: no games indexed")
 	}
-	return nil
+	return totalGames
 }
