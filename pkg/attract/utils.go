@@ -405,40 +405,42 @@ func loadSavedTimestamps(gamelistDir string) ([]SavedTimestamp, error) {
 }
 
 // isFolderModified checks if any subfolder was modified since saved timestamp.
-func isFolderModified(systemID, path string, saved []SavedTimestamp) (bool, time.Time, error) {
-	var latestMod time.Time
+func isFolderModified(systemId, root string, saved map[string]time.Time) (bool, time.Time, error) {
+    var latestMod time.Time
+    modified := false
 
-	err := filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		mod := info.ModTime()
-		if mod.After(latestMod) {
-			latestMod = mod
-		}
-		return nil
-	})
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, time.Time{}, nil
-		}
-		return false, time.Time{}, fmt.Errorf("[Modtime] Walk failed for %s: %w", path, err)
-	}
+    err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+        if err != nil {
+            return err
+        }
 
-	for _, ts := range saved {
-		if ts.SystemID == systemID && ts.Path == path {
-			return latestMod.After(ts.ModTime), latestMod, nil
-		}
-	}
+        // limit depth: count path separators relative to root
+        rel, _ := filepath.Rel(root, path)
+        depth := strings.Count(rel, string(os.PathSeparator))
+        if depth > 2 {
+            return fs.SkipDir // skip anything deeper than depth 2
+        }
 
-	return true, latestMod, nil
+        info, err := d.Info()
+        if err != nil {
+            return nil
+        }
+
+        modTime := info.ModTime()
+        if modTime.After(latestMod) {
+            latestMod = modTime
+        }
+        return nil
+    })
+    if err != nil {
+        return false, time.Time{}, err
+    }
+
+    prev, ok := saved[systemId+":"+root]
+    if !ok || latestMod.After(prev) {
+        modified = true
+    }
+    return modified, latestMod, nil
 }
 
 // updateTimestamp updates or adds entry to SavedTimestamp list.
