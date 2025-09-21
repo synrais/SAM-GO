@@ -149,6 +149,7 @@ type Player struct {
 	Playing  string
 	Playlist *string
 	Playback string
+	cmd      *exec.Cmd
 }
 
 // history management
@@ -165,6 +166,8 @@ func (p *Player) addHistory(track string, total int) {
 
 func (p *Player) playFile(cmd ...string) {
 	c := exec.Command(cmd[0], cmd[1:]...)
+	p.cmd = c
+
 	stdout, _ := c.StdoutPipe()
 	c.Stderr = c.Stdout
 	_ = c.Start()
@@ -174,6 +177,7 @@ func (p *Player) playFile(cmd ...string) {
 		LogMsg(scanner.Text(), false)
 	}
 	c.Wait()
+	p.cmd = nil
 }
 
 func (p *Player) Play(track string) {
@@ -247,8 +251,8 @@ func (p *Player) GetRandomTrack() string {
 
 // --- Loop control ---
 var (
-	stopCh   chan struct{}
-	stopMu   sync.Mutex
+	stopCh chan struct{}
+	stopMu sync.Mutex
 )
 
 func (p *Player) StartLoop() {
@@ -282,4 +286,9 @@ func (p *Player) StopLoop() {
 		close(stopCh)
 		stopCh = nil
 	}
+	if p.cmd != nil && p.cmd.Process != nil {
+		_ = p.cmd.Process.Kill()
+	}
+	p.cmd = nil
+	p.Playing = ""
 }
