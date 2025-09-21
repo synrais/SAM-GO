@@ -375,16 +375,28 @@ type SavedTimestamp struct {
 }
 
 // saveTimestamps writes JSON modtime cache to disk.
+// It only writes if the new content differs from the old content.
 func saveTimestamps(gamelistDir string, timestamps []SavedTimestamp) error {
-	data, err := json.MarshalIndent(timestamps, "", "  ")
-	if err != nil {
-		return fmt.Errorf("[Modtime] Failed to encode timestamps: %w", err)
-	}
-	path := filepath.Join(gamelistDir, "Modtime")
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("[Modtime] Failed to save timestamps: %w", err)
-	}
-	return nil
+    path := filepath.Join(gamelistDir, "Modtime")
+
+    // Encode new data
+    data, err := json.MarshalIndent(timestamps, "", "  ")
+    if err != nil {
+        return fmt.Errorf("[Modtime] Failed to encode timestamps: %w", err)
+    }
+
+    // Compare against existing file (if it exists)
+    if old, err := os.ReadFile(path); err == nil {
+        if string(old) == string(data) {
+            return nil // identical → skip write
+        }
+    }
+
+    // Write only if changed
+    if err := os.WriteFile(path, data, 0644); err != nil {
+        return fmt.Errorf("[Modtime] Failed to save timestamps: %w", err)
+    }
+    return nil
 }
 
 // loadSavedTimestamps reads JSON modtime cache from disk.
