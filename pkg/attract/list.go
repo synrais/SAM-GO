@@ -1,249 +1,113 @@
 package attract
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
-	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// CreateGamelists builds all gamelists from scratch or reuses existing ones.
-//
-// Process overview:
-//   1. Print startup state (RAM-only vs SD writes).
-//   2. Load saved folder timestamps for change detection.
-//   3. Build system→paths map.
-//   4. Load Masterlist + GameIndex from disk (for reuse).
-//   5. For each system:
-//        a) Check if system folder modified.
-//        b) If modified or missing gamelist → full rebuild (dedupe, filter, update Masterlist/GameIndex).
-//        c) Else (unchanged) → reuse gamelist: only re-filter into cache.
-//   6. Save updated timestamps.
-//   7. If any fresh/rebuilt → write Masterlist + GameIndex back to disk.
-//   8. Print summary.
-//
-// Returns the total number of games indexed across all systems.
-func CreateGamelists(cfg *config.UserConfig,
-	gamelistDir string,
-	systemPaths []games.PathResult,
-	quiet bool) int {
+// -----------------------------
+// Gamelist builder
+// -----------------------------
 
+// BuildSystemList builds or reuses a gamelist for one system.
+func BuildSystemList(cfg *config.UserConfig, system games.System, forceRebuild bool, ramOnly bool) (int, map[string]int, string, error) {
 	start := time.Now()
-	if !quiet {
-		if cfg.List.RamOnly {
-			fmt.Println("[List] Building lists in RAM-only mode (no SD writes)...")
-		} else {
-			fmt.Println("[List] Scanning system folders...")
+	counts := map[string]int{"White": 0, "Black": 0, "Static": 0, "Folder": 0, "File": 0}
+
+	// Paths
+	systemDir := filepath.Join(cfg.Roms.BaseDir, system.Path)
+	gamelistDir := config.GamelistDir()
+	gamelistFile := filepath.Join(gamelistDir, GamelistFilename(system.Id))
+
+	// Detect if gamelist already exists
+	if !forceRebuild && FileExists(gamelistFile) {
+		lines, err := ReadLines(gamelistFile)
+		if err != nil {
+			return 0, counts, "[error]", fmt.Errorf("read gamelist: %w", err)
 		}
+		SetList(filepath.Base(gamelistFile), lines)
+		UpdateGameIndex(system.Id, lines)
+		return len(lines), counts, "[reused]", nil
 	}
 
-	totalGames := 0
-	fresh, rebuilt, reused := 0, 0, 0
-	var emptySystems []string
-	anyRebuilt := false
-
-	// 2. Load saved modtimes for each system folder.
-	savedTimestamps, err := loadSavedTimestamps(gamelistDir)
+	// Scan ROMs
+	var files []string
+	err := filepath.Walk(systemDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[List] Error loading saved timestamps: %v\n", err)
-		return 0
-	}
-	updatedTimestamps := savedTimestamps
-
-	// 3. Build system → paths map.
-	systemPathMap := make(map[string][]string)
-	systemOrder := []string{}
-	for _, p := range systemPaths {
-		if _, ok := systemPathMap[p.System.Id]; !ok {
-			systemOrder = append(systemOrder, p.System.Id)
-		}
-		systemPathMap[p.System.Id] = append(systemPathMap[p.System.Id], p.Path)
+		return 0, counts, "[error]", fmt.Errorf("scan system: %w", err)
 	}
 
-	// 4. Load Masterlist + GameIndex from disk into RAM (for reuse).
-	masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
-	indexPath := filepath.Join(gamelistDir, "GameIndex")
+	// Apply filters
+	files, counts, _ = ApplyFilterlists(gamelistDir, system.Id, files, cfg)
 
-	var masterList []string
-	if utils.FileExists(masterPath) {
-		masterList, _ = utils.ReadLines(masterPath)
-	}
-	if utils.FileExists(indexPath) {
-		data, _ := os.ReadFile(indexPath)
-		var diskIndex []GameEntry
-		if err := json.Unmarshal(data, &diskIndex); err == nil {
-			ResetGameIndex()
-			for _, e := range diskIndex {
-				AppendGameIndex(e)
-			}
+	// Save to RAM + disk
+	SetList(GamelistFilename(system.Id), files)
+	if !ramOnly {
+		if err := WriteLinesIfChanged(gamelistFile, files); err != nil {
+			return 0, counts, "[error]", fmt.Errorf("write gamelist: %w", err)
 		}
 	}
 
-	// 5. Process each system.
-	for _, systemId := range systemOrder {
-		paths := systemPathMap[systemId]
-		sysStart := time.Now()
+	// Update GameIndex
+	UpdateGameIndex(system.Id, files)
 
-		gamelistPath := filepath.Join(gamelistDir, utils.GamelistFilename(systemId))
-		exists := utils.FileExists(gamelistPath)
+	elapsed := time.Since(start).Seconds()
+	return len(files), counts, fmt.Sprintf("[built %.2fs]", elapsed), nil
+}
 
-		var rawFiles []string
-		modified := false
+// -----------------------------
+// Masterlist + Index rebuild
+// -----------------------------
 
-		// 5a. Check folder modtimes.
-		for _, path := range paths {
-			m, currentMod, err := isFolderModified(systemId, path, savedTimestamps)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[List] Error checking %s: %v\n", path, err)
-				continue
-			}
-			if m {
-				modified = true
-				updatedTimestamps = updateTimestamp(updatedTimestamps, systemId, path, currentMod)
-			}
+// BuildMasterAndIndex builds Masterlist.txt and GameIndex from all systems.
+func BuildMasterAndIndex(gamelistDir string, ramOnly bool) (int, int, error) {
+	var master []string
+	ResetGameIndex()
+
+	// Walk through cached lists
+	for _, key := range ListKeys() {
+		lines := GetList(key)
+		if len(lines) == 0 {
+			continue
 		}
+		systemID := strings.TrimSuffix(key, "_gamelist.txt")
 
-		// 5b. Fresh/rebuild branch.
-		if modified || !exists {
-			anyRebuilt = true
+		// Append system header
+		master = append(master, "# SYSTEM: "+systemID)
+		master = append(master, lines...)
 
-			// Gather raw files from system paths.
-			for _, path := range paths {
-				files, err := games.GetFiles(systemId, path)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "[List] %s\n", err.Error())
-					continue
-				}
-				rawFiles = append(rawFiles, files...)
-			}
+		// Update GameIndex
+		UpdateGameIndex(systemID, lines)
+	}
 
-			// Deduplicate.
-			deduped := utils.DedupeFiles(rawFiles)
+	// Count
+	gameCount := CountGames(master)
+	indexCount := len(GetGameIndex())
 
-			// Extension filter.
-			beforeDisk := len(deduped)
-			diskFiltered := FilterExtensions(deduped, systemId, cfg)
-			extRemoved := beforeDisk - len(diskFiltered)
-
-			// Apply filterlists.
-			cacheFiles, counts, _ := ApplyFilterlists(gamelistDir, systemId, diskFiltered, cfg)
-			if len(cacheFiles) == 0 {
-				emptySystems = append(emptySystems, systemId)
-				continue
-			}
-
-			// Sort cache slice.
-			sort.Strings(cacheFiles)
-			totalGames += len(cacheFiles)
-
-			// Write gamelist (unless RAM-only).
-			if !cfg.List.RamOnly {
-				_ = utils.WriteLinesIfChanged(
-					filepath.Join(gamelistDir, utils.GamelistFilename(systemId)),
-					diskFiltered,
-				)
-			}
-
-			if exists && !cfg.List.RamOnly {
-				rebuilt++
-			} else {
-				fresh++
-			}
-
-			// Progress logging.
-			if !quiet {
-				fmt.Printf(
-					"[List] %-12s Disk: %d → %d (Ext:%d, Dupes:%d) Cache: %d → %d "+
-						"(White:%d, Black:%d, Static:%d, Folder:%d, File:%d) (%.2fs) [%s]\n",
-					systemId,
-					len(rawFiles), len(diskFiltered),
-					extRemoved, len(rawFiles)-beforeDisk,
-					len(diskFiltered), len(cacheFiles),
-					counts["White"], counts["Black"], counts["Static"], counts["Folder"], counts["File"],
-					time.Since(sysStart).Seconds(),
-					func() string {
-						if exists && !cfg.List.RamOnly {
-							return "rebuilt"
-						}
-						return "fresh"
-					}(),
-				)
-			}
-
-			// Update Masterlist + GameIndex in RAM.
-			masterList = utils.RemoveSystemBlock(masterList, systemId)
-			masterList = append(masterList, "# SYSTEM: "+systemId+" #")
-			masterList = append(masterList, rawFiles...)
-			utils.UpdateGameIndex(systemId, deduped)
-
-		} else {
-			// 5c. Reuse branch: no Masterlist/GameIndex edits.
-			lines := GetList(utils.GamelistFilename(systemId))
-
-			// Re-apply filters for cache freshness.
-			beforeDisk := len(lines)
-			diskFiltered := FilterExtensions(lines, systemId, cfg)
-			extRemoved := beforeDisk - len(diskFiltered)
-			cacheFiles, counts, _ := ApplyFilterlists(gamelistDir, systemId, diskFiltered, cfg)
-
-			totalGames += len(cacheFiles)
-			reused++
-
-			if !quiet {
-				fmt.Printf(
-					"[List] %-12s Disk: %d → %d (Ext:%d) Cache: %d → %d "+
-						"(White:%d, Black:%d, Static:%d, Folder:%d, File:%d) (%.2fs) [reused]\n",
-					systemId,
-					beforeDisk, len(diskFiltered),
-					extRemoved,
-					len(diskFiltered), len(cacheFiles),
-					counts["White"], counts["Black"], counts["Static"], counts["Folder"], counts["File"],
-					time.Since(sysStart).Seconds(),
-				)
-			}
+	// Write Masterlist + GameIndex only if changed
+	if !ramOnly {
+		if err := WriteLinesIfChanged(filepath.Join(gamelistDir, "Masterlist.txt"), master); err != nil {
+			return 0, 0, fmt.Errorf("write masterlist: %w", err)
+		}
+		if err := WriteJSONIfChanged(filepath.Join(gamelistDir, "GameIndex"), GetGameIndex()); err != nil {
+			return 0, 0, fmt.Errorf("write gameindex: %w", err)
 		}
 	}
 
-	// 6. Save updated timestamps (only if changed).
-	if err := saveTimestamps(gamelistDir, updatedTimestamps); err != nil {
-		fmt.Fprintf(os.Stderr, "[List] Failed to save timestamps: %v\n", err)
-	}
-
-	// 7. Only write Masterlist + GameIndex if rebuild/fresh occurred.
-	if anyRebuilt {
-		SetList("Masterlist.txt", masterList)
-		if !cfg.List.RamOnly {
-			_ = utils.WriteLinesIfChanged(masterPath, masterList)
-			_ = utils.WriteJSONIfChanged(indexPath, GetGameIndex())
-		}
-	}
-
-	// 8. Summary.
-	if !quiet {
-		fmt.Printf("[List] Masterlist contains %d titles\n", utils.CountGames(masterList))
-		fmt.Printf("[List] GameIndex contains %d titles\n", len(GetGameIndex()))
-
-		state := "reused"
-		if fresh > 0 || rebuilt > 0 {
-			state = "fresh"
-		}
-		fmt.Printf("[List] %-12s %7d entries [%s]\n", "Masterlist.txt", utils.CountGames(masterList), state)
-		fmt.Printf("[List] %-12s %7d entries [%s]\n", "GameIndex", len(GetGameIndex()), state)
-
-		taken := time.Since(start).Seconds()
-		fmt.Printf("[List] Done: %d games in %.1fs (%d fresh, %d rebuilt, %d reused systems)\n",
-			totalGames, taken, fresh, rebuilt, reused)
-		if len(emptySystems) > 0 {
-			fmt.Printf("[List] Empty systems: %s\n", strings.Join(emptySystems, ", "))
-		}
-	}
-
-	return totalGames
+	return gameCount, indexCount, nil
 }
