@@ -150,13 +150,27 @@ func WriteJSONIfChanged(path string, v any) error {
 	return WriteFileIfChanged(path, data)
 }
 
-// WriteFileIfChanged writes the provided data when the file contents change.
+// WriteFileIfChanged writes the provided data only if it differs from the existing file.
+// Uses a streaming hash instead of loading entire file into RAM.
 func WriteFileIfChanged(path string, data []byte) error {
-	if old, err := os.ReadFile(path); err == nil {
-		if string(old) == string(data) {
-			return nil
+	f, err := os.Open(path)
+	if err == nil {
+		defer f.Close()
+
+		// Hash existing file
+		oldHash := fnv.New64a()
+		if _, err := io.Copy(oldHash, f); err == nil {
+			// Hash new data
+			newHash := fnv.New64a()
+			newHash.Write(data)
+
+			if bytes.Equal(oldHash.Sum(nil), newHash.Sum(nil)) {
+				// identical → no write
+				return nil
+			}
 		}
 	}
+	// file missing or different → write fresh
 	return os.WriteFile(path, data, 0o644)
 }
 
