@@ -902,7 +902,7 @@ var Systems = map[string]System{
 		ReleaseDate:  "1983-07-15",
 		SetName:      "SG1000",
 		Folder:       []string{"SG1000", "Coleco", "SMS"},
-		Rbf:          "_Console/ColecoVision",
+		Rbf:          "_Console/SMS",
 		Slots: []Slot{
 			{
 				Label: "SG-1000",
