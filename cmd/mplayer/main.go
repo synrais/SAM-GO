@@ -5,16 +5,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/synrais/SAM-GO/pkg/assets"
 )
 
 const (
-	playerDir = "/tmp/mrext-mplayer"
-	menuCore  = "/media/fat/menu.rbf"
+	playerDir            = "/tmp/mrext-mplayer"
+	menuCore             = "/media/fat/menu.rbf"
+	misterCmdDevice      = "/dev/MiSTer_cmd"
+	samvideoDisplayWait  = 2 * time.Second // adjust if needed
+	defaultResolution    = "640 480"       // fallback resolution
 )
 
-// --- helpers ---
 func runCmd(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Stdout = os.Stdout
@@ -22,63 +25,40 @@ func runCmd(name string, args ...string) error {
 	return cmd.Run()
 }
 
-func killMister() { _ = exec.Command("killall", "-q", "MiSTer").Run() }
-
-func fbset(width, height int) error {
-	return runCmd("fbset", "-g",
-		fmt.Sprint(width), fmt.Sprint(height),
-		fmt.Sprint(width), fmt.Sprint(height),
-		"32")
-}
-
-func setVirtualTerm(id string) error { return runCmd("chvt", id) }
-
-func writeTty(id string, s string) error {
-	tty := "/dev/tty" + id
-	f, err := os.OpenFile(tty, os.O_WRONLY, 0)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = f.WriteString(s)
-	return err
-}
-
-func hideCursor(vt string) { _ = writeTty(vt, "\033[?25l") }
-func showCursor(vt string) { _ = writeTty(vt, "\033[?25h") }
-
-// --- setup/cleanup ---
 func setupPlayer() error {
 	if err := os.MkdirAll(playerDir, 0755); err != nil {
 		return err
 	}
-	// Extract embedded mplayer.zip into /tmp/mrext-mplayer
 	return assets.ExtractZipBytes(assets.MPlayerZip, playerDir)
 }
 
-func setupRemotePlay() error {
-	killMister()
-	if err := fbset(640, 480); err != nil {
-		return fmt.Errorf("fbset failed: %w", err)
-	}
-	if err := setVirtualTerm("9"); err != nil {
-		return fmt.Errorf("chvt 9 failed: %w", err)
-	}
-	hideCursor("9")
-	return nil
+// tell MiSTer to load the menu core
+func loadMenuCore() error {
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("echo load_core %s > %s", menuCore, misterCmdDevice))
+	return cmd.Run()
 }
 
-func cleanupRemotePlay() {
-	showCursor("9")
-	_ = setVirtualTerm("1")
-	// Relaunch MiSTer menu core
-	_ = runCmd(menuCore)
+// set resolution via vmode
+func setResolution(resSpace string) error {
+	if resSpace == "" {
+		resSpace = defaultResolution
+	}
+	return runCmd("vmode", "-r", resSpace, "rgb32")
 }
 
-// --- player ---
-func runMplayer(path string) error {
+// run mplayer with nice -n -20 and LD_LIBRARY_PATH
+func runMplayer(path string, nosound bool) error {
 	playerPath := filepath.Join(playerDir, "mplayer")
-	cmd := exec.Command(playerPath, path)
+
+	args := []string{
+		"-msglevel", "all=0:statusline=5",
+	}
+	if nosound {
+		args = append(args, "-nosound")
+	}
+	args = append(args, path)
+
+	cmd := exec.Command("nice", append([]string{"-n", "-20", playerPath}, args...)...)
 	cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+playerDir)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -86,29 +66,34 @@ func runMplayer(path string) error {
 	return cmd.Run()
 }
 
-// --- main ---
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: mplayer <moviefile>")
 		os.Exit(1)
 	}
-	movie := os.Args[1]
+	videoFile := os.Args[1]
 
-	// Ensure mplayer + libs are in place
+	// Extract mplayer + libs
 	if err := setupPlayer(); err != nil {
 		panic(err)
 	}
 
-	// Prepare framebuffer/VT
-	if err := setupRemotePlay(); err != nil {
+	// Ask MiSTer to load menu core
+	if err := loadMenuCore(); err != nil {
+		panic(fmt.Errorf("failed to load menu core: %w", err))
+	}
+	time.Sleep(samvideoDisplayWait)
+
+	// Set resolution (for now static, later detect like SAM does)
+	if err := setResolution(defaultResolution); err != nil {
+		fmt.Println("warning: failed to set resolution:", err)
+	}
+
+	// Run mplayer
+	if err := runMplayer(videoFile, false); err != nil {
 		panic(err)
 	}
 
-	// Run video
-	if err := runMplayer(movie); err != nil {
-		panic(err)
-	}
-
-	// Restore MiSTer menu
-	cleanupRemotePlay()
+	// After playback, MiSTer will still be in menu core
+	fmt.Println("Playback finished, back in MiSTer menu.")
 }
