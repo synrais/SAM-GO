@@ -3,7 +3,6 @@ package attract
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/synrais/SAM-GO/pkg/config"
@@ -30,10 +29,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	gameIndex := []GameEntry{}
 	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "GameIndex")); err == nil {
 		for _, l := range lines {
-			parts := strings.SplitN(l, "|", 4)
-			for i := range parts {
-				parts[i] = strings.TrimSpace(parts[i])
-			}
+			parts := utils.SplitNTrim(l, "|", 4)
 			if len(parts) == 4 {
 				gameIndex = append(gameIndex, GameEntry{
 					SystemID: parts[0],
@@ -47,7 +43,6 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 
 	// reset RAM caches
 	ResetAll()
-	ResetGameIndex()
 
 	totalGames := 0
 	freshCount := 0
@@ -83,7 +78,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			master = append(master, stage1...)
 
 			// Stage 2 Filters
-			stage2, c2 := Stage2Filters(stage1)
+			stage2, c2 := Stage2Filters(stage1, system.Id)
 			UpdateGameIndex(system.Id, stage2)
 			_ = WriteLinesIfChanged(gamelistPath, stage2)
 
@@ -107,7 +102,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 				lines, err := utils.ReadLines(gamelistPath)
 				if err == nil {
 					// reuse disk gamelist, reapply filters for cache only
-					stage2, c2 := Stage2Filters(lines)
+					stage2, c2 := Stage2Filters(lines, system.Id)
 					stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
 					SetList(GamelistFilename(system.Id), stage3)
 
