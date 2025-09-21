@@ -19,7 +19,7 @@ var (
 	lists   = make(map[string][]string) // working copy (mutates as games are consumed)
 	masters = make(map[string][]string) // pristine originals (never touched)
 
-	gameIndex []GameEntry // full search index, built by list.go
+	gameIndex []GameEntry // full search index, built by list.go or reloaded from disk
 )
 
 // GameEntry is one normalized entry in the GameIndex.
@@ -34,8 +34,8 @@ type GameEntry struct {
 // List cache (gamelists, masterlist, history)
 // -----------------------------
 
-// ReloadAll clears and reloads all .txt files from a directory into RAM.
-// Both working and master copies are initialized, and GameIndex is reset too.
+// ReloadAll clears and reloads all .txt files and GameIndex from a directory into RAM.
+// Both working and master copies are initialized, and GameIndex is rebuilt too.
 func ReloadAll(dir string) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -43,14 +43,41 @@ func ReloadAll(dir string) error {
 	// Reset everything
 	lists = make(map[string][]string)
 	masters = make(map[string][]string)
-	gameIndex = []GameEntry{} // 🔥 full wipe of index too
+	gameIndex = []GameEntry{} // 🔥 also reset index
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf("reload cache: %w", err)
 	}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".txt") {
+		if e.IsDir() {
+			continue
+		}
+
+		// 🔥 Special case: rebuild GameIndex from its file
+		if e.Name() == "GameIndex" {
+			path := filepath.Join(dir, e.Name())
+			lines, err := utils.ReadLines(path)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[WARN] failed to read %s: %v\n", path, err)
+				continue
+			}
+			for _, l := range lines {
+				parts := strings.SplitN(l, "|", 4)
+				if len(parts) == 4 {
+					gameIndex = append(gameIndex, GameEntry{
+						SystemID: parts[0],
+						Name:     parts[1],
+						Ext:      parts[2],
+						Path:     parts[3],
+					})
+				}
+			}
+			continue
+		}
+
+		// Normal .txt list files
+		if !strings.HasSuffix(e.Name(), ".txt") {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
@@ -137,4 +164,29 @@ func ResetGameIndex() {
 	mu.Lock()
 	defer mu.Unlock()
 	gameIndex = []GameEntry{}
+}
+
+// 🔥 ReloadGameIndexFromDisk repopulates index if it's empty (for reused runs).
+func ReloadGameIndexFromDisk(path string) {
+	mu.Lock()
+	defer mu.Unlock()
+	if len(gameIndex) > 0 {
+		return
+	}
+	lines, err := utils.ReadLines(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[WARN] failed to read %s: %v\n", path, err)
+		return
+	}
+	for _, l := range lines {
+		parts := strings.SplitN(l, "|", 4)
+		if len(parts) == 4 {
+			gameIndex = append(gameIndex, GameEntry{
+				SystemID: parts[0],
+				Name:     parts[1],
+				Ext:      parts[2],
+				Path:     parts[3],
+			})
+		}
+	}
 }
