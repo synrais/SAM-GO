@@ -18,19 +18,31 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	savedTimestamps, _ := loadSavedTimestamps(gamelistDir)
 	var newTimestamps []SavedTimestamp
 
-	// reset RAM caches first
+	// 🔥 reset RAM caches first
 	if !quiet {
 		fmt.Println("[DEBUG] Resetting in-RAM caches (lists + GameIndex)")
 	}
 	ResetAll()
 
-	// preload master + gameindex from disk if present
-	master, _ := utils.ReadLines(filepath.Join(gamelistDir, "Masterlist.txt"))
-	if !quiet {
+	// --- Preload Masterlist + GameIndex from disk ---
+	masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
+	indexPath := filepath.Join(gamelistDir, "GameIndex")
+
+	masterMissing := false
+	indexMissing := false
+
+	master, err := utils.ReadLines(masterPath)
+	if err != nil {
+		master = []string{}
+		masterMissing = true
+		if !quiet {
+			fmt.Println("[DEBUG] Masterlist missing → starting new in-RAM masterlist")
+		}
+	} else if !quiet {
 		fmt.Printf("[DEBUG] Preloaded Masterlist with %d lines\n", len(master))
 	}
 
-	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "GameIndex")); err == nil {
+	if lines, err := utils.ReadLines(indexPath); err == nil {
 		count := 0
 		for _, l := range lines {
 			parts := SplitNTrim(l, "|", 4)
@@ -47,8 +59,11 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		if !quiet {
 			fmt.Printf("[DEBUG] Preloaded GameIndex with %d entries\n", count)
 		}
-	} else if !quiet {
-		fmt.Printf("[DEBUG] No GameIndex file found, starting fresh\n")
+	} else {
+		indexMissing = true
+		if !quiet {
+			fmt.Println("[DEBUG] GameIndex missing → starting new in-RAM index")
+		}
 	}
 
 	totalGames := 0
@@ -188,15 +203,14 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		}
 	}
 
+	// --- Final writes ---
 	gi := GetGameIndex()
 
-	masterPath := filepath.Join(gamelistDir, "Masterlist.txt")
-	indexPath := filepath.Join(gamelistDir, "GameIndex")
-
-	if freshCount > 0 {
-		// Always write when fresh systems exist
+	if freshCount > 0 || masterMissing || indexMissing {
 		if !quiet {
 			fmt.Printf("[DEBUG] Writing Masterlist with %d lines\n", len(master))
+			fmt.Printf("[DEBUG] Writing GameIndex with %d entries\n", len(gi))
+			fmt.Printf("[DEBUG] Saving %d updated timestamps\n", len(newTimestamps))
 		}
 		_ = WriteLinesIfChanged(masterPath, master)
 
@@ -205,43 +219,11 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			giLines = append(giLines, fmt.Sprintf("%s|%s|%s|%s",
 				entry.SystemID, entry.Name, entry.Ext, entry.Path))
 		}
-		if !quiet {
-			fmt.Printf("[DEBUG] Writing GameIndex with %d entries\n", len(gi))
-		}
 		_ = WriteLinesIfChanged(indexPath, giLines)
-
-		if !quiet {
-			fmt.Printf("[DEBUG] Saving %d updated timestamps\n", len(newTimestamps))
-		}
 		_ = saveTimestamps(gamelistDir, newTimestamps)
 
-	} else {
-		// No fresh systems, only write if files are missing
-		missingMaster := !FileExists(masterPath)
-		missingIndex := !FileExists(indexPath)
-
-		if missingMaster || missingIndex {
-			if missingMaster {
-				if !quiet {
-					fmt.Printf("[DEBUG] Masterlist missing → writing %d lines\n", len(master))
-				}
-				_ = WriteLinesIfChanged(masterPath, master)
-			}
-			if missingIndex {
-				giLines := []string{}
-				for _, entry := range gi {
-					giLines = append(giLines, fmt.Sprintf("%s|%s|%s|%s",
-						entry.SystemID, entry.Name, entry.Ext, entry.Path))
-				}
-				if !quiet {
-					fmt.Printf("[DEBUG] GameIndex missing → writing %d entries\n", len(gi))
-				}
-				_ = WriteLinesIfChanged(indexPath, giLines)
-			}
-			_ = saveTimestamps(gamelistDir, newTimestamps)
-		} else if !quiet {
-			fmt.Println("[DEBUG] No fresh systems and cache files present → skipped writing Masterlist/GameIndex/timestamps")
-		}
+	} else if !quiet {
+		fmt.Println("[DEBUG] No fresh systems and cache already exists → skipped writing Masterlist/GameIndex/timestamps")
 	}
 
 	if !quiet {
