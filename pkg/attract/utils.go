@@ -114,21 +114,21 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 	return false
 }
 
-// PickRandomGame chooses a random game from the available files.
+// PickRandomGame chooses a random game from the in-RAM gamelists.
 func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
-	files, _ := filepath.Glob(filepath.Join(config.GamelistDir(), "*_gamelist.txt"))
-	if len(files) == 0 {
+	keys := ListKeys()
+	if len(keys) == 0 {
 		return ""
 	}
 
-	// Pick random gamelist
-	listKey := files[r.Intn(len(files))]
-	lines, err := utils.ReadLines(listKey)
-	if err != nil || len(lines) == 0 {
+	// Pick a random gamelist (system)
+	listKey := keys[r.Intn(len(keys))]
+	lines := GetList(listKey)
+	if len(lines) == 0 {
 		return ""
 	}
 
-	// Pick random entry
+	// Pick a random entry
 	index := 0
 	if cfg.Attract.Random {
 		index = r.Intn(len(lines))
