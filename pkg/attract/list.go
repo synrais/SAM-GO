@@ -69,10 +69,6 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 
 			diskLines, cacheLines, counts, _ := BuildSystemLists(gamelistDir, system.Id, files, cfg)
 
-			totalScanned += len(files)
-			totalDisk += len(diskLines)
-			totalCache += len(cacheLines)
-
 			// write gamelist (if changed)
 			_ = WriteLinesIfChanged(gamelistPath, diskLines)
 
@@ -101,9 +97,6 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 				lines, err := utils.ReadLines(gamelistPath)
 				if err == nil {
 					diskLines, cacheLines, counts, _ := BuildSystemLists(gamelistDir, system.Id, lines, cfg)
-
-					totalDisk += len(diskLines)
-					totalCache += len(cacheLines)
 					
 					// ensure on-disk list matches normalized disk copy
 					_ = WriteLinesIfChanged(gamelistPath, diskLines)
@@ -165,7 +158,6 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	if !quiet {
 		fmt.Printf("[List] Masterlist contains %d titles\n", CountGames(master))
 		fmt.Printf("[List] GameIndex contains %d titles\n", len(gi))
-		fmt.Printf("[List] Totals Scanned:%d Disk:%d Cache:%d\n", totalScanned, totalDisk, totalCache)
 		fmt.Printf("[List] Done in %.1fs (%d fresh, %d rebuilt, %d reused systems)\n",
 			time.Since(start).Seconds(), freshCount, rebuildCount, reuseCount)
 	}
