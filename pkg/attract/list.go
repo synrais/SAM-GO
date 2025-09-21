@@ -153,7 +153,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	_ = saveTimestamps(gamelistDir, newTimestamps)
 
 	if !quiet {
-		fmt.Printf("[List] Masterlist contains %d titles\n", countGames(master))
+		fmt.Printf("[List] Masterlist contains %d titles\n", CountGames(master))
 		fmt.Printf("[List] GameIndex contains %d titles\n", len(gi))
 		fmt.Printf("[List] Done in %.1fs (%d fresh, %d rebuilt, %d reused systems)\n",
 			time.Since(start).Seconds(), freshCount, rebuildCount, reuseCount)
