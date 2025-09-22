@@ -112,24 +112,6 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 	return LaunchCore(cfg, system)
 }
 
-func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error {
-	fmt.Println("[SIDELAUNCHER] AmigaCD32 launch starting…")
-
-	// --- Local helpers ---
-	unmount := func(p string) {
-		_ = exec.Command("umount", p).Run()
-	}
-
-	bindMount := func(src, dst string) error {
-		fmt.Printf("[AmigaCD32] bindMount: %s -> %s\n", src, dst)
-		_ = os.MkdirAll(filepath.Dir(dst), 0755)
-		cmd := exec.Command("mount", "--bind", src, dst)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("bind mount failed (%s -> %s): %v (output: %s)", src, dst, err, string(out))
-		}
-		return nil
-	}
-
 // --------------------------------------------------
 // AmigaCD32
 // --------------------------------------------------
