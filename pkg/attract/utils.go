@@ -200,27 +200,6 @@ func resetGlobalTicker(cfg *config.UserConfig, r *rand.Rand) {
 	ResetAttractTicker(wait)
 }
 
-// FilterAllowed applies include/exclude restrictions case-insensitively
-// for in-RAM gamelist keys (like "nes_gamelist.txt").
-func FilterAllowed(all []string, includeRaw, excludeRaw []string) []string {
-    include, _ := ExpandGroups(includeRaw)
-    exclude, _ := ExpandGroups(excludeRaw)
-
-    var filtered []string
-    for _, key := range all {
-        systemID := strings.TrimSuffix(key, "_gamelist.txt")
-
-        if len(include) > 0 && !ContainsInsensitive(include, systemID) {
-            continue
-        }
-        if ContainsInsensitive(exclude, systemID) {
-            continue
-        }
-        filtered = append(filtered, key)
-    }
-    return filtered
-}
-
 //
 // -----------------------------
 // Global Attract Ticker
