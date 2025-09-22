@@ -122,14 +122,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 
 	// --- Local helper ---
 	cleanPath := func(p string) string {
-		abs, err := filepath.Abs(p)
-		if err != nil {
-			return p
-		}
-		if strings.HasPrefix(abs, "/media/") {
-			return abs[len("/media/"):]
-		}
-		return abs
+		return strings.TrimPrefix(p, "media/")
 	}
 	// ----------------------
 
@@ -149,7 +142,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	pseudoRoot := sysPaths[0].Path
 	fmt.Printf("[AmigaCD32] Using system folder: %s\n", pseudoRoot)
 
-	// 3. Ensure config exists on disk
+	// 3. Ensure cfg file exists (we don’t read it, just make sure)
 	misterCfg := "/media/fat/config/AmigaCD32.cfg"
 	if _, err := os.Stat(misterCfg); os.IsNotExist(err) {
 		fmt.Printf("[AmigaCD32] No existing cfg at %s, writing blank one\n", misterCfg)
@@ -158,21 +151,17 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		}
 	}
 
-	// 4. Patch cfg in tmp
+	// 4. Patch cfg in tmp (always start from embedded template)
 	tmpCfg := filepath.Join(tmpDir, "AmigaCD32.cfg")
-	data, err := os.ReadFile(misterCfg)
-	if err != nil {
-		return fmt.Errorf("failed to read base cfg: %w", err)
-	}
+	data := make([]byte, len(assets.BlankAmigaCD32Cfg))
+	copy(data, assets.BlankAmigaCD32Cfg)
 
-	// Game path (strip /media prefix)
+	// Game path (strip media/ but keep leading /)
 	absGame, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("failed to resolve game path: %w", err)
 	}
-	if strings.HasPrefix(absGame, "/media/") {
-		absGame = absGame[len("/media/"):]
-	}
+	absGame = cleanPath(absGame)
 	fmt.Printf("[AmigaCD32] Patching game path = %s\n", absGame)
 
 	patch := func(marker, replacement string) error {
