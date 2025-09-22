@@ -114,15 +114,16 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 	return false
 }
 
-// PickRandomGame chooses a random game from the allowed in-RAM gamelists.
+// PickRandomGame chooses a random game from the filtered in-RAM gamelists.
 func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
-    if len(allowedLists) == 0 {
-        fmt.Println("[Attract] No allowed gamelists available.")
+    keys := ListKeys()
+    if len(keys) == 0 {
+        fmt.Println("[Attract] No gamelists available in memory.")
         return ""
     }
 
-    // Pick random gamelist from allowedLists
-    listKey := allowedLists[r.Intn(len(allowedLists))]
+    // Pick random gamelist
+    listKey := keys[r.Intn(len(keys))]
     lines := GetList(listKey)
     if len(lines) == 0 {
         return ""
@@ -131,7 +132,7 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
     // Pick random entry
     index := 0
     if cfg.Attract.Random {
-        index = r.Intn(len(lines))
+        index = r.Intn(len(lines)) // random entry
     }
     _, gamePath := utils.ParseLine(lines[index])
 
@@ -199,12 +200,8 @@ func resetGlobalTicker(cfg *config.UserConfig, r *rand.Rand) {
 	ResetAttractTicker(wait)
 }
 
-// Allowed gamelists after include/exclude filtering
-var allowedLists []string
-
 // FilterAllowed applies include/exclude restrictions case-insensitively
 // for in-RAM gamelist keys (like "nes_gamelist.txt").
-// Also updates the global allowedLists used by PickRandomGame.
 func FilterAllowed(all []string, includeRaw, excludeRaw []string) []string {
     include, _ := ExpandGroups(includeRaw)
     exclude, _ := ExpandGroups(excludeRaw)
@@ -221,9 +218,6 @@ func FilterAllowed(all []string, includeRaw, excludeRaw []string) []string {
         }
         filtered = append(filtered, key)
     }
-
-    // 🔹 update the global
-    allowedLists = filtered
     return filtered
 }
 
