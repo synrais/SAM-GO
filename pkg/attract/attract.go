@@ -51,7 +51,7 @@ func PrepareAttractLists(cfg *config.UserConfig, showStream bool) {
 
 	fmt.Printf("[DEBUG] Found %d gamelists in memory: %v\n", len(files), files)
 
-	// Filtering (includes ExpandGroups + global allowedLists assignment inside FilterAllowed)
+	// Filtering
 	files = FilterAllowed(files, cfg.Attract.Include, cfg.Attract.Exclude)
 	if len(files) == 0 {
 		fmt.Println("[Attract] No allowed gamelists after filtering")
@@ -81,7 +81,7 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	fmt.Println("[Attract] Running. Press ESC to exit.")
 
-	// Pick first game using Next()
+	// Pick first game
 	if first, ok := Next(cfg, r); ok {
 		fmt.Printf("[Attract] First pick -> %s\n", filepath.Base(first))
 	} else {
@@ -89,23 +89,23 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 		return
 	}
 
-	// 🎵 Stop background music with fade before starting first game
+	// 🎵 Stop background music before starting first game
 	if bgmPlayer != nil {
 		bgmPlayer.StopLoop()
 		bgmPlayer = nil
 	}
 
-	// 🔥 Start static detector with optional draining/printing
+	// 🔥 Start static detector
 	go func() {
 		for ev := range Stream(cfg) {
 			if showStream {
-				fmt.Println(ev.String()) // full diagnostic string
+				fmt.Println(ev.String())
 			}
 			// else: silently drain
 		}
 	}()
 
-	// Kick off the ticker for the first interval
+	// Kick off ticker for first interval
 	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
 	ResetAttractTicker(wait)
 
@@ -116,7 +116,7 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 	for {
 		select {
 		case <-AttractTickerChan():
-			// Advance automatically
+			// Auto advance
 			if _, ok := Next(cfg, r); !ok {
 				fmt.Println("[Attract] Failed to pick next game.")
 			}
