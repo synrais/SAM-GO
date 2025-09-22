@@ -111,15 +111,154 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 }
 
 // --------------------------------------------------
-// CD32
+// AmigaCD32
 // --------------------------------------------------
 
 func init() {
-	registerSideLauncher("CD32", LaunchCD32)
+	registerSideLauncher("AmigaCD32", LaunchCD32)
 }
 
 func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error {
-	fmt.Println("[SIDELAUNCHER] CD32 placeholder launch:", path)
-	// TODO: implement CD32 rules
-	return LaunchCore(cfg, system)
+	fmt.Println("[SIDELAUNCHER] AmigaCD32 launch starting…")
+
+	// --- Local helpers ---
+	unmount := func(p string) {
+		_ = exec.Command("umount", p).Run()
+	}
+
+	bindMount := func(src, dst string) error {
+		_ = os.MkdirAll(dst, 0755)
+		cmd := exec.Command("mount", "--bind", src, dst)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("bind mount failed: %v (output: %s)", err, string(out))
+		}
+		return nil
+	}
+	// ----------------------
+
+	// 1. Prepare tmp work dir
+	tmpDir := "/tmp/.SAM_tmp/AmigaCD32"
+	_ = os.RemoveAll(tmpDir)
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		return fmt.Errorf("failed to create tmp dir: %w", err)
+	}
+
+	// 2. Write embedded assets
+	visionRom := filepath.Join(tmpDir, "AmigaVision.rom")
+	if err := os.WriteFile(visionRom, assets.AmigaVisionRom, 0644); err != nil {
+		return fmt.Errorf("failed to write AmigaVision.rom: %w", err)
+	}
+
+	cd32hdf := filepath.Join(tmpDir, "AmigaCD32.hdf")
+	if err := os.WriteFile(cd32hdf, assets.AmigaCD32Hdf, 0644); err != nil {
+		return fmt.Errorf("failed to write AmigaCD32.hdf: %w", err)
+	}
+
+	// 3. Locate system folder (for save HDF, etc.)
+	sysPaths := games.GetSystemPaths(cfg, []games.System{system})
+	var pseudoRoot string
+	var saveFile string
+	for _, sp := range sysPaths {
+		candidate := filepath.Join(sp.Path, "AmigaVision-Saves.hdf")
+		if _, err := os.Stat(candidate); err == nil {
+			pseudoRoot = sp.Path
+			saveFile = candidate
+			break
+		}
+	}
+	if pseudoRoot == "" {
+		// fallback → first system path
+		if len(sysPaths) > 0 {
+			pseudoRoot = sysPaths[0].Path
+		} else {
+			pseudoRoot = "/tmp" // worst case
+		}
+	}
+
+	// 4. Write blank base cfg to tmp
+	tmpCfg := filepath.Join(tmpDir, "AmigaCD32.cfg")
+	if err := os.WriteFile(tmpCfg, assets.BlankAmigaCD32Cfg, 0644); err != nil {
+		return fmt.Errorf("failed to write base cfg: %w", err)
+	}
+
+	// 5. Patch cfg placeholders
+	absGame, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("failed to resolve game path: %w", err)
+	}
+	if strings.HasPrefix(absGame, "/media/") {
+		absGame = absGame[len("/media/"):]
+	}
+
+	data, err := os.ReadFile(tmpCfg)
+	if err != nil {
+		return err
+	}
+
+	patch := func(marker, replacement string) error {
+		idx := bytes.Index(data, []byte(marker))
+		if idx == -1 {
+			return nil
+		}
+		if idx+len(replacement) > len(data) {
+			return fmt.Errorf("%s replacement too long", marker)
+		}
+		copy(data[idx:], []byte(replacement))
+		return nil
+	}
+
+	if err := patch("gamepath.ext", absGame); err != nil {
+		return err
+	}
+	if err := patch("/AGS.rom", filepath.Join(pseudoRoot, "AmigaVision.rom")); err != nil {
+		return err
+	}
+	if err := patch("/CD32.hdf", filepath.Join(pseudoRoot, "AmigaCD32.hdf")); err != nil {
+		return err
+	}
+	if saveFile != "" {
+		if err := patch("/AGS-SAVES.hdf", saveFile); err != nil {
+			return err
+		}
+	}
+
+	if err := os.WriteFile(tmpCfg, data, 0644); err != nil {
+		return fmt.Errorf("failed to save patched cfg: %w", err)
+	}
+
+	// 6. Bind-mount cfg into MiSTer config folder
+	misterCfg := "/media/fat/config/AmigaCD32.cfg"
+	unmount(misterCfg)
+	if err := bindMount(tmpCfg, misterCfg); err != nil {
+		return err
+	}
+
+	// 7. Bind-mount assets into pseudo root
+	unmount(filepath.Join(pseudoRoot, "AmigaVision.rom"))
+	if err := bindMount(visionRom, filepath.Join(pseudoRoot, "AmigaVision.rom")); err != nil {
+		return err
+	}
+	unmount(filepath.Join(pseudoRoot, "AmigaCD32.hdf"))
+	if err := bindMount(cd32hdf, filepath.Join(pseudoRoot, "AmigaCD32.hdf")); err != nil {
+		return err
+	}
+
+	// 8. Build MGL to launch minimig with CD32 setup
+	mgl := `<mistergamedescription>
+	<rbf>_computer/minimig</rbf>
+	<setname same_dir="1">AmigaCD32</setname>
+</mistergamedescription>`
+
+	tmpMgl := config.LastLaunchFile
+	if err := os.WriteFile(tmpMgl, []byte(mgl), 0644); err != nil {
+		return fmt.Errorf("failed to write MGL: %w", err)
+	}
+
+	// 9. Launch it
+	if err := LaunchGenericFile(cfg, tmpMgl); err != nil {
+		return fmt.Errorf("failed to launch AmigaCD32 MGL: %w", err)
+	}
+
+	fmt.Println("[SIDELAUNCHER] AmigaCD32 game launched successfully!")
+	return nil
 }
