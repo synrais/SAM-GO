@@ -26,6 +26,14 @@ var BlankAmigaCD32Cfg []byte
 //go:embed mplayer.zip
 var MPlayerZip []byte
 
+// 🔹 Add these:
+ 
+//go:embed AmigaVision.rom
+var AmigaVisionRom []byte
+
+//go:embed AmigaCD32.hdf
+var AmigaCD32Hdf []byte
+
 // --- Helpers ---
 
 // ExtractZipBytes extracts an embedded zip (like MPlayerZip) into destDir.
