@@ -117,28 +117,28 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 // 🔹 Global to hold filtered lists
 var allowedLists []string
 
-// PickRandomGame chooses a random game from the allowed in-RAM gamelists.
+// PickRandomGame chooses a random game from the available files.
 func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
-    if len(allowedLists) == 0 {
-        fmt.Println("[Attract] No allowed gamelists available.")
-        return ""
-    }
+	files, _ := filepath.Glob(filepath.Join(config.GamelistDir(), "*_gamelist.txt"))
+	if len(files) == 0 {
+		return ""
+	}
 
-    // Pick a random gamelist only from allowedLists
-    listKey := allowedLists[r.Intn(len(allowedLists))]
-    lines := GetList(listKey)
-    if len(lines) == 0 {
-        return ""
-    }
+	// Pick random gamelist
+	listKey := files[r.Intn(len(files))]
+	lines, err := utils.ReadLines(listKey)
+	if err != nil || len(lines) == 0 {
+		return ""
+	}
 
-    // Pick a random entry
-    index := 0
-    if cfg.Attract.Random {
-        index = r.Intn(len(lines))
-    }
-    _, gamePath := utils.ParseLine(lines[index])
+	// Pick random entry
+	index := 0
+	if cfg.Attract.Random {
+		index = r.Intn(len(lines))
+	}
+	_, gamePath := utils.ParseLine(lines[index])
 
-    return gamePath
+	return gamePath
 }
 
 //
