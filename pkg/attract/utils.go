@@ -272,7 +272,7 @@ func writeNowPlayingFile() error {
 	return os.WriteFile(nowPlayingFile, []byte(content), 0644)
 }
 
-// Run launches a game or redirects to a custom loader if registered.
+// Run launches a game with the default core loader.
 func Run(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("Usage: SAM -run <path>")
@@ -288,11 +288,6 @@ func Run(args []string) error {
 
 	fmt.Printf("[RUN] Now Playing %s: %s\n", system.Name, LastPlayedName)
 
-	// 🔹 Custom loader hook
-	if handled, err := TryCustomLoader(system, runPath); handled {
-		return err
-	}
-
-	// Default core loader
+	// Directly launch with the default core loader
 	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
 }
