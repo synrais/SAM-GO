@@ -204,6 +204,7 @@ var allowedLists []string
 
 // FilterAllowed applies include/exclude restrictions case-insensitively
 // for in-RAM gamelist keys (like "nes_gamelist.txt").
+// Also updates the global allowedLists used by PickRandomGame.
 func FilterAllowed(all []string, includeRaw, excludeRaw []string) []string {
     include, _ := ExpandGroups(includeRaw)
     exclude, _ := ExpandGroups(excludeRaw)
@@ -220,7 +221,11 @@ func FilterAllowed(all []string, includeRaw, excludeRaw []string) []string {
         }
         filtered = append(filtered, key)
     }
+
+    // 🔹 update the global
+    allowedLists = filtered
     return filtered
+}
 
 //
 // -----------------------------
