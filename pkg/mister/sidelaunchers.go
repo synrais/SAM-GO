@@ -122,7 +122,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 
 	// --- Local helper ---
 	cleanPath := func(p string) string {
-		return strings.TrimPrefix(p, "media/")
+		return "../" + strings.TrimPrefix(p, "/media/")
 	}
 	// ----------------------
 
@@ -156,7 +156,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	data := make([]byte, len(assets.BlankAmigaCD32Cfg))
 	copy(data, assets.BlankAmigaCD32Cfg)
 
-	// Game path (strip media/ but keep leading /)
+	// Game path (../ style)
 	absGame, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("failed to resolve game path: %w", err)
@@ -191,7 +191,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		candidate := filepath.Join(sp.Path, "AmigaVision-Saves.hdf")
 		if _, err := os.Stat(candidate); err == nil {
 			fmt.Printf("[AmigaCD32] Found save file: %s\n", candidate)
-			if err := patch("/AGS-SAVES.hdf", cleanPath(candidate)); err != nil {
+			if err := patch("../AGS-SAVES.hdf", cleanPath(candidate)); err != nil {
 				return err
 			}
 		}
@@ -202,7 +202,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 				candidate = filepath.Join(sp.Path, name)
 				if _, err := os.Stat(candidate); err == nil {
 					fmt.Printf("[AmigaCD32] Using external ROM: %s\n", candidate)
-					if err := patch("/AGS.rom", cleanPath(candidate)); err != nil {
+					if err := patch("../AGS.rom", cleanPath(candidate)); err != nil {
 						return err
 					}
 					romPatched = true
@@ -216,7 +216,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 			candidate = filepath.Join(sp.Path, "AmigaCD32.hdf")
 			if _, err := os.Stat(candidate); err == nil {
 				fmt.Printf("[AmigaCD32] Using external HDF: %s\n", candidate)
-				if err := patch("/CD32.hdf", cleanPath(candidate)); err != nil {
+				if err := patch("../CD32.hdf", cleanPath(candidate)); err != nil {
 					return err
 				}
 				hdfPatched = true
@@ -235,7 +235,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		if err := os.WriteFile(romPath, assets.AmigaVisionRom, 0644); err != nil {
 			return fmt.Errorf("failed to copy embedded ROM: %w", err)
 		}
-		if err := patch("/AGS.rom", cleanPath(romPath)); err != nil {
+		if err := patch("../AGS.rom", cleanPath(romPath)); err != nil {
 			return err
 		}
 	}
@@ -247,7 +247,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		if err := os.WriteFile(hdfPath, assets.AmigaCD32Hdf, 0644); err != nil {
 			return fmt.Errorf("failed to copy embedded HDF: %w", err)
 		}
-		if err := patch("/CD32.hdf", cleanPath(hdfPath)); err != nil {
+		if err := patch("../CD32.hdf", cleanPath(hdfPath)); err != nil {
 			return err
 		}
 	}
