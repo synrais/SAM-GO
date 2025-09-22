@@ -22,10 +22,10 @@ func RegisterCustomLoader(systemID string, fn func(*games.System, string) error)
 
 // TryCustomLoader checks if a system has a registered custom loader.
 // Returns (true, error) if handled, (false, nil) if not.
-func TryCustomLoader(system *games.System, runPath string) (bool, error) {
+func TryCustomLoader(system games.System, runPath string) (bool, error) {
 	if fn, ok := registry[system.Id]; ok {
 		fmt.Printf("[CUSTOM] Using custom loader for %s\n", system.Id)
-		return true, fn(system, runPath)
+		return true, fn(&system, runPath) // pass pointer inside
 	}
 	return false, nil
 }
