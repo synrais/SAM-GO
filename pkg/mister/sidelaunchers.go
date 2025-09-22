@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-    "github.com/synrais/SAM-GO/pkg/assets"
+	"github.com/synrais/SAM-GO/pkg/assets"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/utils"
@@ -136,6 +136,13 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		}
 		return nil
 	}
+
+	normalize := func(p string) string {
+		if strings.HasPrefix(p, "/media/") {
+			return p[len("/media/"):]
+		}
+		return p
+	}
 	// ----------------------
 
 	// 1. Prepare tmp work dir
@@ -169,11 +176,10 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		}
 	}
 	if pseudoRoot == "" {
-		// fallback → first system path
 		if len(sysPaths) > 0 {
 			pseudoRoot = sysPaths[0].Path
 		} else {
-			pseudoRoot = "/tmp" // worst case
+			pseudoRoot = "/tmp"
 		}
 	}
 
@@ -188,9 +194,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	if err != nil {
 		return fmt.Errorf("failed to resolve game path: %w", err)
 	}
-	if strings.HasPrefix(absGame, "/media/") {
-		absGame = absGame[len("/media/"):]
-	}
+	absGame = normalize(absGame)
 
 	data, err := os.ReadFile(tmpCfg)
 	if err != nil {
@@ -212,14 +216,14 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	if err := patch("gamepath.ext", absGame); err != nil {
 		return err
 	}
-	if err := patch("/AGS.rom", filepath.Join(pseudoRoot, "AmigaVision.rom")); err != nil {
+	if err := patch("/AGS.rom", normalize(filepath.Join(pseudoRoot, "AmigaVision.rom"))); err != nil {
 		return err
 	}
-	if err := patch("/CD32.hdf", filepath.Join(pseudoRoot, "AmigaCD32.hdf")); err != nil {
+	if err := patch("/CD32.hdf", normalize(filepath.Join(pseudoRoot, "AmigaCD32.hdf"))); err != nil {
 		return err
 	}
 	if saveFile != "" {
-		if err := patch("/AGS-SAVES.hdf", saveFile); err != nil {
+		if err := patch("/AGS-SAVES.hdf", normalize(saveFile)); err != nil {
 			return err
 		}
 	}
