@@ -51,21 +51,8 @@ func PrepareAttractLists(cfg *config.UserConfig, showStream bool) {
 
 	fmt.Printf("[DEBUG] Found %d gamelists in memory: %v\n", len(files), files)
 
-	include, err := ExpandGroups(cfg.Attract.Include)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[Attract] Error expanding include groups: %v\n", err)
-		os.Exit(1)
-	}
-	exclude, err := ExpandGroups(cfg.Attract.Exclude)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[Attract] Error expanding exclude groups: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("[DEBUG] Include groups expanded to: %v\n", include)
-	fmt.Printf("[DEBUG] Exclude groups expanded to: %v\n", exclude)
-
-	files = FilterAllowed(files, include, exclude)
+	// Filtering (includes ExpandGroups + global allowedLists assignment inside FilterAllowed)
+	files = FilterAllowed(files, cfg.Attract.Include, cfg.Attract.Exclude)
 	if len(files) == 0 {
 		fmt.Println("[Attract] No allowed gamelists after filtering")
 		os.Exit(1)
