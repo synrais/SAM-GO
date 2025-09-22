@@ -54,15 +54,16 @@ func patchAmigaCD32Cfg(cfgPath string, runPath string) error {
 }
 
 func init() {
-	RegisterCustomLoader("AMIGACD32", func(system *games.System, runPath string) error {
-		fmt.Println("[AMIGACD32] Custom loader starting…")
+	// 🔹 match systems.go: Id: "AmigaCD32"
+	RegisterCustomLoader("AmigaCD32", func(system *games.System, runPath string) error {
+		fmt.Println("[AmigaCD32] Custom loader starting…")
 
 		// 1. Write embedded blank cfg to /tmp
 		tmpCfg := "/tmp/AmigaCD32.cfg"
 		if err := os.WriteFile(tmpCfg, assets.BlankAmigaCD32Cfg, 0644); err != nil {
 			return fmt.Errorf("failed to write temp cfg: %w", err)
 		}
-		fmt.Printf("[AMIGACD32] Base config written to %s\n", tmpCfg)
+		fmt.Printf("[AmigaCD32] Base config written to %s\n", tmpCfg)
 
 		// 2. Patch cfg with the actual game path
 		absGame, err := filepath.Abs(runPath)
@@ -72,7 +73,7 @@ func init() {
 		if err := patchAmigaCD32Cfg(tmpCfg, absGame); err != nil {
 			return fmt.Errorf("failed to patch cfg: %w", err)
 		}
-		fmt.Printf("[AMIGACD32] Patched config with %s\n", absGame)
+		fmt.Printf("[AmigaCD32] Patched config with %s\n", absGame)
 
 		// 3. Build the special MGL
 		mgl := `<mistergamedescription>
@@ -85,14 +86,14 @@ func init() {
 		if err := os.WriteFile(tmpMgl, []byte(mgl), 0644); err != nil {
 			return fmt.Errorf("failed to write custom MGL: %w", err)
 		}
-		fmt.Printf("[AMIGACD32] Custom MGL written to %s\n", tmpMgl)
+		fmt.Printf("[AmigaCD32] Custom MGL written to %s\n", tmpMgl)
 
 		// 5. Launch it
 		if err := mister.LaunchGenericFile(&config.UserConfig{}, tmpMgl); err != nil {
 			return fmt.Errorf("failed to launch AmigaCD32 MGL: %w", err)
 		}
 
-		fmt.Println("[AMIGACD32] Game launched successfully!")
+		fmt.Println("[AmigaCD32] Game launched successfully!")
 		return nil
 	})
 }
