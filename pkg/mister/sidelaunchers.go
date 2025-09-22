@@ -120,21 +120,16 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error {
 	fmt.Println("[SIDELAUNCHER] AmigaCD32 launch starting…")
 
-	// --- Local helpers ---
-	unmount := func(p string) {
-		fmt.Printf("[AmigaCD32] Attempting unmount of %s\n", p)
-		if out, err := exec.Command("umount", p).CombinedOutput(); err != nil {
-			fmt.Printf("[AmigaCD32] WARN: umount failed for %s: %v (output: %s)\n", p, err, string(out))
+	// --- Local helper ---
+	cleanPath := func(p string) string {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return p
 		}
-	}
-	bindMount := func(src, dst string) error {
-		fmt.Printf("[AmigaCD32] bindMount start: %s -> %s\n", src, dst)
-		_ = os.MkdirAll(filepath.Dir(dst), 0755)
-		cmd := exec.Command("mount", "--bind", src, dst)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("[AmigaCD32] ERROR bindMount failed: %s -> %s\nOutput: %s", src, dst, string(out))
+		if strings.HasPrefix(abs, "/media/") {
+			return abs[len("/media/"):]
 		}
-		return nil
+		return abs
 	}
 	// ----------------------
 
@@ -148,12 +143,11 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 
 	// 2. Locate system folder(s)
 	sysPaths := games.GetSystemPaths(cfg, []games.System{system})
-	var pseudoRoot string
-	if len(sysPaths) > 0 {
-		pseudoRoot = sysPaths[0].Path
-	} else {
-		pseudoRoot = "/tmp"
+	if len(sysPaths) == 0 {
+		return fmt.Errorf("[AmigaCD32] No valid system paths found for %s", system.Name)
 	}
+	pseudoRoot := sysPaths[0].Path
+	fmt.Printf("[AmigaCD32] Using system folder: %s\n", pseudoRoot)
 
 	// 3. Ensure config exists on disk
 	misterCfg := "/media/fat/config/AmigaCD32.cfg"
@@ -199,7 +193,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		return err
 	}
 
-	// 5. Scan system folders for saves, ROMs, and HDF
+	// 5. Scan system folder for saves, ROMs, and HDF
 	romPatched := false
 	hdfPatched := false
 
@@ -208,7 +202,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		candidate := filepath.Join(sp.Path, "AmigaVision-Saves.hdf")
 		if _, err := os.Stat(candidate); err == nil {
 			fmt.Printf("[AmigaCD32] Found save file: %s\n", candidate)
-			if err := patch("/AGS-SAVES.hdf", candidate); err != nil {
+			if err := patch("/AGS-SAVES.hdf", cleanPath(candidate)); err != nil {
 				return err
 			}
 		}
@@ -219,10 +213,9 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 				candidate = filepath.Join(sp.Path, name)
 				if _, err := os.Stat(candidate); err == nil {
 					fmt.Printf("[AmigaCD32] Using external ROM: %s\n", candidate)
-					if err := patch("/AGS.rom", candidate); err != nil {
+					if err := patch("/AGS.rom", cleanPath(candidate)); err != nil {
 						return err
 					}
-					pseudoRoot = sp.Path
 					romPatched = true
 					break
 				}
@@ -234,10 +227,9 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 			candidate = filepath.Join(sp.Path, "AmigaCD32.hdf")
 			if _, err := os.Stat(candidate); err == nil {
 				fmt.Printf("[AmigaCD32] Using external HDF: %s\n", candidate)
-				if err := patch("/CD32.hdf", candidate); err != nil {
+				if err := patch("/CD32.hdf", cleanPath(candidate)); err != nil {
 					return err
 				}
-				pseudoRoot = sp.Path
 				hdfPatched = true
 			}
 		}
@@ -254,7 +246,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		if err := os.WriteFile(romPath, assets.AmigaVisionRom, 0644); err != nil {
 			return fmt.Errorf("failed to copy embedded ROM: %w", err)
 		}
-		if err := patch("/AGS.rom", romPath); err != nil {
+		if err := patch("/AGS.rom", cleanPath(romPath)); err != nil {
 			return err
 		}
 	}
@@ -266,7 +258,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		if err := os.WriteFile(hdfPath, assets.AmigaCD32Hdf, 0644); err != nil {
 			return fmt.Errorf("failed to copy embedded HDF: %w", err)
 		}
-		if err := patch("/CD32.hdf", hdfPath); err != nil {
+		if err := patch("/CD32.hdf", cleanPath(hdfPath)); err != nil {
 			return err
 		}
 	}
@@ -277,10 +269,12 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	}
 	fmt.Printf("[AmigaCD32] Patched cfg written to %s\n", tmpCfg)
 
-	// 6. Bind-mount cfg over real one
-	unmount(misterCfg)
-	if err := bindMount(tmpCfg, misterCfg); err != nil {
-		return err
+	// 6. Replace cfg with bind-mount
+	fmt.Printf("[AmigaCD32] Replacing cfg with bind-mount: %s -> %s\n", tmpCfg, misterCfg)
+	_ = exec.Command("umount", misterCfg).Run() // ignore if not mounted
+	cmd := exec.Command("mount", "--bind", tmpCfg, misterCfg)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to bind-mount cfg: %v (output: %s)", err, string(out))
 	}
 	fmt.Println("[AmigaCD32] cfg bind-mount done")
 
