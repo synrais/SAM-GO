@@ -20,6 +20,9 @@ var KeyboardScanCodes string
 //go:embed SAM.ini
 var DefaultSAMIni []byte
 
+//go:embed Blank_AmigaCD32.cfg
+var BlankAmigaCD32Cfg []byte
+
 //go:embed mplayer.zip
 var MPlayerZip []byte
 
