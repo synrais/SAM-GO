@@ -204,10 +204,12 @@ var allowedLists []string
 
 // FilterAllowed applies include/exclude restrictions case-insensitively
 // for in-RAM gamelist keys (like "nes_gamelist.txt").
-func FilterAllowed(all []string, include, exclude []string) []string {
+func FilterAllowed(all []string, includeRaw, excludeRaw []string) []string {
+    include, _ := ExpandGroups(includeRaw)
+    exclude, _ := ExpandGroups(excludeRaw)
+
     var filtered []string
     for _, key := range all {
-        // keys look like "systemID_gamelist.txt"
         systemID := strings.TrimSuffix(key, "_gamelist.txt")
 
         if len(include) > 0 && !ContainsInsensitive(include, systemID) {
@@ -219,7 +221,6 @@ func FilterAllowed(all []string, include, exclude []string) []string {
         filtered = append(filtered, key)
     }
     return filtered
-}
 
 //
 // -----------------------------
