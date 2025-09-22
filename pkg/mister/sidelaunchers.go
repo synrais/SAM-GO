@@ -156,12 +156,12 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	data := make([]byte, len(assets.BlankAmigaCD32Cfg))
 	copy(data, assets.BlankAmigaCD32Cfg)
 
-	// Game path (../ style)
+	// --- Game path (special case: cfg placeholder already has "../") ---
 	absGame, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("failed to resolve game path: %w", err)
 	}
-	absGame = cleanPath(absGame)
+	absGame = strings.TrimPrefix(absGame, "/media/")
 	fmt.Printf("[AmigaCD32] Patching game path = %s\n", absGame)
 
 	patch := func(marker, replacement string) error {
