@@ -1251,7 +1251,7 @@ var Systems = map[string]System{
 		Category:     CategoryConsole,
 		Manufacturer: ManufacturerCommodore,
 		ReleaseDate:  "1985-07-23",
-		Folder:       []string{"AmigaCD32"},
+		Folder:       []string{"AmigaCD32", "Amiga"},
 		Alias:        []string{"AmigaCD32"},
 		Rbf:          "_Computer/Minimig",
 		Slots: []Slot{
