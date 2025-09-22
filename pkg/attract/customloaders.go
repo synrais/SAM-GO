@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/synrais/SAM-GO/pkg/assets"
 	"github.com/synrais/SAM-GO/pkg/config"
@@ -70,6 +71,10 @@ func init() {
 		if err != nil {
 			return fmt.Errorf("failed to resolve game path: %w", err)
 		}
+
+		// 🔹 Drop the /media prefix for MiSTer
+		absGame = strings.Replace(absGame, "/media/", "/", 1)
+
 		if err := patchAmigaCD32Cfg(tmpCfg, absGame); err != nil {
 			return fmt.Errorf("failed to patch cfg: %w", err)
 		}
