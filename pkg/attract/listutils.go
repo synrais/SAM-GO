@@ -125,8 +125,7 @@ func Stage3Filters(gamelistDir, systemID string, diskLines []string, cfg *config
 // Attract include exclude filter helper
 // FilterAllowed applies include/exclude restrictions case-insensitively
 // to in-RAM gamelist filenames (like "nes_gamelist.txt").
-// It uses system IDs (the prefix before "_gamelist.txt") for matching
-// but returns the full filenames.
+// It returns the list of allowed system IDs (not filenames).
 func FilterAllowed(all []string, includeRaw, excludeRaw []string) []string {
     include, _ := ExpandGroups(includeRaw)
     exclude, _ := ExpandGroups(excludeRaw)
@@ -144,7 +143,7 @@ func FilterAllowed(all []string, includeRaw, excludeRaw []string) []string {
             continue
         }
 
-        filtered = append(filtered, key) // keep full filename
+        filtered = append(filtered, systemID)
     }
     return filtered
 }
