@@ -125,16 +125,24 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 
 	// --- Local helpers ---
 	unmount := func(p string) {
-		_ = exec.Command("umount", p).Run()
+		fmt.Printf("[AmigaCD32] Attempting unmount of %s\n", p)
+		if out, err := exec.Command("umount", p).CombinedOutput(); err != nil {
+			fmt.Printf("[AmigaCD32] WARN: umount failed for %s: %v (output: %s)\n", p, err, string(out))
+		} else {
+			fmt.Printf("[AmigaCD32] Unmounted %s\n", p)
+		}
 	}
 
 	bindMount := func(src, dst string) error {
-		fmt.Printf("[AmigaCD32] bindMount: %s -> %s\n", src, dst)
+		fmt.Printf("[AmigaCD32] bindMount start: %s -> %s\n", src, dst)
 		_ = os.MkdirAll(filepath.Dir(dst), 0755)
 		cmd := exec.Command("mount", "--bind", src, dst)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("bind mount failed (%s -> %s): %v (output: %s)", src, dst, err, string(out))
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			fmt.Printf("[AmigaCD32] ERROR bindMount failed: %s -> %s\nOutput: %s\n", src, dst, string(out))
+			return fmt.Errorf("bind mount failed (%s -> %s): %w", src, dst, err)
 		}
+		fmt.Printf("[AmigaCD32] bindMount success: %s -> %s\n", src, dst)
 		return nil
 	}
 	// ----------------------
@@ -245,7 +253,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	fmt.Printf("[AmigaCD32] Bind-mounting cfg -> %s\n", misterCfg)
 	unmount(misterCfg)
 	if err := bindMount(tmpCfg, misterCfg); err != nil {
-		return err
+		return fmt.Errorf("[AmigaCD32] cfg bind-mount failed: %w", err)
 	}
 	fmt.Println("[AmigaCD32] cfg bind-mount done")
 
@@ -253,11 +261,11 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	fmt.Printf("[AmigaCD32] Bind-mounting ROM/HDF into pseudoRoot %s\n", pseudoRoot)
 	unmount(filepath.Join(pseudoRoot, "AmigaVision.rom"))
 	if err := bindMount(visionRom, filepath.Join(pseudoRoot, "AmigaVision.rom")); err != nil {
-		return err
+		return fmt.Errorf("[AmigaCD32] ROM bind-mount failed: %w", err)
 	}
 	unmount(filepath.Join(pseudoRoot, "AmigaCD32.hdf"))
 	if err := bindMount(cd32hdf, filepath.Join(pseudoRoot, "AmigaCD32.hdf")); err != nil {
-		return err
+		return fmt.Errorf("[AmigaCD32] HDF bind-mount failed: %w", err)
 	}
 	fmt.Println("[AmigaCD32] asset bind-mounts done")
 
