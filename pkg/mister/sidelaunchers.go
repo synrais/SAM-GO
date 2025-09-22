@@ -1,7 +1,6 @@
 package mister
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
