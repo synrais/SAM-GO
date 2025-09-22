@@ -199,23 +199,26 @@ func resetGlobalTicker(cfg *config.UserConfig, r *rand.Rand) {
 	ResetAttractTicker(wait)
 }
 
+// Allowed gamelists after include/exclude filtering
+var allowedLists []string
+
 // FilterAllowed applies include/exclude restrictions case-insensitively
 // for in-RAM gamelist keys (like "nes_gamelist.txt").
 func FilterAllowed(all []string, include, exclude []string) []string {
-	var filtered []string
-	for _, key := range all {
-		// keys look like "systemID_gamelist.txt"
-		systemID := strings.TrimSuffix(key, "_gamelist.txt")
+    var filtered []string
+    for _, key := range all {
+        // keys look like "systemID_gamelist.txt"
+        systemID := strings.TrimSuffix(key, "_gamelist.txt")
 
-		if len(include) > 0 && !ContainsInsensitive(include, systemID) {
-			continue
-		}
-		if ContainsInsensitive(exclude, systemID) {
-			continue
-		}
-		filtered = append(filtered, key)
-	}
-	return filtered
+        if len(include) > 0 && !ContainsInsensitive(include, systemID) {
+            continue
+        }
+        if ContainsInsensitive(exclude, systemID) {
+            continue
+        }
+        filtered = append(filtered, key)
+    }
+    return filtered
 }
 
 //
