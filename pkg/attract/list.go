@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"time"
 	"os"
+	"strings"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
@@ -23,9 +24,9 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 
 	// Ensure gamelistDir exists before any file I/O
 	if err := os.MkdirAll(gamelistDir, 0o755); err != nil {
-    	return 0 // or handle error more aggressively
+		return 0 // bail if directory can’t be created
 	}
-	
+
 	// load saved folder timestamps
 	tsStart := time.Now()
 	savedTimestamps, _ := loadSavedTimestamps(gamelistDir)
@@ -236,6 +237,31 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		if !quiet {
 			fmt.Printf("[DEBUG] %s done (%.2fs)\n", system.Id, time.Since(sysStart).Seconds())
 		}
+	}
+
+	// 🔥 Apply include/exclude restrictions at the end
+	inc, err := ExpandGroups(cfg.Attract.Include)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[Attract] Error expanding include groups: %v\n", err)
+		return 0
+	}
+	exc, err := ExpandGroups(cfg.Attract.Exclude)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[Attract] Error expanding exclude groups: %v\n", err)
+		return 0
+	}
+	allKeys := ListKeys()
+	allowed := FilterAllowed(allKeys, inc, exc)
+
+	// Purge disallowed lists from RAM
+	for _, k := range allKeys {
+		systemID := strings.TrimSuffix(k, "_gamelist.txt")
+		if !ContainsInsensitive(allowed, systemID) {
+			DeleteKey(k)
+		}
+	}
+	if !quiet {
+		fmt.Printf("[DEBUG] Allowed gamelists after filtering: %v\n", allowed)
 	}
 
 	// global write
