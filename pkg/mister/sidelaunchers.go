@@ -112,14 +112,6 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 	return LaunchCore(cfg, system)
 }
 
-// --------------------------------------------------
-// AmigaCD32
-// --------------------------------------------------
-
-func init() {
-	registerSideLauncher("AmigaCD32", LaunchCD32)
-}
-
 func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error {
 	fmt.Println("[SIDELAUNCHER] AmigaCD32 launch starting…")
 
@@ -183,6 +175,8 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	if _, err := os.Stat(candidate); err == nil {
 		saveFile = candidate
 		fmt.Printf("[AmigaCD32] Found save file: %s\n", saveFile)
+	} else {
+		fmt.Println("[AmigaCD32] No save file found")
 	}
 
 	// 6. Ensure real config file exists
@@ -192,6 +186,8 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		if err := os.WriteFile(misterCfg, assets.BlankAmigaCD32Cfg, 0644); err != nil {
 			return fmt.Errorf("failed to create base AmigaCD32.cfg: %w", err)
 		}
+	} else {
+		fmt.Printf("[AmigaCD32] Found existing config: %s\n", misterCfg)
 	}
 
 	// 7. Patch tmp cfg
@@ -248,6 +244,9 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		return fmt.Errorf("failed to save patched cfg: %w", err)
 	}
 	fmt.Printf("[AmigaCD32] Patched cfg written to %s\n", tmpCfg)
+
+	// dump first 64 bytes for debug
+	fmt.Printf("[AmigaCD32] cfg head dump: %q\n", string(data[:64]))
 
 	// 8. Bind-mount tmp cfg over real config
 	unmount(misterCfg)
