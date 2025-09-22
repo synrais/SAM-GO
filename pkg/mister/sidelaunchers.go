@@ -128,7 +128,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		offsetRomPath   = 0x0C   // AmigaVision.rom
 		offsetHdfPath   = 0x418  // AmigaCD32.hdf
 		offsetSavePath  = 0x81A  // AmigaVision-Saves.hdf
-		offsetGamePath  = 0xC1C  // game path
+		offsetGamePath  = 0xC1F  // game path
 		fieldLength     = 256    // adjust if fields are smaller/larger
 	)
 
