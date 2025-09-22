@@ -74,7 +74,7 @@ func init() {
 
 		// 🔹 Drop the /media prefix for MiSTer
 		if strings.HasPrefix(absGame, "/media/") {
-			absGame = absGame[len("/media"):] // "/media/usb0/..." → "/usb0/..."
+			absGame = absGame[len("/media/"):] // "/media/usb0/..." → "/usb0/..."
 		}
 
 		if err := patchAmigaCD32Cfg(tmpCfg, absGame); err != nil {
