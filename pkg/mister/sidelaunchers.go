@@ -129,19 +129,12 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	}
 
 	bindMount := func(src, dst string) error {
-		_ = os.MkdirAll(dst, 0755)
+		_ = os.MkdirAll(filepath.Dir(dst), 0755)
 		cmd := exec.Command("mount", "--bind", src, dst)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("bind mount failed: %v (output: %s)", err, string(out))
 		}
 		return nil
-	}
-
-	normalize := func(p string) string {
-		if strings.HasPrefix(p, "/media/") {
-			return p[len("/media/"):]
-		}
-		return p
 	}
 	// ----------------------
 
@@ -179,9 +172,10 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		if len(sysPaths) > 0 {
 			pseudoRoot = sysPaths[0].Path
 		} else {
-			pseudoRoot = "/tmp"
+			pseudoRoot = "/tmp" // worst case
 		}
 	}
+	fmt.Printf("[AmigaCD32] Using pseudoRoot = %s\n", pseudoRoot)
 
 	// 4. Write blank base cfg to tmp
 	tmpCfg := filepath.Join(tmpDir, "AmigaCD32.cfg")
@@ -194,7 +188,10 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	if err != nil {
 		return fmt.Errorf("failed to resolve game path: %w", err)
 	}
-	absGame = normalize(absGame)
+	if strings.HasPrefix(absGame, "/media/") {
+		absGame = absGame[len("/media/"):]
+	}
+	fmt.Printf("[AmigaCD32] Patching game path = %s\n", absGame)
 
 	data, err := os.ReadFile(tmpCfg)
 	if err != nil {
@@ -216,14 +213,14 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	if err := patch("gamepath.ext", absGame); err != nil {
 		return err
 	}
-	if err := patch("/AGS.rom", normalize(filepath.Join(pseudoRoot, "AmigaVision.rom"))); err != nil {
+	if err := patch("/AGS.rom", filepath.Join(pseudoRoot, "AmigaVision.rom")); err != nil {
 		return err
 	}
-	if err := patch("/CD32.hdf", normalize(filepath.Join(pseudoRoot, "AmigaCD32.hdf"))); err != nil {
+	if err := patch("/CD32.hdf", filepath.Join(pseudoRoot, "AmigaCD32.hdf")); err != nil {
 		return err
 	}
 	if saveFile != "" {
-		if err := patch("/AGS-SAVES.hdf", normalize(saveFile)); err != nil {
+		if err := patch("/AGS-SAVES.hdf", saveFile); err != nil {
 			return err
 		}
 	}
@@ -231,6 +228,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	if err := os.WriteFile(tmpCfg, data, 0644); err != nil {
 		return fmt.Errorf("failed to save patched cfg: %w", err)
 	}
+	fmt.Printf("[AmigaCD32] Patched cfg written to %s\n", tmpCfg)
 
 	// 6. Bind-mount cfg into MiSTer config folder
 	misterCfg := "/media/fat/config/AmigaCD32.cfg"
@@ -249,16 +247,18 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		return err
 	}
 
-	// 8. Build MGL to launch minimig with CD32 setup
+	// 8. Build and write MGL
 	mgl := `<mistergamedescription>
 	<rbf>_computer/minimig</rbf>
 	<setname same_dir="1">AmigaCD32</setname>
 </mistergamedescription>`
 
 	tmpMgl := config.LastLaunchFile
+	fmt.Printf("[AmigaCD32] Writing MGL to %s\n", tmpMgl)
 	if err := os.WriteFile(tmpMgl, []byte(mgl), 0644); err != nil {
 		return fmt.Errorf("failed to write MGL: %w", err)
 	}
+	fmt.Println("[AmigaCD32] MGL written successfully")
 
 	// 9. Launch it
 	if err := LaunchGenericFile(cfg, tmpMgl); err != nil {
@@ -268,3 +268,4 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	fmt.Println("[SIDELAUNCHER] AmigaCD32 game launched successfully!")
 	return nil
 }
+
