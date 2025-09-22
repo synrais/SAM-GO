@@ -182,74 +182,41 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		return err
 	}
 
-	// 5. Scan system folder for saves, ROMs, and HDF
-	romPatched := false
-	hdfPatched := false
-
-	for _, sp := range sysPaths {
-		// Save HDF
-		candidate := filepath.Join(sp.Path, "AmigaVision-Saves.hdf")
-		if _, err := os.Stat(candidate); err == nil {
-			fmt.Printf("[AmigaCD32] Found save file: %s\n", candidate)
-			if err := patch("../AGS-SAVES.hdf", cleanPath(candidate)); err != nil {
-				return err
-			}
-		}
-
-		// ROMs
-		if !romPatched {
-			for _, name := range []string{"kickstart.rom", "AmigaVision.rom"} {
-				candidate = filepath.Join(sp.Path, name)
-				if _, err := os.Stat(candidate); err == nil {
-					fmt.Printf("[AmigaCD32] Using external ROM: %s\n", candidate)
-					if err := patch("../AGS.rom", cleanPath(candidate)); err != nil {
-						return err
-					}
-					romPatched = true
-					break
-				}
-			}
-		}
-
-		// CD32.hdf
-		if !hdfPatched {
-			candidate = filepath.Join(sp.Path, "AmigaCD32.hdf")
-			if _, err := os.Stat(candidate); err == nil {
-				fmt.Printf("[AmigaCD32] Using external HDF: %s\n", candidate)
-				if err := patch("../CD32.hdf", cleanPath(candidate)); err != nil {
-					return err
-				}
-				hdfPatched = true
-			}
-		}
-
-		if romPatched && hdfPatched {
-			break
+	// 5. Save HDF (optional)
+	savePath := filepath.Join(pseudoRoot, "AmigaVision-Saves.hdf")
+	if _, err := os.Stat(savePath); err == nil {
+		fmt.Printf("[AmigaCD32] Found save file: %s\n", savePath)
+		if err := patch("../AGS-SAVES.hdf", cleanPath(savePath)); err != nil {
+			return err
 		}
 	}
 
-	// ROM fallback
-	if !romPatched {
-		romPath := filepath.Join(pseudoRoot, "AmigaVision.rom")
-		fmt.Printf("[AmigaCD32] No external ROMs found, copying embedded ROM to %s\n", romPath)
+	// --- ROM: prefer existing AmigaVision.rom, otherwise write embedded ---
+	romPath := filepath.Join(pseudoRoot, "AmigaVision.rom")
+	if _, err := os.Stat(romPath); err == nil {
+		fmt.Printf("[AmigaCD32] Using existing AmigaVision ROM: %s\n", romPath)
+	} else {
+		fmt.Printf("[AmigaCD32] No AmigaVision ROM found, writing embedded ROM to %s\n", romPath)
 		if err := os.WriteFile(romPath, assets.AmigaVisionRom, 0644); err != nil {
-			return fmt.Errorf("failed to copy embedded ROM: %w", err)
-		}
-		if err := patch("../AGS.rom", cleanPath(romPath)); err != nil {
-			return err
+			return fmt.Errorf("failed to write embedded ROM: %w", err)
 		}
 	}
+	if err := patch("../AGS.rom", cleanPath(romPath)); err != nil {
+		return err
+	}
 
-	// HDF fallback
-	if !hdfPatched {
-		hdfPath := filepath.Join(pseudoRoot, "AmigaCD32.hdf")
-		fmt.Printf("[AmigaCD32] No external HDF found, copying embedded HDF to %s\n", hdfPath)
+	// --- HDF: prefer existing AmigaCD32.hdf, otherwise write embedded ---
+	hdfPath := filepath.Join(pseudoRoot, "AmigaCD32.hdf")
+	if _, err := os.Stat(hdfPath); err == nil {
+		fmt.Printf("[AmigaCD32] Using existing AmigaCD32 HDF: %s\n", hdfPath)
+	} else {
+		fmt.Printf("[AmigaCD32] No AmigaCD32 HDF found, writing embedded HDF to %s\n", hdfPath)
 		if err := os.WriteFile(hdfPath, assets.AmigaCD32Hdf, 0644); err != nil {
-			return fmt.Errorf("failed to copy embedded HDF: %w", err)
+			return fmt.Errorf("failed to write embedded HDF: %w", err)
 		}
-		if err := patch("../CD32.hdf", cleanPath(hdfPath)); err != nil {
-			return err
-		}
+	}
+	if err := patch("../CD32.hdf", cleanPath(hdfPath)); err != nil {
+		return err
 	}
 
 	// Save patched cfg
