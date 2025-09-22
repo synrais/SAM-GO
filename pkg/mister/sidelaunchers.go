@@ -128,8 +128,8 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		offsetRomPath   = 0x0C   // AmigaVision.rom
 		offsetHdfPath   = 0x418  // AmigaCD32.hdf
 		offsetSavePath  = 0x81A  // AmigaVision-Saves.hdf
-		offsetGamePath  = 0xC1F  // game path
-		fieldLength     = 256    // adjust if fields are smaller/larger
+		offsetGamePath  = 0xC1F  // game path (fixed)
+		fieldLength     = 256    // safe default per field
 	)
 
 	patchAt := func(data []byte, offset int, replacement string) error {
@@ -153,15 +153,43 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		return fmt.Errorf("failed to create tmp dir: %w", err)
 	}
 
-	// 2. Locate system folder(s)
+	// 2. Locate system folder(s) and pick the best one
 	sysPaths := games.GetSystemPaths(cfg, []games.System{system})
 	if len(sysPaths) == 0 {
 		return fmt.Errorf("[AmigaCD32] No valid system paths found for %s", system.Name)
 	}
-	pseudoRoot := sysPaths[0].Path
-	fmt.Printf("[AmigaCD32] Using system folder: %s\n", pseudoRoot)
 
-	// 3. Ensure cfg file exists on FAT (only as a bind target)
+	var pseudoRoot string
+
+	// Prefer saves
+	for _, sp := range sysPaths {
+		if _, err := os.Stat(filepath.Join(sp.Path, "AmigaVision-Saves.hdf")); err == nil {
+			fmt.Printf("[AmigaCD32] Found save file in %s\n", sp.Path)
+			pseudoRoot = sp.Path
+			break
+		}
+	}
+
+	// Else prefer ROM
+	if pseudoRoot == "" {
+		for _, sp := range sysPaths {
+			if _, err := os.Stat(filepath.Join(sp.Path, "AmigaVision.rom")); err == nil {
+				fmt.Printf("[AmigaCD32] Found ROM in %s\n", sp.Path)
+				pseudoRoot = sp.Path
+				break
+			}
+		}
+	}
+
+	// Else fallback
+	if pseudoRoot == "" {
+		pseudoRoot = sysPaths[0].Path
+		fmt.Printf("[AmigaCD32] No saves or ROMs found, falling back to %s\n", pseudoRoot)
+	} else {
+		fmt.Printf("[AmigaCD32] Using pseudoRoot = %s\n", pseudoRoot)
+	}
+
+	// 3. Ensure cfg file exists on FAT (only as bind target)
 	misterCfg := "/media/fat/config/AmigaCD32.cfg"
 	if _, err := os.Stat(misterCfg); os.IsNotExist(err) {
 		fmt.Printf("[AmigaCD32] No existing cfg at %s, writing blank one\n", misterCfg)
