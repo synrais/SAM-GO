@@ -188,7 +188,7 @@ func (e StaticEvent) String() string {
 }
 
 // Stream launches the static screen detector and streams events (singleton).
-func Stream(cfg *config.UserConfig) <-chan StaticEvent {
+func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 	streamOnce.Do(func() {
 		streamCh = make(chan StaticEvent, 1)
 
@@ -334,8 +334,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 				domG := int((bestVal >> 8) & 0xFF)
 				domB := int(bestVal & 0xFF)
 
-				// Static/stuck pixel detection
-				stuckPixels := 0
+				// Check for static screen
 				frameTime := time.Now()
 				if !firstFrame {
 					changed := false
@@ -354,11 +353,6 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 						staticScreenRun = 0
 						staticStartTime = 0
 					}
-					for i := 0; i < samples; i++ {
-						if currRGB[i] == prevRGB[i] {
-							stuckPixels++
-						}
-					}
 				}
 				copy(prevRGB, currRGB[:samples])
 				firstFrame = false
@@ -374,7 +368,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 							addToFile(LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
 						}
 						if currCfg.SkipBlack {
-							Next(cfg, rand.New(rand.NewSource(time.Now().UnixNano())))
+							Next(cfg, r) // 🔥 use shared RNG
 							fmt.Println("[StaticDetector] Auto-skip (black screen)")
 						}
 						handledBlack = true
@@ -385,7 +379,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 							addToFile(LastPlayedSystem.Id, entry, "_staticlist.txt")
 						}
 						if currCfg.SkipStatic {
-							Next(cfg, rand.New(rand.NewSource(time.Now().UnixNano())))
+							Next(cfg, r) // 🔥 use shared RNG
 							fmt.Println("[StaticDetector] Auto-skip (static screen)")
 						}
 						handledStatic = true
@@ -396,7 +390,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 					Uptime:       uptime,
 					Frames:       sampleFrames,
 					StaticScreen: staticScreenRun,
-					StuckPixels:  stuckPixels,
+					StuckPixels:  samples,
 					Samples:      samples,
 					Width:        res.Width,
 					Height:       res.Height,
