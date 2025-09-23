@@ -119,6 +119,7 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 var usedPools = make(map[string]map[string]bool)
 
 // PickRandomGame chooses a random game without repeats until all for that system are used.
+// It also appends the chosen game into history and updates currentIndex.
 func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
     keys := ListKeys()
     if len(keys) == 0 {
@@ -168,6 +169,12 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
     // Mark as used
     used[choice] = true
 
+    // --- History management lives here ---
+    hist := GetList("History.txt")
+    hist = append(hist, choice)
+    SetList("History.txt", hist)
+    currentIndex = len(hist) - 1
+
     return choice
 }
 
@@ -175,61 +182,56 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 // -----------------------------
 // History navigation + Ticker reset
 // -----------------------------
-//
 
 var currentIndex int = -1
 
-// Next moves forward in history if possible, otherwise picks a random game.
+// Next moves forward in history if possible, otherwise picks a new random game.
 // Always resets the global attract ticker.
 func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
-	hist := GetList("History.txt")
+    hist := GetList("History.txt")
 
-	// Move forward in history if possible
-	if currentIndex >= 0 && currentIndex < len(hist)-1 {
-		currentIndex++
-		path := hist[currentIndex]
-		Run([]string{path})
-		resetGlobalTicker(cfg, r)
-		return path, true
-	}
+    // Case 1: move forward in history
+    if currentIndex >= 0 && currentIndex < len(hist)-1 {
+        currentIndex++
+        path := hist[currentIndex]
+        Run([]string{path})
+        resetGlobalTicker(cfg, r)
+        return path, true
+    }
 
-	// Otherwise pick a new random game
-	path := PickRandomGame(cfg, r)
-	if path == "" {
-		fmt.Println("[Attract] No game available to play.")
-		return "", false
-	}
+    // Case 2: end of history → pick new random (adds itself to history)
+    path := PickRandomGame(cfg, r)
+    if path == "" {
+        fmt.Println("[Attract] No game available to play.")
+        return "", false
+    }
 
-	hist = append(hist, path)
-	SetList("History.txt", hist)
-	currentIndex = len(hist) - 1
-
-	Run([]string{path})
-	resetGlobalTicker(cfg, r)
-	return path, true
+    Run([]string{path})
+    resetGlobalTicker(cfg, r)
+    return path, true
 }
 
 // Back moves backward in history if possible.
 // Always resets the global attract ticker.
 func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
-	hist := GetList("History.txt")
+    hist := GetList("History.txt")
 
-	if currentIndex > 0 {
-		currentIndex--
-		path := hist[currentIndex]
-		Run([]string{path})
-		resetGlobalTicker(cfg, r)
-		return path, true
-	}
+    if currentIndex > 0 {
+        currentIndex--
+        path := hist[currentIndex]
+        Run([]string{path})
+        resetGlobalTicker(cfg, r)
+        return path, true
+    }
 
-	// Nothing to go back to
-	return "", false
+    // Nothing to go back to
+    return "", false
 }
 
 // resetGlobalTicker resets the singleton attract ticker.
 func resetGlobalTicker(cfg *config.UserConfig, r *rand.Rand) {
-	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
-	ResetAttractTicker(wait)
+    wait := ParsePlayTime(cfg.Attract.PlayTime, r)
+    ResetAttractTicker(wait)
 }
 
 //
