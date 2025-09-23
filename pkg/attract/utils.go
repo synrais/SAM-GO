@@ -114,6 +114,20 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 	return false
 }
 
+package attract
+
+import (
+    "fmt"
+    "math/rand"
+
+    "github.com/synrais/SAM-GO/pkg/config"
+    "github.com/synrais/SAM-GO/pkg/utils"
+)
+
+// -----------------------------
+// Shuffle pool (per system)
+// -----------------------------
+
 // usedPools tracks which games have been played per system
 // Key: listKey (system), Value: map[path]bool
 var usedPools = make(map[string]map[string]bool)
@@ -181,7 +195,6 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
     return choice
 }
 
-//
 // -----------------------------
 // History navigation + Ticker reset
 // -----------------------------
