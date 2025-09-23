@@ -118,10 +118,6 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 // Key: listKey (system), Value: map[path]bool
 var usedPools = make(map[string]map[string]bool)
 
-// usedPools tracks which games have been played per system
-// Key: listKey (system), Value: map[path]bool
-var usedPools = make(map[string]map[string]bool)
-
 // PickRandomGame chooses a random game without repeats until all for that system are used.
 // It also appends the chosen game into history, updates currentIndex, and runs it.
 func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
@@ -144,9 +140,10 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
     }
     used := usedPools[listKey]
 
-    // Filter unused entries (raw lines, no cleaning)
+    // Filter unused entries (normalize paths with ParseLine)
     var unused []string
-    for _, gamePath := range lines {
+    for _, line := range lines {
+        _, gamePath := ParseLine(line)
         if !used[gamePath] {
             unused = append(unused, gamePath)
         }
@@ -157,7 +154,10 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
         fmt.Printf("[Attract] Resetting shuffle pool for %s\n", listKey)
         usedPools[listKey] = make(map[string]bool)
         used = usedPools[listKey]
-        unused = append(unused, lines...)
+        for _, line := range lines {
+            _, gamePath := ParseLine(line)
+            unused = append(unused, gamePath)
+        }
     }
 
     // Pick random entry from unused
@@ -166,7 +166,7 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
         choice = unused[r.Intn(len(unused))]
     }
 
-    // Mark as used (raw string, exactly as in list)
+    // Mark as used (path only, no timestamp)
     used[choice] = true
 
     // --- History management lives here ---
@@ -196,7 +196,7 @@ func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
     // Case 1: move forward in history
     if currentIndex >= 0 && currentIndex < len(hist)-1 {
         currentIndex++
-        path := hist[currentIndex]
+        _, path := ParseLine(hist[currentIndex])
 
         if err := Run([]string{path}); err != nil {
             fmt.Printf("[Attract] Failed to run %s: %v\n", path, err)
@@ -225,7 +225,7 @@ func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 
     if currentIndex > 0 {
         currentIndex--
-        path := hist[currentIndex]
+        _, path := ParseLine(hist[currentIndex])
         Run([]string{path})
         resetGlobalTicker(cfg, r)
         return path, true
