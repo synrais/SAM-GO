@@ -148,7 +148,11 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
     var unused []string
     for _, line := range lines {
         _, gamePath := utils.ParseLine(line)
-        if !used[gamePath] {
+
+        if used[gamePath] {
+            fmt.Printf("[DEBUG] Already used: %s\n", gamePath)
+        } else {
+            fmt.Printf("[DEBUG] Still unused: %s\n", gamePath)
             unused = append(unused, gamePath)
         }
     }
@@ -160,6 +164,7 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
         used = usedPools[listKey]
         for _, line := range lines {
             _, gamePath := utils.ParseLine(line)
+            fmt.Printf("[DEBUG] Reset pool candidate: %s\n", gamePath)
             unused = append(unused, gamePath)
         }
     }
@@ -171,16 +176,21 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
     }
 
     // Mark as used (path only, no timestamp)
+    fmt.Printf("[DEBUG] Marking as used: %s (system: %s)\n", choice, listKey)
     used[choice] = true
 
     // --- History management lives here ---
     hist := GetList("History.txt")
     hist = append(hist, choice)
+    fmt.Printf("[DEBUG] Appending to history: %s (history len=%d)\n", choice, len(hist))
     SetList("History.txt", hist)
     currentIndex = len(hist) - 1
 
     // Launch the game
-    Run([]string{choice})
+    if err := Run([]string{choice}); err != nil {
+        fmt.Printf("[Attract] Failed to run %s: %v\n", choice, err)
+        return ""
+    }
 
     return choice
 }
