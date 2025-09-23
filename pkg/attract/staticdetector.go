@@ -3,7 +3,7 @@ package attract
 import (
 	"bufio"
 	"fmt"
-	// "math/rand"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -353,19 +353,28 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 				avgHex := rgbToHex(avgR, avgG, avgB)
 
 				if uptime > currCfg.Grace {
+					// Black screen detection
 					if avgHex == "#000000" && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
 						if currCfg.WriteBlackList {
 							addToFile(LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
 						}
-						// 🚫 Skip disabled
+						if currCfg.SkipBlack {
+							fmt.Printf("[StaticDetector] Auto-skip (black screen)\n")
+							Next(cfg, rand.New(rand.NewSource(time.Now().UnixNano())))
+						}
 						handledBlack = true
 					}
+
+					// Static screen detection (non-black only)
 					if avgHex != "#000000" && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
 						if currCfg.WriteStaticList {
 							entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
 							addToFile(LastPlayedSystem.Id, entry, "_staticlist.txt")
 						}
-						// 🚫 Skip disabled
+						if currCfg.SkipStatic {
+							fmt.Printf("[StaticDetector] Auto-skip (static screen)\n")
+							Next(cfg, rand.New(rand.NewSource(time.Now().UnixNano())))
+						}
 						handledStatic = true
 					}
 				}
@@ -397,3 +406,4 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 
 	return streamCh
 }
+
