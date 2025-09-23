@@ -174,10 +174,10 @@ type StaticEvent struct {
 
 func (e StaticEvent) String() string {
 	return fmt.Sprintf("Uptime=%7.1f | Frames=%7d | StaticScreen=%7.1fs | "+
-		"StuckPixels=%5d | Resolution=%5dx%-4d | "+
+		"StuckPixels=%d/%d | Resolution=%5dx%-4d | "+
 		"DominantRGB= %s %-7s | AverageRGB= %s %-7s | Game= %s",
 		e.Uptime, e.Frames, e.StaticScreen,
-		e.StuckPixels,
+		e.StuckPixels, e.Samples,
 		e.Width, e.Height,
 		e.DominantHex, e.DominantName,
 		e.AverageHex, e.AverageName,
