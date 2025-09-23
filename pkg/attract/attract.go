@@ -78,6 +78,7 @@ func InitAttract(cfg *config.UserConfig, files []string, showStream bool) {
 
 // RunAttractLoop runs the attract mode loop until interrupted.
 func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan string, showStream bool) {
+	// Shared RNG for all picks/skips
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	fmt.Println("[Attract] Running. Press ESC to exit.")
 
@@ -98,7 +99,7 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 	// 🔥 Start static detector only if enabled in config
 	if cfg.Attract.UseStaticDetector {
 		go func() {
-			for ev := range Stream(cfg) {
+			for ev := range Stream(cfg, r) { // pass shared RNG here
 				if showStream {
 					fmt.Println(ev.String())
 				}
