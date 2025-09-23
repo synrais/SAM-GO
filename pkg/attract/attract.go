@@ -95,15 +95,17 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 		bgmPlayer = nil
 	}
 
-	// 🔥 Start static detector
-	go func() {
-		for ev := range Stream(cfg) {
-			if showStream {
-				fmt.Println(ev.String())
+	// 🔥 Start static detector only if enabled in config
+	if cfg.Attract.UseStaticDetector {
+		go func() {
+			for ev := range Stream(cfg) {
+				if showStream {
+					fmt.Println(ev.String())
+				}
+				// else: silently drain
 			}
-			// else: silently drain
-		}
-	}()
+		}()
+	}
 
 	// Kick off ticker for first interval
 	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
