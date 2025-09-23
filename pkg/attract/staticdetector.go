@@ -353,28 +353,20 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 				avgHex := rgbToHex(avgR, avgG, avgB)
 
 				if uptime > currCfg.Grace {
-					// ---- Black screen detection ----
 					if avgHex == "#000000" && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
-						handledBlack = true // early mark
 						if currCfg.WriteBlackList {
 							addToFile(LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
 						}
-						if currCfg.SkipBlack {
-							Next(cfg, rand.New(rand.NewSource(time.Now().UnixNano())))
-							fmt.Println("[StaticDetector] Auto-skip (black screen)")
-						}
+						// 🚫 Skip disabled
+						handledBlack = true
 					}
-					// ---- Static screen detection ----
 					if avgHex != "#000000" && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
-						handledStatic = true // early mark
 						if currCfg.WriteStaticList {
 							entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
 							addToFile(LastPlayedSystem.Id, entry, "_staticlist.txt")
 						}
-						if currCfg.SkipStatic {
-							Next(cfg, rand.New(rand.NewSource(time.Now().UnixNano())))
-							fmt.Println("[StaticDetector] Auto-skip (static screen)")
-						}
+						// 🚫 Skip disabled
+						handledStatic = true
 					}
 				}
 
@@ -405,4 +397,3 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 
 	return streamCh
 }
-
