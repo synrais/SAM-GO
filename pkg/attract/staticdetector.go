@@ -162,6 +162,7 @@ type StaticEvent struct {
 	Frames       int
 	StaticScreen float64
 	StuckPixels  int
+	Samples      int
 	Width        int
 	Height       int
 	DominantHex  string
@@ -174,7 +175,7 @@ type StaticEvent struct {
 
 func (e StaticEvent) String() string {
 	return fmt.Sprintf("Uptime=%7.1f | Frames=%7d | StaticScreen=%7.1fs | "+
-		"StuckPixels=%d/%d | Resolution=%5dx%-4d | "+
+		"StuckPixels=%d/%d | Resolution=%4dx%-4d | "+
 		"DominantRGB= %s %-7s | AverageRGB= %s %-7s | Game= %s",
 		e.Uptime, e.Frames, e.StaticScreen,
 		e.StuckPixels, e.Samples,
@@ -369,6 +370,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 					Frames:       sampleFrames,
 					StaticScreen: staticScreenRun,
 					StuckPixels:  stuckPixels,
+					Samples:      len(currRGB),
 					Width:        res.Width,
 					Height:       res.Height,
 					DominantHex:  rgbToHex(domR, domG, domB),
