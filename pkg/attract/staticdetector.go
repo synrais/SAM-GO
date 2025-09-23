@@ -12,9 +12,7 @@ import (
 	"time"
 
 	"github.com/synrais/SAM-GO/pkg/config"
-	"github.com/synrais/SAM-GO/pkg/history"
 	"github.com/synrais/SAM-GO/pkg/input"
-	"github.com/synrais/SAM-GO/pkg/run"
 	"github.com/synrais/SAM-GO/pkg/utils"
 	"golang.org/x/sys/unix"
 )
