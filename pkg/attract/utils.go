@@ -119,7 +119,7 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 var usedPools = make(map[string]map[string]bool)
 
 // PickRandomGame chooses a random game without repeats until all for that system are used.
-// It also appends the chosen game into history and updates currentIndex.
+// It appends the chosen game into history, updates currentIndex, and launches it.
 func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
     keys := ListKeys()
     if len(keys) == 0 {
@@ -169,11 +169,17 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
     // Mark as used
     used[choice] = true
 
-    // --- History management lives here ---
+    // --- History management ---
     hist := GetList("History.txt")
     hist = append(hist, choice)
     SetList("History.txt", hist)
     currentIndex = len(hist) - 1
+
+    // --- Launch game ---
+    if err := Run([]string{choice}); err != nil {
+        fmt.Printf("[Attract] Failed to run %s: %v\n", choice, err)
+        return ""
+    }
 
     return choice
 }
@@ -194,19 +200,23 @@ func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
     if currentIndex >= 0 && currentIndex < len(hist)-1 {
         currentIndex++
         path := hist[currentIndex]
-        Run([]string{path})
+
+        if err := Run([]string{path}); err != nil {
+            fmt.Printf("[Attract] Failed to run %s: %v\n", path, err)
+            return "", false
+        }
+
         resetGlobalTicker(cfg, r)
         return path, true
     }
 
-    // Case 2: end of history → pick new random (adds itself to history)
+    // Case 2: end of history → pick new random (PickRandomGame handles Run + history)
     path := PickRandomGame(cfg, r)
     if path == "" {
         fmt.Println("[Attract] No game available to play.")
         return "", false
     }
 
-    Run([]string{path})
     resetGlobalTicker(cfg, r)
     return path, true
 }
