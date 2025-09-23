@@ -188,10 +188,9 @@ func (e StaticEvent) String() string {
 }
 
 // Stream launches the static screen detector and streams events (singleton).
-func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
+func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 	streamOnce.Do(func() {
 		streamCh = make(chan StaticEvent, 1)
-		skipChGlobal = skipCh
 
 		baseCfg := cfg.StaticDetector
 		overrides := cfg.StaticDetector.Systems
@@ -208,7 +207,6 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 			}
 			defer res.Close()
 
-			// detector state
 			staticScreenRun := 0.0
 			staticStartTime := 0.0
 			sampleFrames := 0
@@ -231,7 +229,7 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 				handledStatic = false
 
 				currCfg = baseCfg
-				sysName := strings.ToLower(run.LastPlayedSystem.Name)
+				sysName := strings.ToLower(LastPlayedSystem.Id)
 				if ov, ok := overrides[sysName]; ok {
 					if ov.BlackThreshold != nil {
 						currCfg.BlackThreshold = *ov.BlackThreshold
@@ -262,34 +260,24 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 			currRGB := make([]uint32, maxSamples)
 
 			for {
-				if paused.Load() || input.IsSearching() {
-					lastFrameTime = time.Now()
-					staticScreenRun = 0
-					staticStartTime = 0
-					firstFrame = true
-					time.Sleep(time.Second / targetFPS)
-					continue
-				}
-
 				t1 := time.Now()
-				displayGame := fmt.Sprintf("[%s] %s", run.LastPlayedSystem.Name, run.LastPlayedName)
-				cleanGame, _ := utils.NormalizeEntry(run.LastPlayedName)
+
+				displayGame := fmt.Sprintf("[%s] %s", LastPlayedSystem.Id, LastPlayedName)
+				cleanGame, _ := utils.NormalizeEntry(LastPlayedName)
 
 				if displayGame != lastGame {
 					resetState(displayGame)
 				}
 
+				// Capture frame
 				res.Header = int(res.Map[2])<<8 | int(res.Map[3])
 				res.Width = int(res.Map[6])<<8 | int(res.Map[7])
 				res.Height = int(res.Map[8])<<8 | int(res.Map[9])
 				res.Line = int(res.Map[10])<<8 | int(res.Map[11])
 
-				valid := true
-				if res.Width < 64 || res.Width > 2048 ||
+				valid := !(res.Width < 64 || res.Width > 2048 ||
 					res.Height < 64 || res.Height > 2048 ||
-					res.Line < res.Width*3 || res.Line > 2048*4 {
-					valid = false
-				}
+					res.Line < res.Width*3 || res.Line > 2048*4)
 
 				idx := 0
 				var sumR, sumG, sumB int
@@ -326,6 +314,7 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 				avgG := sumG / samples
 				avgB := sumB / samples
 
+				// Dominant color
 				sort.Slice(currRGB[:samples], func(i, j int) bool { return currRGB[i] < currRGB[j] })
 				bestCount := 0
 				currCount := 1
@@ -345,6 +334,7 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 				domG := int((bestVal >> 8) & 0xFF)
 				domB := int(bestVal & 0xFF)
 
+				// Static/stuck pixel detection
 				stuckPixels := 0
 				frameTime := time.Now()
 				if !firstFrame {
@@ -357,12 +347,9 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 					}
 					if !changed {
 						if staticScreenRun == 0 {
-							staticStartTime = frameTime.Sub(run.LastStartTime).Seconds()
+							staticStartTime = frameTime.Sub(LastStartTime).Seconds()
 						}
-						delta := frameTime.Sub(lastFrameTime).Seconds()
-						if delta > 0 {
-							staticScreenRun += delta
-						}
+						staticScreenRun += frameTime.Sub(lastFrameTime).Seconds()
 					} else {
 						staticScreenRun = 0
 						staticStartTime = 0
@@ -377,41 +364,29 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 				firstFrame = false
 				lastFrameTime = frameTime
 
-				uptime := frameTime.Sub(run.LastStartTime).Seconds()
+				uptime := frameTime.Sub(LastStartTime).Seconds()
 
-				domHex := rgbToHex(domR, domG, domB)
 				avgHex := rgbToHex(avgR, avgG, avgB)
-				domName := nearestColorName(domR, domG, domB)
-				avgName := nearestColorName(avgR, avgG, avgB)
 
-				system := run.LastPlayedSystem.Name
-
-				// black/static detection
 				if uptime > currCfg.Grace {
 					if avgHex == "#000000" && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
 						if currCfg.WriteBlackList {
-							addToFile(system, cleanGame, "_blacklist.txt")
+							addToFile(LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
 						}
 						if currCfg.SkipBlack {
-							_, _ = history.Next()
-							select {
-							case skipChGlobal <- struct{}{}:
-							default:
-							}
+							Next(cfg, rand.New(rand.NewSource(time.Now().UnixNano())))
+							fmt.Println("[StaticDetector] Auto-skip (black screen)")
 						}
 						handledBlack = true
 					}
 					if avgHex != "#000000" && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
 						if currCfg.WriteStaticList {
 							entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
-							addToFile(system, entry, "_staticlist.txt")
+							addToFile(LastPlayedSystem.Id, entry, "_staticlist.txt")
 						}
 						if currCfg.SkipStatic {
-							_, _ = history.Next()
-							select {
-							case skipChGlobal <- struct{}{}:
-							default:
-							}
+							Next(cfg, rand.New(rand.NewSource(time.Now().UnixNano())))
+							fmt.Println("[StaticDetector] Auto-skip (static screen)")
 						}
 						handledStatic = true
 					}
@@ -425,10 +400,10 @@ func Stream(cfg *config.UserConfig, skipCh chan<- struct{}) <-chan StaticEvent {
 					Samples:      samples,
 					Width:        res.Width,
 					Height:       res.Height,
-					DominantHex:  domHex,
-					DominantName: domName,
+					DominantHex:  rgbToHex(domR, domG, domB),
+					DominantName: nearestColorName(domR, domG, domB),
 					AverageHex:   avgHex,
-					AverageName:  avgName,
+					AverageName:  nearestColorName(avgR, avgG, avgB),
 					Game:         displayGame,
 				}
 				streamCh <- event
