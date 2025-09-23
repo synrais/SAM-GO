@@ -48,9 +48,7 @@ var colors = []NamedColor{
 }
 
 func nearestColorName(r, g, b int) string {
-	// quick luminance
 	y := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
-
 	if y < 30 {
 		return "Black"
 	}
@@ -58,7 +56,6 @@ func nearestColorName(r, g, b int) string {
 		return "White"
 	}
 
-	// compare only against chromatic colors
 	best := 0
 	bestDist := int64(1<<63 - 1)
 	for i, c := range colors {
@@ -112,7 +109,6 @@ func (r *resolution) Close() {
 // ---- List helpers ----
 func isEntryInFile(path, game string) bool {
 	normName, _ := utils.NormalizeEntry(game)
-
 	f, err := os.Open(path)
 	if err != nil {
 		return false
@@ -166,7 +162,6 @@ type StaticEvent struct {
 	Frames       int
 	StaticScreen float64
 	StuckPixels  int
-	Samples      int
 	Width        int
 	Height       int
 	DominantHex  string
@@ -179,10 +174,10 @@ type StaticEvent struct {
 
 func (e StaticEvent) String() string {
 	return fmt.Sprintf("Uptime=%7.1f | Frames=%7d | StaticScreen=%7.1fs | "+
-		"StuckPixels=%5d/%-5d | Resolution=%4dx%-4d | "+
+		"StuckPixels=%5d | Resolution=%4dx%-4d | "+
 		"DominantRGB= %s %-7s | AverageRGB= %s %-7s | Game= %s",
 		e.Uptime, e.Frames, e.StaticScreen,
-		e.StuckPixels, e.Samples,
+		e.StuckPixels,
 		e.Width, e.Height,
 		e.DominantHex, e.DominantName,
 		e.AverageHex, e.AverageName,
@@ -220,7 +215,6 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 			handledStatic := false
 			currCfg := baseCfg
 
-			// per-title clock
 			titleStartTime := time.Now()
 
 			resetState := func(game string) {
@@ -232,7 +226,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				lastFrameTime = time.Now()
 				handledBlack = false
 				handledStatic = false
-				titleStartTime = time.Now() // reset uptime per title
+				titleStartTime = time.Now()
 
 				currCfg = baseCfg
 				sysName := strings.ToLower(LastPlayedSystem.Id)
@@ -261,9 +255,8 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				}
 			}
 
-			maxSamples := (2048 / defaultStep) * (2048 / defaultStep)
-			prevRGB := make([]uint32, maxSamples)
-			currRGB := make([]uint32, maxSamples)
+			prevRGB := make([]uint32, 0, (2048/defaultStep)*(2048/defaultStep))
+			currRGB := make([]uint32, 0, (2048/defaultStep)*(2048/defaultStep))
 
 			for {
 				t1 := time.Now()
@@ -271,13 +264,11 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				displayGame := fmt.Sprintf("[%s] %s", LastPlayedSystem.Id, LastPlayedName)
 				cleanGame, _ := utils.NormalizeEntry(LastPlayedName)
 
-				// 🔥 handle game change before sampling
 				if displayGame != lastGame {
 					resetState(displayGame)
-					continue // skip stale frame
+					continue
 				}
 
-				// Capture frame
 				res.Header = int(res.Map[2])<<8 | int(res.Map[3])
 				res.Width = int(res.Map[6])<<8 | int(res.Map[7])
 				res.Height = int(res.Map[8])<<8 | int(res.Map[9])
@@ -287,11 +278,11 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 					res.Height < 64 || res.Height > 2048 ||
 					res.Line < res.Width*3 || res.Line > 2048*4)
 
-				idx := 0
 				var sumR, sumG, sumB int
+				currRGB = currRGB[:0]
+
 				if !valid {
-					currRGB[0] = 0
-					idx = 1
+					currRGB = append(currRGB, 0)
 				} else {
 					for y := 0; y < res.Height; y += defaultStep {
 						row := res.Map[res.Header+y*res.Line:]
@@ -301,34 +292,31 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 								r := row[off]
 								g := row[off+1]
 								b := row[off+2]
-								currRGB[idx] = uint32(r)<<16 | uint32(g)<<8 | uint32(b)
+								currRGB = append(currRGB, uint32(r)<<16|uint32(g)<<8|uint32(b))
 								sumR += int(r)
 								sumG += int(g)
 								sumB += int(b)
-								idx++
 							}
 						}
 					}
 				}
 
-				samples := idx
-				if samples <= 0 {
+				if len(currRGB) == 0 {
 					time.Sleep(time.Second / targetFPS)
 					continue
 				}
 				sampleFrames++
 
-				avgR := sumR / samples
-				avgG := sumG / samples
-				avgB := sumB / samples
+				avgR := sumR / len(currRGB)
+				avgG := sumG / len(currRGB)
+				avgB := sumB / len(currRGB)
 
-				// Dominant color
-				sort.Slice(currRGB[:samples], func(i, j int) bool { return currRGB[i] < currRGB[j] })
+				sort.Slice(currRGB, func(i, j int) bool { return currRGB[i] < currRGB[j] })
 				bestCount := 0
 				currCount := 1
 				bestVal := currRGB[0]
-				for i := 1; i <= samples; i++ {
-					if i < samples && currRGB[i] == currRGB[i-1] {
+				for i := 1; i <= len(currRGB); i++ {
+					if i < len(currRGB) && currRGB[i] == currRGB[i-1] {
 						currCount++
 					} else {
 						if currCount > bestCount {
@@ -342,12 +330,15 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				domG := int((bestVal >> 8) & 0xFF)
 				domB := int(bestVal & 0xFF)
 
-				// Check for static screen
 				frameTime := time.Now()
 				stuckPixels := 0
 				if !firstFrame {
 					changed := false
-					for i := 0; i < samples; i++ {
+					minLen := len(prevRGB)
+					if len(currRGB) < minLen {
+						minLen = len(currRGB)
+					}
+					for i := 0; i < minLen; i++ {
 						if currRGB[i] != prevRGB[i] {
 							changed = true
 						} else {
@@ -360,20 +351,17 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 						}
 						staticScreenRun += frameTime.Sub(lastFrameTime).Seconds()
 					} else {
-						// only reset when actual motion happens
 						staticScreenRun = 0
 						staticStartTime = 0
 						handledStatic = false
 						handledBlack = false
 					}
 				}
-				copy(prevRGB, currRGB[:samples])
+				prevRGB = append(prevRGB[:0], currRGB...)
 				firstFrame = false
 				lastFrameTime = frameTime
 
-				// uptime per title
 				uptime := frameTime.Sub(titleStartTime).Seconds()
-
 				avgHex := rgbToHex(avgR, avgG, avgB)
 
 				event := StaticEvent{
@@ -381,7 +369,6 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 					Frames:       sampleFrames,
 					StaticScreen: staticScreenRun,
 					StuckPixels:  stuckPixels,
-					Samples:      samples,
 					Width:        res.Width,
 					Height:       res.Height,
 					DominantHex:  rgbToHex(domR, domG, domB),
@@ -392,7 +379,6 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 					DetectorSkip: false,
 				}
 
-				// Decide skip
 				if uptime > currCfg.Grace {
 					if avgHex == "#000000" &&
 						staticScreenRun > currCfg.BlackThreshold &&
