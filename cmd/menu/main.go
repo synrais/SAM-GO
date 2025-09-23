@@ -2,110 +2,58 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
+	"os/exec"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/synrais/SAM-GO/pkg/attract"
 )
 
-type MenuItem struct {
-	System string
-	Path   string
-	IsSystem bool
-	Expanded bool
-}
-
-func buildMenu(master []string) []MenuItem {
-	var items []MenuItem
-	var currentSystem string
-
-	for _, line := range master {
-		if len(line) > 9 && line[:9] == "# SYSTEM:" {
-			currentSystem = line[9:]
-			items = append(items, MenuItem{System: currentSystem, IsSystem: true})
-		} else if line != "" {
-			items = append(items, MenuItem{System: currentSystem, Path: line})
-		}
-	}
-	return items
+func resetToMenuCore() error {
+	cmd := exec.Command("sh", "-c", "echo load_core /media/fat/menu.rbf > /dev/MiSTer_cmd")
+	return cmd.Run()
 }
 
 func main() {
-	// Load the in-memory Masterlist slice
-	master := attract.GetMasterlist() // <- you’ll need to expose this accessor
+	// Step 1: Force menu core
+	if err := resetToMenuCore(); err != nil {
+		fmt.Fprintf(os.Stderr, "[ERROR] Failed to reset to menu core: %v\n", err)
+		os.Exit(1)
+	}
 
-	items := buildMenu(master)
+	// Small delay so menu.rbf actually loads
+	time.Sleep(500 * time.Millisecond)
 
-	// Init tcell screen
-	s, err := tcell.NewScreen()
+	// Step 2: Init TUI
+	screen, err := tcell.NewScreen()
 	if err != nil {
-		log.Fatalf("tcell.NewScreen: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to create screen: %v\n", err)
+		os.Exit(1)
 	}
-	if err = s.Init(); err != nil {
-		log.Fatalf("s.Init: %v", err)
+	if err := screen.Init(); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to init screen: %v\n", err)
+		os.Exit(1)
 	}
-	defer s.Fini()
+	defer screen.Fini()
 
-	s.Clear()
-	style := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack)
+	screen.Clear()
+	drawText(screen, 1, 1, tcell.StyleDefault, "SAM-GO Test Menu (menu core loaded)")
+	screen.Show()
 
-	selected := 0
-
-	// Render function
-	draw := func() {
-		s.Clear()
-		y := 0
-		for i, item := range items {
-			line := ""
-			if item.IsSystem {
-				prefix := "+"
-				if item.Expanded {
-					prefix = "-"
-				}
-				line = fmt.Sprintf("[%s] %s", prefix, item.System)
-			} else if item.Expanded || items[i-1].Expanded {
-				line = "    " + item.Path
-			} else {
-				continue
-			}
-
-			lineStyle := style
-			if i == selected {
-				lineStyle = lineStyle.Reverse(true)
-			}
-			for x, r := range line {
-				s.SetContent(x, y, r, nil, lineStyle)
-			}
-			y++
-		}
-		s.Show()
-	}
-
-	// Main loop
+	// Wait for ESC to exit
 	for {
-		draw()
-		ev := s.PollEvent()
+		ev := screen.PollEvent()
 		switch ev := ev.(type) {
 		case *tcell.EventKey:
-			switch ev.Key() {
-			case tcell.KeyEscape:
+			if ev.Key() == tcell.KeyEscape || ev.Key() == tcell.KeyCtrlC {
 				return
-			case tcell.KeyUp:
-				if selected > 0 {
-					selected--
-				}
-			case tcell.KeyDown:
-				if selected < len(items)-1 {
-					selected++
-				}
-			case tcell.KeyEnter:
-				if items[selected].IsSystem {
-					items[selected].Expanded = !items[selected].Expanded
-				}
 			}
-		case *tcell.EventResize:
-			s.Sync()
 		}
+	}
+}
+
+func drawText(s tcell.Screen, x, y int, style tcell.Style, text string) {
+	for i, r := range text {
+		s.SetContent(x+i, y, r, nil, style)
 	}
 }
