@@ -140,10 +140,10 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
     }
     used := usedPools[listKey]
 
-    // Filter unused entries (normalize paths with ParseLine)
+    // Filter unused entries (normalize paths with utils.ParseLine)
     var unused []string
     for _, line := range lines {
-        _, gamePath := ParseLine(line)
+        _, gamePath := utils.ParseLine(line)
         if !used[gamePath] {
             unused = append(unused, gamePath)
         }
@@ -155,7 +155,7 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
         usedPools[listKey] = make(map[string]bool)
         used = usedPools[listKey]
         for _, line := range lines {
-            _, gamePath := ParseLine(line)
+            _, gamePath := utils.ParseLine(line)
             unused = append(unused, gamePath)
         }
     }
@@ -196,7 +196,7 @@ func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
     // Case 1: move forward in history
     if currentIndex >= 0 && currentIndex < len(hist)-1 {
         currentIndex++
-        _, path := ParseLine(hist[currentIndex])
+        _, path := utils.ParseLine(hist[currentIndex])
 
         if err := Run([]string{path}); err != nil {
             fmt.Printf("[Attract] Failed to run %s: %v\n", path, err)
@@ -225,7 +225,7 @@ func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 
     if currentIndex > 0 {
         currentIndex--
-        _, path := ParseLine(hist[currentIndex])
+        _, path := utils.ParseLine(hist[currentIndex])
         Run([]string{path})
         resetGlobalTicker(cfg, r)
         return path, true
