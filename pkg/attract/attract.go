@@ -81,17 +81,13 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	fmt.Println("[Attract] Running. Press ESC to exit.")
 
-	// Pick first game directly with PickRandomGame (no history write)
+	// Pick first game directly through PickRandomGame (handles history + launch)
 	first := PickRandomGame(cfg, r)
 	if first == "" {
 		fmt.Println("[Attract] No game available to start attract mode.")
 		return
 	}
-		fmt.Printf("[Attract] First pick -> %s\n", filepath.Base(first))
-	} else {
-		fmt.Printf("[Attract] Failed to run first pick: %v\n", err)
-		return
-	}
+	fmt.Printf("[Attract] First pick -> %s\n", filepath.Base(first))
 
 	// 🎵 Stop background music before starting first game
 	if bgmPlayer != nil {
