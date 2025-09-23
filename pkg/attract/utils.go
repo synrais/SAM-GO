@@ -167,7 +167,6 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 
     // If exhausted, reset the pool and reuse all entries
     if len(unused) == 0 {
-        fmt.Printf("[Attract] Resetting shuffle pool for %s\n", listKey)
         usedPools[listKey] = make(map[string]bool)
         used = usedPools[listKey]
         for _, line := range lines {
