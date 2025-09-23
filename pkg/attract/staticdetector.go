@@ -323,12 +323,14 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 
 				// Check for static screen
 				frameTime := time.Now()
+				stuckPixels := 0
 				if !firstFrame {
 					changed := false
 					for i := 0; i < samples; i++ {
 						if currRGB[i] != prevRGB[i] {
 							changed = true
-							break
+						} else {
+							stuckPixels++
 						}
 					}
 					if !changed {
@@ -355,7 +357,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 							addToFile(LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
 						}
 						if currCfg.SkipBlack {
-							Next(cfg, r) // 🔥 use shared RNG
+							Next(cfg, r)
 							fmt.Println("[StaticDetector] Auto-skip (black screen)")
 						}
 						handledBlack = true
@@ -366,7 +368,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 							addToFile(LastPlayedSystem.Id, entry, "_staticlist.txt")
 						}
 						if currCfg.SkipStatic {
-							Next(cfg, r) // 🔥 use shared RNG
+							Next(cfg, r)
 							fmt.Println("[StaticDetector] Auto-skip (static screen)")
 						}
 						handledStatic = true
@@ -377,7 +379,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 					Uptime:       uptime,
 					Frames:       sampleFrames,
 					StaticScreen: staticScreenRun,
-					StuckPixels:  samples,
+					StuckPixels:  stuckPixels,
 					Samples:      samples,
 					Width:        res.Width,
 					Height:       res.Height,
