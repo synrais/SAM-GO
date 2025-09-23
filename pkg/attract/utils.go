@@ -124,7 +124,11 @@ var usedPools = make(map[string]map[string]bool)
 // PickRandomGame chooses a random game without repeats until all for that system are used.
 // It also appends the chosen game into history, updates currentIndex, runs it, and resets the timer.
 func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
+	fmt.Println("[DEBUG][PickRandomGame] called")
+
 	keys := ListKeys()
+	fmt.Println("[DEBUG][PickRandomGame] all list keys:", keys)
+
 	if len(keys) == 0 {
 		fmt.Println("[Attract] No gamelists available in memory.")
 		return ""
@@ -137,19 +141,25 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 			systemKeys = append(systemKeys, k)
 		}
 	}
+	fmt.Println("[DEBUG][PickRandomGame] filtered systemKeys:", systemKeys)
+
 	if len(systemKeys) == 0 {
 		fmt.Println("[Attract] No gamelists found (excluding history).")
 		return ""
 	}
 
 	listKey := systemKeys[r.Intn(len(systemKeys))]
+	fmt.Println("[DEBUG][PickRandomGame] chosen listKey:", listKey)
+
 	lines := GetList(listKey)
+	fmt.Println("[DEBUG][PickRandomGame] entries in list:", len(lines))
 	if len(lines) == 0 {
 		return ""
 	}
 
 	if usedPools[listKey] == nil {
 		usedPools[listKey] = make(map[string]bool)
+		fmt.Println("[DEBUG][PickRandomGame] created new used pool for", listKey)
 	}
 	used := usedPools[listKey]
 
@@ -160,8 +170,10 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 			unused = append(unused, gamePath)
 		}
 	}
+	fmt.Println("[DEBUG][PickRandomGame] unused entries:", len(unused))
 
 	if len(unused) == 0 {
+		fmt.Println("[DEBUG][PickRandomGame] pool exhausted, resetting for", listKey)
 		usedPools[listKey] = make(map[string]bool)
 		used = usedPools[listKey]
 		for _, line := range lines {
@@ -174,19 +186,26 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 	if cfg.Attract.Random && len(unused) > 1 {
 		choice = unused[r.Intn(len(unused))]
 	}
+	fmt.Println("[DEBUG][PickRandomGame] choice:", choice)
 
 	used[choice] = true
 
 	// update history
 	hist := GetList("History.txt")
+	fmt.Println("[DEBUG][PickRandomGame] history len before:", len(hist))
 	hist = append(hist, choice)
 	SetList("History.txt", hist)
 	currentIndex = len(hist) - 1
+	fmt.Println("[DEBUG][PickRandomGame] history len after:", len(hist), "currentIndex:", currentIndex)
 
+	fmt.Println("[DEBUG][PickRandomGame] calling Run with:", choice)
 	Run([]string{choice})
 
 	// reset timer
-	ResetAttractTimer(ParsePlayTime(cfg.Attract.PlayTime, r))
+	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
+	fmt.Println("[DEBUG][PickRandomGame] resetting timer, duration:", wait)
+	ResetAttractTimer(wait)
+
 	return choice
 }
 
@@ -198,27 +217,35 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 var currentIndex int = -1
 
 func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
-	hist := GetList("History.txt")
+    fmt.Println("[DEBUG][Next] called, currentIndex:", currentIndex)
 
-	if currentIndex >= 0 && currentIndex < len(hist)-1 {
-		currentIndex++
-		_, path := utils.ParseLine(hist[currentIndex])
+    hist := GetList("History.txt")
+    fmt.Println("[DEBUG][Next] history length:", len(hist))
 
-		if err := Run([]string{path}); err != nil {
-			fmt.Printf("[Attract] Failed to run %s: %v\n", path, err)
-			return "", false
-		}
-		ResetAttractTimer(ParsePlayTime(cfg.Attract.PlayTime, r))
-		return path, true
-	}
+    // Case 1: move forward in history
+    if currentIndex >= 0 && currentIndex < len(hist)-1 {
+        currentIndex++
+        _, path := utils.ParseLine(hist[currentIndex])
+        fmt.Println("[DEBUG][Next] moving forward to history index:", currentIndex, "->", path)
 
-	path := PickRandomGame(cfg, r)
-	if path == "" {
-		fmt.Println("[Attract] No game available to play.")
-		return "", false
-	}
-	// PickRandomGame already resets timer
-	return path, true
+        if err := Run([]string{path}); err != nil {
+            fmt.Printf("[Attract] Failed to run %s: %v\n", path, err)
+            return "", false
+        }
+        ResetAttractTimer(ParsePlayTime(cfg.Attract.PlayTime, r))
+        return path, true
+    }
+
+    // Case 2: no forward history
+    fmt.Println("[DEBUG][Next] picking random game")
+    path := PickRandomGame(cfg, r)
+    if path == "" {
+        fmt.Println("[Attract] No game available to play.")
+        return "", false
+    }
+    fmt.Println("[DEBUG][Next] PickRandomGame chose:", path)
+    // PickRandomGame already resets timer
+    return path, true
 }
 
 func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
@@ -306,13 +333,30 @@ func Run(args []string) error {
 	}
 	runPath := args[0]
 
+	fmt.Println("[DEBUG][Run] called with args:", args)
+	fmt.Println("[DEBUG][Run] runPath:", runPath)
+
 	system, _ := games.BestSystemMatch(&config.UserConfig{}, runPath)
+	fmt.Println("[DEBUG][Run] BestSystemMatch ->", system.Id, "(", system.Name, ")")
+
 	setLastPlayed(system, runPath)
+	fmt.Println("[DEBUG][Run] LastPlayedPath set to:", LastPlayedPath)
 
 	if err := writeNowPlayingFile(); err != nil {
 		fmt.Printf("[RUN] Failed to write Now_Playing.txt: %v\n", err)
+	} else {
+		fmt.Println("[DEBUG][Run] Now_Playing.txt updated")
 	}
 
 	fmt.Printf("[RUN] Now Playing %s: %s\n", system.Name, LastPlayedName)
-	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
+
+	err := mister.LaunchGame(&config.UserConfig{}, system, runPath)
+	if err != nil {
+		fmt.Printf("[RUN] LaunchGame failed for %s: %v\n", runPath, err)
+	} else {
+		fmt.Println("[DEBUG][Run] LaunchGame succeeded for", runPath)
+	}
+
+	return err
 }
+
