@@ -66,7 +66,7 @@ func ExpandGroups(systemIDs []string) ([]string, error) {
 
 //
 // -----------------------------
-// Extra helpers from attract.go
+// Extra helpers
 // -----------------------------
 //
 
@@ -119,12 +119,10 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 // Shuffle pool (per system)
 // -----------------------------
 
-// usedPools tracks which games have been played per system
-// Key: listKey (system), Value: map[path]bool
 var usedPools = make(map[string]map[string]bool)
 
 // PickRandomGame chooses a random game without repeats until all for that system are used.
-// It also appends the chosen game into history, updates currentIndex, runs it, and resets timer.
+// It also appends the chosen game into history, updates currentIndex, runs it, and resets the timer.
 func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 	keys := ListKeys()
 	if len(keys) == 0 {
@@ -144,20 +142,17 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 		return ""
 	}
 
-	// Pick random gamelist (system)
 	listKey := systemKeys[r.Intn(len(systemKeys))]
 	lines := GetList(listKey)
 	if len(lines) == 0 {
 		return ""
 	}
 
-	// Ensure this system has a pool
 	if usedPools[listKey] == nil {
 		usedPools[listKey] = make(map[string]bool)
 	}
 	used := usedPools[listKey]
 
-	// Filter unused entries
 	var unused []string
 	for _, line := range lines {
 		_, gamePath := utils.ParseLine(line)
@@ -166,7 +161,6 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 		}
 	}
 
-	// If exhausted, reset the pool
 	if len(unused) == 0 {
 		usedPools[listKey] = make(map[string]bool)
 		used = usedPools[listKey]
@@ -176,42 +170,36 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 		}
 	}
 
-	// Pick random entry from unused
 	choice := unused[0]
 	if cfg.Attract.Random && len(unused) > 1 {
 		choice = unused[r.Intn(len(unused))]
 	}
 
-	// Mark as used
 	used[choice] = true
 
-	// Update history
+	// update history
 	hist := GetList("History.txt")
 	hist = append(hist, choice)
 	SetList("History.txt", hist)
 	currentIndex = len(hist) - 1
 
-	// Launch game
 	Run([]string{choice})
 
-	// Reset timer
-	resetGlobalTimer(cfg, r)
-
+	// reset timer
+	ResetAttractTimer(ParsePlayTime(cfg.Attract.PlayTime, r))
 	return choice
 }
 
 //
 // -----------------------------
-// History navigation + Timer reset
+// History navigation
 // -----------------------------
 
 var currentIndex int = -1
 
-// Next moves forward in history if possible, otherwise picks a new random game.
 func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
 
-	// Case 1: move forward in history
 	if currentIndex >= 0 && currentIndex < len(hist)-1 {
 		currentIndex++
 		_, path := utils.ParseLine(hist[currentIndex])
@@ -220,22 +208,19 @@ func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 			fmt.Printf("[Attract] Failed to run %s: %v\n", path, err)
 			return "", false
 		}
-
-		resetGlobalTimer(cfg, r)
+		ResetAttractTimer(ParsePlayTime(cfg.Attract.PlayTime, r))
 		return path, true
 	}
 
-	// Case 2: end of history → PickRandomGame handles reset itself
 	path := PickRandomGame(cfg, r)
 	if path == "" {
 		fmt.Println("[Attract] No game available to play.")
 		return "", false
 	}
-
+	// PickRandomGame already resets timer
 	return path, true
 }
 
-// Back moves backward in history if possible.
 func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
 
@@ -243,49 +228,37 @@ func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 		currentIndex--
 		_, path := utils.ParseLine(hist[currentIndex])
 		Run([]string{path})
-		resetGlobalTimer(cfg, r)
+		ResetAttractTimer(ParsePlayTime(cfg.Attract.PlayTime, r))
 		return path, true
 	}
-
 	return "", false
-}
-
-// resetGlobalTimer resets the singleton attract timer.
-func resetGlobalTimer(cfg *config.UserConfig, r *rand.Rand) {
-	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
-	ResetAttractTimer(wait)
 }
 
 //
 // -----------------------------
 // Global Attract Timer
 // -----------------------------
-//
 
 var (
 	attractTimer   *time.Timer
 	attractTimerMu sync.Mutex
 )
 
-// ResetAttractTimer stops any existing timer and starts a new one.
 func ResetAttractTimer(d time.Duration) {
 	attractTimerMu.Lock()
 	defer attractTimerMu.Unlock()
 
 	if attractTimer != nil {
 		if !attractTimer.Stop() {
-			// Drain if it already fired
 			select {
 			case <-attractTimer.C:
 			default:
 			}
 		}
 	}
-
 	attractTimer = time.NewTimer(d)
 }
 
-// AttractTimerChan returns the current timer channel.
 func AttractTimerChan() <-chan time.Time {
 	attractTimerMu.Lock()
 	defer attractTimerMu.Unlock()
@@ -327,7 +300,6 @@ func writeNowPlayingFile() error {
 	return os.WriteFile(nowPlayingFile, []byte(content), 0644)
 }
 
-// Run launches a game with the default core loader.
 func Run(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("Usage: SAM -run <path>")
@@ -342,6 +314,5 @@ func Run(args []string) error {
 	}
 
 	fmt.Printf("[RUN] Now Playing %s: %s\n", system.Name, LastPlayedName)
-
 	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
 }
