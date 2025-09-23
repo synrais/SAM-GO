@@ -48,33 +48,33 @@ var colors = []NamedColor{
 }
 
 func nearestColorName(r, g, b int) string {
-    // quick luminance
-    y := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
+	// quick luminance
+	y := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
 
-    if y < 30 {
-        return "Black"
-    }
-    if y > 220 {
-        return "White"
-    }
+	if y < 30 {
+		return "Black"
+	}
+	if y > 220 {
+		return "White"
+	}
 
-    // compare only against chromatic colors
-    best := 0
-    bestDist := int64(1<<63 - 1)
-    for i, c := range colors {
-        if c.Name == "Black" || c.Name == "White" {
-            continue
-        }
-        dr := int64(r - c.R)
-        dg := int64(g - c.G)
-        db := int64(b - c.B)
-        d := dr*dr + dg*dg + db*db
-        if d < bestDist {
-            bestDist = d
-            best = i
-        }
-    }
-    return colors[best].Name
+	// compare only against chromatic colors
+	best := 0
+	bestDist := int64(1<<63 - 1)
+	for i, c := range colors {
+		if c.Name == "Black" || c.Name == "White" {
+			continue
+		}
+		dr := int64(r - c.R)
+		dg := int64(g - c.G)
+		db := int64(b - c.B)
+		d := dr*dr + dg*dg + db*db
+		if d < bestDist {
+			bestDist = d
+			best = i
+		}
+	}
+	return colors[best].Name
 }
 
 func rgbToHex(r, g, b int) string {
@@ -174,6 +174,7 @@ type StaticEvent struct {
 	AverageHex   string
 	AverageName  string
 	Game         string
+	DetectorSkip bool
 }
 
 func (e StaticEvent) String() string {
