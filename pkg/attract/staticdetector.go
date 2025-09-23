@@ -60,11 +60,6 @@ func nearestColorName(r, g, b int) string {
 
 	// detect greys: small difference between channels
 	if maxDiff(r, g, b) < 15 {
-		if y < 85 {
-			return "Grey"
-		} else if y < 170 {
-			return "Grey"
-		}
 		return "Grey"
 	}
 
@@ -293,8 +288,10 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 			for {
 				t1 := time.Now()
 
-				displayGame := fmt.Sprintf("[%s] %s", LastPlayedSystem.Id, LastPlayedName)
-				cleanGame, _ := utils.NormalizeEntry(LastPlayedName)
+				// snapshot to avoid bleed between games
+				system, name := getLastPlayed()
+				displayGame := fmt.Sprintf("[%s] %s", system.Id, name)
+				cleanGame, _ := utils.NormalizeEntry(name)
 
 				if displayGame != lastGame {
 					resetState(displayGame)
@@ -417,7 +414,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 						staticScreenRun > currCfg.BlackThreshold &&
 						!handledBlack {
 						if currCfg.WriteBlackList {
-							addToFile(LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
+							addToFile(system.Id, cleanGame, "_blacklist.txt")
 						}
 						if currCfg.SkipBlack {
 							event.DetectorSkip = true
@@ -429,7 +426,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 						!handledStatic {
 						if currCfg.WriteStaticList {
 							entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
-							addToFile(LastPlayedSystem.Id, entry, "_staticlist.txt")
+							addToFile(system.Id, entry, "_staticlist.txt")
 						}
 						if currCfg.SkipStatic {
 							event.DetectorSkip = true
