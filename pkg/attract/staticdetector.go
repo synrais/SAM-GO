@@ -61,11 +61,11 @@ func nearestColorName(r, g, b int) string {
 	// detect greys: small difference between channels
 	if maxDiff(r, g, b) < 15 {
 		if y < 85 {
-			return "Dark Grey"
+			return "Grey"
 		} else if y < 170 {
 			return "Grey"
 		}
-		return "Light Grey"
+		return "Grey"
 	}
 
 	// else: closest chromatic color
