@@ -13,9 +13,6 @@ import (
 	"github.com/synrais/SAM-GO/pkg/input"
 )
 
-// Global timer reference for attract mode
-var AttractTimer *time.Timer
-
 // Global BGM player
 var bgmPlayer *Player
 
@@ -108,9 +105,8 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 		}()
 	}
 
-	// Kick off ticker for first interval
-	wait := ParsePlayTime(cfg.Attract.PlayTime, r)
-	ResetAttractTicker(wait)
+	// Kick off timer for first interval
+	ResetAttractTimer(ParsePlayTime(cfg.Attract.PlayTime, r))
 
 	// Input map
 	inputMap := AttractInputMap(cfg, r, inputCh)
@@ -118,8 +114,8 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 	// Event loop
 	for {
 		select {
-		case <-AttractTickerChan():
-			// Auto advance (this time recorded into history)
+		case <-AttractTimerChan():
+			// Auto advance
 			if _, ok := Next(cfg, r); !ok {
 				fmt.Println("[Attract] Failed to pick next game.")
 			}
