@@ -118,8 +118,12 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 // Key: listKey (system), Value: map[path]bool
 var usedPools = make(map[string]map[string]bool)
 
+// usedPools tracks which games have been played per system
+// Key: listKey (system), Value: map[path]bool
+var usedPools = make(map[string]map[string]bool)
+
 // PickRandomGame chooses a random game without repeats until all for that system are used.
-// It appends the chosen game into history, updates currentIndex, and launches it.
+// It also appends the chosen game into history, updates currentIndex, and runs it.
 func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
     keys := ListKeys()
     if len(keys) == 0 {
@@ -140,10 +144,9 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
     }
     used := usedPools[listKey]
 
-    // Filter unused entries
+    // Filter unused entries (raw lines, no cleaning)
     var unused []string
-    for _, line := range lines {
-        _, gamePath := utils.ParseLine(line)
+    for _, gamePath := range lines {
         if !used[gamePath] {
             unused = append(unused, gamePath)
         }
@@ -154,10 +157,7 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
         fmt.Printf("[Attract] Resetting shuffle pool for %s\n", listKey)
         usedPools[listKey] = make(map[string]bool)
         used = usedPools[listKey]
-        for _, line := range lines {
-            _, gamePath := utils.ParseLine(line)
-            unused = append(unused, gamePath)
-        }
+        unused = append(unused, lines...)
     }
 
     // Pick random entry from unused
@@ -166,20 +166,17 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
         choice = unused[r.Intn(len(unused))]
     }
 
-    // Mark as used
+    // Mark as used (raw string, exactly as in list)
     used[choice] = true
 
-    // --- History management ---
+    // --- History management lives here ---
     hist := GetList("History.txt")
     hist = append(hist, choice)
     SetList("History.txt", hist)
     currentIndex = len(hist) - 1
 
-    // --- Launch game ---
-    if err := Run([]string{choice}); err != nil {
-        fmt.Printf("[Attract] Failed to run %s: %v\n", choice, err)
-        return ""
-    }
+    // Launch the game
+    Run([]string{choice})
 
     return choice
 }
