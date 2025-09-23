@@ -94,9 +94,9 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 	}
 
 	// 🔥 Start static detector only if enabled in config
-	var staticCh <-chan StreamEvent
+	var staticCh <-chan StaticEvent
 	if cfg.Attract.UseStaticDetector {
-		staticCh = Stream(cfg, r) // return channel instead of blocking loop
+		staticCh = Stream(cfg, r) // returns channel of StaticEvent
 	}
 
 	// Kick off timer for first interval
@@ -122,7 +122,15 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 				action()
 			}
 
-		case sev := <-staticCh:
+		case sev, ok := <-staticCh:
+			if staticCh == nil {
+				continue
+			}
+			if !ok {
+				staticCh = nil // detector stopped
+				continue
+			}
+
 			if showStream {
 				fmt.Println(sev.String())
 			}
