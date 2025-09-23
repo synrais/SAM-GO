@@ -200,73 +200,123 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 
 			staticScreenRun := 0.0
 			staticStartTime := 0.0
-			sampleFrames := 0
-			lastFrameTime := time.Now()
-			firstFrame := true
+			frames := 0
+			start := time.Now()
 
-			lastGame := ""
 			handledBlack := false
 			handledStatic := false
 			currCfg := baseCfg
 
-			resetState := func(game string) {
-				lastGame = game
-				staticScreenRun = 0
-				staticStartTime = 0
-				sampleFrames = 0
-				firstFrame = true
-				lastFrameTime = time.Now()
-				handledBlack = false
-				handledStatic = false
-
-				currCfg = baseCfg
-				sysName := strings.ToLower(LastPlayedSystem.Id)
-				if ov, ok := overrides[sysName]; ok {
-					if ov.BlackThreshold != nil {
-						currCfg.BlackThreshold = *ov.BlackThreshold
-					}
-					if ov.StaticThreshold != nil {
-						currCfg.StaticThreshold = *ov.StaticThreshold
-					}
-					if ov.SkipBlack != nil {
-						currCfg.SkipBlack = *ov.SkipBlack
-					}
-					if ov.WriteBlackList != nil {
-						currCfg.WriteBlackList = *ov.WriteBlackList
-					}
-					if ov.SkipStatic != nil {
-						currCfg.SkipStatic = *ov.SkipStatic
-					}
-					if ov.WriteStaticList != nil {
-						currCfg.WriteStaticList = *ov.WriteStaticList
-					}
-					if ov.Grace != nil {
-						currCfg.Grace = *ov.Grace
-					}
-				}
-			}
-
+			// sample buffers
 			maxSamples := (2048 / defaultStep) * (2048 / defaultStep)
 			prevRGB := make([]uint32, maxSamples)
 			currRGB := make([]uint32, maxSamples)
 
 			for {
-				// … (frame capture + analysis unchanged) …
+				frames++
+				uptime := time.Since(start).Seconds()
 
+				// --- capture ---
+				width := int(res.Map[12])<<8 | int(res.Map[13])
+				height := int(res.Map[14])<<8 | int(res.Map[15])
+				line := int(res.Map[16])<<8 | int(res.Map[17])
+
+				if width == 0 || height == 0 || line == 0 {
+					time.Sleep(time.Second / targetFPS)
+					continue
+				}
+
+				// sample pixels
+				idx := 0
+				step := defaultStep
+				var sumR, sumG, sumB int64
+				counts := make(map[uint32]int)
+				stuck := 0
+
+				for y := 0; y < height; y += step {
+					for x := 0; x < width; x += step {
+						if idx >= maxSamples {
+							break
+						}
+						offset := y*line + x*3
+						if offset+2 >= len(res.Map) {
+							continue
+						}
+						rv := int(res.Map[offset])
+						gv := int(res.Map[offset+1])
+						bv := int(res.Map[offset+2])
+						val := uint32(rv)<<16 | uint32(gv)<<8 | uint32(bv)
+
+						currRGB[idx] = val
+						if currRGB[idx] == prevRGB[idx] {
+							stuck++
+						}
+						prevRGB[idx] = val
+
+						sumR += int64(rv)
+						sumG += int64(gv)
+						sumB += int64(bv)
+						counts[val]++
+						idx++
+					}
+				}
+
+				samples := idx
+				if samples == 0 {
+					time.Sleep(time.Second / targetFPS)
+					continue
+				}
+
+				// averages
+				avgR := int(sumR / int64(samples))
+				avgG := int(sumG / int64(samples))
+				avgB := int(sumB / int64(samples))
+				avgHex := rgbToHex(avgR, avgG, avgB)
+				avgName := nearestColorName(avgR, avgG, avgB)
+
+				// dominant
+				var domVal uint32
+				maxCount := 0
+				for k, v := range counts {
+					if v > maxCount {
+						domVal = k
+						maxCount = v
+					}
+				}
+				domR := int((domVal >> 16) & 0xFF)
+				domG := int((domVal >> 8) & 0xFF)
+				domB := int(domVal & 0xFF)
+				dominantHex := rgbToHex(domR, domG, domB)
+				dominantName := nearestColorName(domR, domG, domB)
+
+				// static detection
+				if stuck > samples/2 {
+					if staticScreenRun == 0 {
+						staticStartTime = uptime
+					}
+					staticScreenRun = uptime - staticStartTime
+				} else {
+					staticScreenRun = 0
+					staticStartTime = 0
+				}
+
+				cleanGame := filepath.Base(LastPlayedPath)
+
+				// check thresholds
 				if uptime > currCfg.Grace {
-					// Black screen detection
+					// Black screen
 					if avgHex == "#000000" && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
 						if currCfg.WriteBlackList {
 							addToFile(LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
 						}
 						if currCfg.SkipBlack {
 							fmt.Printf("[StaticDetector] Auto-skip (black screen)\n")
-							Next(cfg, r) // 🔥 no manual timer reset
+							Next(cfg, r) // timer reset handled there
 						}
 						handledBlack = true
 					}
 
-					// Static screen detection (non-black only)
+					// Static screen
 					if avgHex != "#000000" && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
 						if currCfg.WriteStaticList {
 							entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
@@ -274,13 +324,34 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 						}
 						if currCfg.SkipStatic {
 							fmt.Printf("[StaticDetector] Auto-skip (static screen)\n")
-							Next(cfg, r) // 🔥 no manual timer reset
+							Next(cfg, r) // timer reset handled there
 						}
 						handledStatic = true
 					}
 				}
 
-				// … (event emit + sleep unchanged) …
+				// emit event
+				ev := StaticEvent{
+					Uptime:       uptime,
+					Frames:       frames,
+					StaticScreen: staticScreenRun,
+					StuckPixels:  stuck,
+					Samples:      samples,
+					Width:        width,
+					Height:       height,
+					DominantHex:  dominantHex,
+					DominantName: dominantName,
+					AverageHex:   avgHex,
+					AverageName:  avgName,
+					Game:         cleanGame,
+				}
+
+				select {
+				case streamCh <- ev:
+				default:
+				}
+
+				time.Sleep(time.Second / targetFPS)
 			}
 		}()
 	})
