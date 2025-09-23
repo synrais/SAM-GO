@@ -174,6 +174,10 @@ func (e StaticEvent) String() string {
 		e.Game)
 }
 
+// -----------------------------
+// Static Detector
+// -----------------------------
+
 // Stream launches the static screen detector and streams events (singleton).
 func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 	streamOnce.Do(func() {
@@ -321,7 +325,7 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 				domG := int((bestVal >> 8) & 0xFF)
 				domB := int(bestVal & 0xFF)
 
-				// Check for static screen
+				// Check for static/black screen
 				frameTime := time.Now()
 				if !firstFrame {
 					changed := false
@@ -346,11 +350,12 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 				lastFrameTime = frameTime
 
 				uptime := frameTime.Sub(LastStartTime).Seconds()
-
 				avgHex := rgbToHex(avgR, avgG, avgB)
 
 				if uptime > currCfg.Grace {
+					// ---- Black screen detection ----
 					if avgHex == "#000000" && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
+						handledBlack = true // early mark
 						if currCfg.WriteBlackList {
 							addToFile(LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
 						}
@@ -358,9 +363,10 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 							Next(cfg, rand.New(rand.NewSource(time.Now().UnixNano())))
 							fmt.Println("[StaticDetector] Auto-skip (black screen)")
 						}
-						handledBlack = true
 					}
+					// ---- Static screen detection ----
 					if avgHex != "#000000" && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
+						handledStatic = true // early mark
 						if currCfg.WriteStaticList {
 							entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
 							addToFile(LastPlayedSystem.Id, entry, "_staticlist.txt")
@@ -369,7 +375,6 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 							Next(cfg, rand.New(rand.NewSource(time.Now().UnixNano())))
 							fmt.Println("[StaticDetector] Auto-skip (static screen)")
 						}
-						handledStatic = true
 					}
 				}
 
@@ -400,3 +405,4 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 
 	return streamCh
 }
+
