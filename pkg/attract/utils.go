@@ -114,16 +114,6 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 	return false
 }
 
-package attract
-
-import (
-    "fmt"
-    "math/rand"
-
-    "github.com/synrais/SAM-GO/pkg/config"
-    "github.com/synrais/SAM-GO/pkg/utils"
-)
-
 // -----------------------------
 // Shuffle pool (per system)
 // -----------------------------
