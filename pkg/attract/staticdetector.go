@@ -3,7 +3,7 @@ package attract
 import (
 	"bufio"
 	"fmt"
-	"math/rand"
+	// "math/rand"
 	"os"
 	"path/filepath"
 	"sort"
