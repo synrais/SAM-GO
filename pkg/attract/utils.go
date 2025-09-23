@@ -217,35 +217,35 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 var currentIndex int = -1
 
 func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
-    fmt.Println("[DEBUG][Next] called, currentIndex:", currentIndex)
+	fmt.Println("[DEBUG][Next] called, currentIndex:", currentIndex)
 
-    hist := GetList("History.txt")
-    fmt.Println("[DEBUG][Next] history length:", len(hist))
+	hist := GetList("History.txt")
+	fmt.Println("[DEBUG][Next] history length:", len(hist))
 
-    // Case 1: move forward in history
-    if currentIndex >= 0 && currentIndex < len(hist)-1 {
-        currentIndex++
-        _, path := utils.ParseLine(hist[currentIndex])
-        fmt.Println("[DEBUG][Next] moving forward to history index:", currentIndex, "->", path)
+	// Case 1: move forward in history
+	if currentIndex >= 0 && currentIndex < len(hist)-1 {
+		currentIndex++
+		_, path := utils.ParseLine(hist[currentIndex])
+		fmt.Println("[DEBUG][Next] moving forward to history index:", currentIndex, "->", path)
 
-        if err := Run([]string{path}); err != nil {
-            fmt.Printf("[Attract] Failed to run %s: %v\n", path, err)
-            return "", false
-        }
-        ResetAttractTimer(ParsePlayTime(cfg.Attract.PlayTime, r))
-        return path, true
-    }
+		if err := Run([]string{path}); err != nil {
+			fmt.Printf("[Attract] Failed to run %s: %v\n", path, err)
+			return "", false
+		}
+		ResetAttractTimer(ParsePlayTime(cfg.Attract.PlayTime, r))
+		return path, true
+	}
 
-    // Case 2: no forward history
-    fmt.Println("[DEBUG][Next] picking random game")
-    path := PickRandomGame(cfg, r)
-    if path == "" {
-        fmt.Println("[Attract] No game available to play.")
-        return "", false
-    }
-    fmt.Println("[DEBUG][Next] PickRandomGame chose:", path)
-    // PickRandomGame already resets timer
-    return path, true
+	// Case 2: no forward history
+	fmt.Println("[DEBUG][Next] picking random game")
+	path := PickRandomGame(cfg, r)
+	if path == "" {
+		fmt.Println("[Attract] No game available to play.")
+		return "", false
+	}
+	fmt.Println("[DEBUG][Next] PickRandomGame chose:", path)
+	// PickRandomGame already resets timer
+	return path, true
 }
 
 func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
@@ -267,8 +267,9 @@ func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 // -----------------------------
 
 var (
-	attractTimer   *time.Timer
-	attractTimerMu sync.Mutex
+	attractTimer    *time.Timer
+	attractTimerMu  sync.Mutex
+	detectorResetCh = make(chan struct{}, 1) // 🔥 notify static detector
 )
 
 func ResetAttractTimer(d time.Duration) {
@@ -284,6 +285,13 @@ func ResetAttractTimer(d time.Duration) {
 		}
 	}
 	attractTimer = time.NewTimer(d)
+
+	// 🔥 tell static detector to reset too
+	select {
+	case detectorResetCh <- struct{}{}:
+	default:
+		// already a reset pending
+	}
 }
 
 func AttractTimerChan() <-chan time.Time {
@@ -359,4 +367,3 @@ func Run(args []string) error {
 
 	return err
 }
-
