@@ -179,7 +179,7 @@ func (e StaticEvent) String() string {
 // -----------------------------
 
 // Stream launches the static screen detector and streams events (singleton).
-func Stream(cfg *config.UserConfig) <-chan StaticEvent {
+func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 	streamOnce.Do(func() {
 		streamCh = make(chan StaticEvent, 1)
 
@@ -360,7 +360,9 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 						}
 						if currCfg.SkipBlack {
 							fmt.Printf("[StaticDetector] Auto-skip (black screen)\n")
-							Next(cfg, rand.New(rand.NewSource(time.Now().UnixNano())))
+							if _, ok := Next(cfg, r); ok {
+								resetGlobalTicker(cfg, r)
+							}
 						}
 						handledBlack = true
 					}
@@ -373,7 +375,9 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 						}
 						if currCfg.SkipStatic {
 							fmt.Printf("[StaticDetector] Auto-skip (static screen)\n")
-							Next(cfg, rand.New(rand.NewSource(time.Now().UnixNano())))
+							if _, ok := Next(cfg, r); ok {
+								resetGlobalTicker(cfg, r)
+							}
 						}
 						handledStatic = true
 					}
@@ -406,4 +410,3 @@ func Stream(cfg *config.UserConfig) <-chan StaticEvent {
 
 	return streamCh
 }
-
