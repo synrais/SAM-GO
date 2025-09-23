@@ -219,7 +219,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 			handledStatic := false
 			currCfg := baseCfg
 
-			// 👇 new per-title clock
+			// 👇 per-title clock
 			titleStartTime := time.Now()
 
 			resetState := func(game string) {
@@ -231,7 +231,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				lastFrameTime = time.Now()
 				handledBlack = false
 				handledStatic = false
-				titleStartTime = time.Now() // 👈 reset uptime per title
+				titleStartTime = time.Now() // reset uptime per title
 
 				currCfg = baseCfg
 				sysName := strings.ToLower(LastPlayedSystem.Id)
@@ -353,25 +353,30 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 					}
 					if !changed {
 						if staticScreenRun == 0 {
-							staticStartTime = frameTime.Sub(titleStartTime).Seconds() // 👈 relative to this title
+							staticStartTime = frameTime.Sub(titleStartTime).Seconds()
 						}
 						staticScreenRun += frameTime.Sub(lastFrameTime).Seconds()
 					} else {
+						// 🔥 only reset when actual motion happens
 						staticScreenRun = 0
 						staticStartTime = 0
+						handledStatic = false
+						handledBlack = false
 					}
 				}
 				copy(prevRGB, currRGB[:samples])
 				firstFrame = false
 				lastFrameTime = frameTime
 
-				// 👇 uptime per title
+				// uptime per title
 				uptime := frameTime.Sub(titleStartTime).Seconds()
 
 				avgHex := rgbToHex(avgR, avgG, avgB)
 
 				if uptime > currCfg.Grace {
-					if avgHex == "#000000" && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
+					if avgHex == "#000000" &&
+						staticScreenRun > currCfg.BlackThreshold &&
+						!handledBlack {
 						if currCfg.WriteBlackList {
 							addToFile(LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
 						}
@@ -381,7 +386,9 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 						}
 						handledBlack = true
 					}
-					if avgHex != "#000000" && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
+					if avgHex != "#000000" &&
+						staticScreenRun > currCfg.StaticThreshold &&
+						!handledStatic {
 						if currCfg.WriteStaticList {
 							entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
 							addToFile(LastPlayedSystem.Id, entry, "_staticlist.txt")
