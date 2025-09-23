@@ -49,6 +49,8 @@ var colors = []NamedColor{
 
 func nearestColorName(r, g, b int) string {
 	y := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
+
+	// black / white cutoffs
 	if y < 30 {
 		return "Black"
 	}
@@ -56,6 +58,17 @@ func nearestColorName(r, g, b int) string {
 		return "White"
 	}
 
+	// detect greys: small difference between channels
+	if maxDiff(r, g, b) < 15 {
+		if y < 85 {
+			return "Dark Grey"
+		} else if y < 170 {
+			return "Grey"
+		}
+		return "Light Grey"
+	}
+
+	// else: closest chromatic color
 	best := 0
 	bestDist := int64(1<<63 - 1)
 	for i, c := range colors {
@@ -72,6 +85,24 @@ func nearestColorName(r, g, b int) string {
 		}
 	}
 	return colors[best].Name
+}
+
+func maxDiff(r, g, b int) int {
+	max := r
+	if g > max {
+		max = g
+	}
+	if b > max {
+		max = b
+	}
+	min := r
+	if g < min {
+		min = g
+	}
+	if b < min {
+		min = b
+	}
+	return max - min
 }
 
 func rgbToHex(r, g, b int) string {
