@@ -273,15 +273,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				// 🔥 handle game change before sampling
 				if displayGame != lastGame {
 					resetState(displayGame)
-
-					// clear out old frame data so nothing bleeds through
-					for i := range prevRGB {
-						prevRGB[i] = 0
-						currRGB[i] = 0
-					}
-					firstFrame = true
-
-					continue // skip this loop, next iteration starts fresh
+					continue // skip loop so no stale frame bleeds through
 				}
 
 				// Capture frame
@@ -367,7 +359,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 						}
 						staticScreenRun += frameTime.Sub(lastFrameTime).Seconds()
 					} else {
-						// only reset when actual motion happens
+						// reset on actual motion
 						staticScreenRun = 0
 						staticStartTime = 0
 						handledStatic = false
@@ -393,6 +385,13 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 						if currCfg.SkipBlack {
 							Next(cfg, r)
 							fmt.Println("[StaticDetector] Auto-skip (black screen)")
+							resetState("")
+							for i := range prevRGB {
+								prevRGB[i] = 0
+								currRGB[i] = 0
+							}
+							firstFrame = true
+							continue // 🔥 don’t emit stale event
 						}
 						handledBlack = true
 					}
@@ -406,6 +405,13 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 						if currCfg.SkipStatic {
 							Next(cfg, r)
 							fmt.Println("[StaticDetector] Auto-skip (static screen)")
+							resetState("")
+							for i := range prevRGB {
+								prevRGB[i] = 0
+								currRGB[i] = 0
+							}
+							firstFrame = true
+							continue // 🔥 don’t emit stale event
 						}
 						handledStatic = true
 					}
