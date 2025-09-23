@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -30,7 +29,7 @@ func loadSystems() ([]string, error) {
 	return systems, nil
 }
 
-func loadGames(system string) ([]string, error) {
+func loadGames(system string) ([][2]string, error) {
 	path := filepath.Join(gamelistRoot, system+"_gamelist.txt")
 	file, err := os.Open(path)
 	if err != nil {
@@ -38,7 +37,7 @@ func loadGames(system string) ([]string, error) {
 	}
 	defer file.Close()
 
-	var games []string
+	var games [][2]string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -47,7 +46,7 @@ func loadGames(system string) ([]string, error) {
 		}
 		name := filepath.Base(line)
 		name = strings.TrimSuffix(name, filepath.Ext(name))
-		games = append(games, fmt.Sprintf("%s|%s", name, line))
+		games = append(games, [2]string{name, line})
 	}
 	return games, scanner.Err()
 }
@@ -89,9 +88,8 @@ func main() {
 				return
 			}
 			for _, g := range games {
-				parts := strings.SplitN(g, "|", 2)
-				name := parts[0]
-				path := parts[1]
+				name := g[0]
+				path := g[1]
 				gameList.AddItem(name, "", 0, func() {
 					runGame(path)
 				})
