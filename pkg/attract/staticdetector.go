@@ -3,16 +3,15 @@ package attract
 import (
 	"bufio"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/synrais/SAM-GO/pkg/config"
-	"github.com/synrais/SAM-GO/pkg/input"
 	"github.com/synrais/SAM-GO/pkg/utils"
 	"golang.org/x/sys/unix"
 )
@@ -27,16 +26,9 @@ const (
 
 // Singleton globals
 var (
-	streamOnce   sync.Once
-	streamCh     chan StaticEvent
-	skipChGlobal chan<- struct{}
-	paused       atomic.Bool
+	streamOnce sync.Once
+	streamCh   chan StaticEvent
 )
-
-// Pause toggles the static detector's paused state.
-func Pause(p bool) {
-	paused.Store(p)
-}
 
 // NamedColor represents a well known color and its RGB components.
 type NamedColor struct {
@@ -128,11 +120,9 @@ func addToFile(system, game, suffix string) {
 	_ = os.MkdirAll(dir, 0777)
 	path := filepath.Join(dir, system+suffix)
 
-	// Normalize game entry
 	name, _ := utils.NormalizeEntry(game)
 	entry := name
 
-	// For staticlist, keep timestamp if provided
 	if strings.Contains(suffix, "staticlist") {
 		if strings.HasPrefix(game, "<") {
 			if idx := strings.Index(game, ">"); idx > 1 {
@@ -142,7 +132,6 @@ func addToFile(system, game, suffix string) {
 		}
 	}
 
-	// Already present?
 	if isEntryInFile(path, entry) {
 		return
 	}
@@ -154,8 +143,6 @@ func addToFile(system, game, suffix string) {
 	defer f.Close()
 
 	fmt.Fprintf(f, "%s\n", entry)
-
-	// Log the raw game string for readability
 	fmt.Printf("\n[LIST] Added \"%s\" to %s%s\n", game, system, suffix)
 }
 
