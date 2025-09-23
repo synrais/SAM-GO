@@ -114,7 +114,11 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 	return false
 }
 
-// PickRandomGame chooses a random game from the filtered in-RAM gamelists.
+// usedPools tracks which games have been played per system
+// Key: listKey (system), Value: map[path]bool
+var usedPools = make(map[string]map[string]bool)
+
+// PickRandomGame chooses a random game without repeats until all for that system are used.
 func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
     keys := ListKeys()
     if len(keys) == 0 {
@@ -122,21 +126,49 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
         return ""
     }
 
-    // Pick random gamelist
+    // Pick random gamelist (system)
     listKey := keys[r.Intn(len(keys))]
     lines := GetList(listKey)
     if len(lines) == 0 {
         return ""
     }
 
-    // Pick random entry
-    index := 0
-    if cfg.Attract.Random {
-        index = r.Intn(len(lines)) // random entry
+    // Ensure this system has a pool
+    if usedPools[listKey] == nil {
+        usedPools[listKey] = make(map[string]bool)
     }
-    _, gamePath := utils.ParseLine(lines[index])
+    used := usedPools[listKey]
 
-    return gamePath
+    // Filter unused entries
+    var unused []string
+    for _, line := range lines {
+        _, gamePath := utils.ParseLine(line)
+        if !used[gamePath] {
+            unused = append(unused, gamePath)
+        }
+    }
+
+    // If exhausted, reset the pool and reuse all entries
+    if len(unused) == 0 {
+        fmt.Printf("[Attract] Resetting shuffle pool for %s\n", listKey)
+        usedPools[listKey] = make(map[string]bool)
+        used = usedPools[listKey]
+        for _, line := range lines {
+            _, gamePath := utils.ParseLine(line)
+            unused = append(unused, gamePath)
+        }
+    }
+
+    // Pick random entry from unused
+    choice := unused[0]
+    if cfg.Attract.Random && len(unused) > 1 {
+        choice = unused[r.Intn(len(unused))]
+    }
+
+    // Mark as used
+    used[choice] = true
+
+    return choice
 }
 
 //
