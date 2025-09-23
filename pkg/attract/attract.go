@@ -94,15 +94,9 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 	}
 
 	// 🔥 Start static detector only if enabled in config
+	var staticCh <-chan StreamEvent
 	if cfg.Attract.UseStaticDetector {
-		go func() {
-			for ev := range Stream(cfg, r) { // pass shared RNG here
-				if showStream {
-					fmt.Println(ev.String())
-				}
-				// else: silently drain
-			}
-		}()
+		staticCh = Stream(cfg, r) // return channel instead of blocking loop
 	}
 
 	// Kick off timer for first interval
@@ -126,6 +120,17 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 
 			if action, ok := inputMap[evLower]; ok {
 				action()
+			}
+
+		case sev := <-staticCh:
+			if showStream {
+				fmt.Println(sev.String())
+			}
+			if sev.DetectorSkip {
+				fmt.Println("[Attract] Detector requested skip")
+				if _, ok := Next(cfg, r); !ok {
+					fmt.Println("[Attract] Failed to pick next game.")
+				}
 			}
 		}
 	}
