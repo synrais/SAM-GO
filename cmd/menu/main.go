@@ -12,7 +12,6 @@ import (
 	"github.com/rivo/tview"
 )
 
-// Path to SAM gamelists on MiSTer
 const gamelistRoot = "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
 
 func loadSystems() ([]string, error) {
@@ -52,10 +51,8 @@ func loadGames(system string) ([][2]string, error) {
 }
 
 func runGame(path string) {
-	// Replace with actual SAM runner call
 	fmt.Printf("Would run game: %s\n", path)
-	// Example:
-	// exec.Command("/media/fat/Scripts/.MiSTer_SAM/SAM", "-run", path).Run()
+	// Here you’d exec.Command SAM with -run if you want.
 }
 
 func main() {
@@ -67,6 +64,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	// ✅ These are *tview.List, not Box
 	systemList := tview.NewList().
 		ShowSecondaryText(false).
 		SetBorder(true).
@@ -77,7 +75,7 @@ func main() {
 		SetBorder(true).
 		SetTitle(" Games ")
 
-	// Populate system list
+	// Populate systems
 	for _, sys := range systems {
 		sys := sys
 		systemList.AddItem(sys, "", 0, func() {
@@ -97,7 +95,7 @@ func main() {
 		})
 	}
 
-	// Layout: system list left, game list right
+	// Layout side-by-side
 	flex := tview.NewFlex().
 		AddItem(systemList, 0, 1, true).
 		AddItem(gameList, 0, 2, false)
