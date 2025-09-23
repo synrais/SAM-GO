@@ -87,7 +87,6 @@ func RunAttractLoop(cfg *config.UserConfig, files []string, inputCh <-chan strin
 		fmt.Println("[Attract] No game available to start attract mode.")
 		return
 	}
-	if err := Run([]string{first}); err == nil {
 		fmt.Printf("[Attract] First pick -> %s\n", filepath.Base(first))
 	} else {
 		fmt.Printf("[Attract] Failed to run first pick: %v\n", err)
