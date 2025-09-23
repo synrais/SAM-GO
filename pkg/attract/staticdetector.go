@@ -244,7 +244,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 
 			titleStartTime := time.Now()
 
-			resetState := func(game string) {
+			resetState := func(game string, sysId string) {
 				lastGame = game
 				staticScreenRun = 0
 				staticStartTime = 0
@@ -256,7 +256,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				titleStartTime = time.Now()
 
 				currCfg = baseCfg
-				sysName := strings.ToLower(LastPlayedSystem.Id)
+				sysName := strings.ToLower(sysId)
 				if ov, ok := overrides[sysName]; ok {
 					if ov.BlackThreshold != nil {
 						currCfg.BlackThreshold = *ov.BlackThreshold
@@ -288,13 +288,12 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 			for {
 				t1 := time.Now()
 
-				// snapshot to avoid bleed between games
 				system, name := getLastPlayed()
 				displayGame := fmt.Sprintf("[%s] %s", system.Id, name)
 				cleanGame, _ := utils.NormalizeEntry(name)
 
 				if displayGame != lastGame {
-					resetState(displayGame)
+					resetState(displayGame, system.Id)
 					continue
 				}
 
