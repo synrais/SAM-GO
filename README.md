@@ -15,6 +15,16 @@ UNIX socket at `/tmp/sam.sock`. The socket also accepts multiple commands in a
 single request when each line contains a command with its arguments separated by
 NUL characters (`\x00`).
 
+SAM
+-----------
+Starts Attract Mode
+
+SAM -s
+-----------
+Starts Attract Mode with staticdetector debug output
+
+Following commands are depreciated
+
 -----------
 SAM -list <flags>
 -----------
