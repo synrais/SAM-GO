@@ -270,10 +270,18 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				displayGame := fmt.Sprintf("[%s] %s", LastPlayedSystem.Id, LastPlayedName)
 				cleanGame, _ := utils.NormalizeEntry(LastPlayedName)
 
-				// 🔥 handle game change *before* sampling a frame
+				// 🔥 handle game change before sampling
 				if displayGame != lastGame {
 					resetState(displayGame)
-					continue // skip this loop so no stale frame bleeds through
+
+					// clear out old frame data so nothing bleeds through
+					for i := range prevRGB {
+						prevRGB[i] = 0
+						currRGB[i] = 0
+					}
+					firstFrame = true
+
+					continue // skip this loop, next iteration starts fresh
 				}
 
 				// Capture frame
