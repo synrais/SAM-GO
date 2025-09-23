@@ -184,7 +184,6 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 		streamCh = make(chan StaticEvent, 1)
 
 		baseCfg := cfg.StaticDetector
-		overrides := cfg.StaticDetector.Systems
 
 		go func() {
 			defer close(streamCh)
@@ -200,123 +199,173 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 
 			staticScreenRun := 0.0
 			staticStartTime := 0.0
-			frames := 0
-			start := time.Now()
+			sampleFrames := 0
+			lastFrameTime := time.Now()
+			firstFrame := true
 
+			lastGame := ""
 			handledBlack := false
 			handledStatic := false
 			currCfg := baseCfg
 
-			// sample buffers
+			resetState := func(game string) {
+				lastGame = game
+				staticScreenRun = 0
+				staticStartTime = 0
+				sampleFrames = 0
+				firstFrame = true
+				lastFrameTime = time.Now()
+				handledBlack = false
+				handledStatic = false
+
+				// merge system-specific overrides
+				currCfg = baseCfg
+				sysName := strings.ToLower(LastPlayedSystem.Id)
+				if ov, ok := cfg.StaticDetector.Systems[sysName]; ok {
+					if ov.BlackThreshold != nil {
+						currCfg.BlackThreshold = *ov.BlackThreshold
+					}
+					if ov.StaticThreshold != nil {
+						currCfg.StaticThreshold = *ov.StaticThreshold
+					}
+					if ov.SkipBlack != nil {
+						currCfg.SkipBlack = *ov.SkipBlack
+					}
+					if ov.WriteBlackList != nil {
+						currCfg.WriteBlackList = *ov.WriteBlackList
+					}
+					if ov.SkipStatic != nil {
+						currCfg.SkipStatic = *ov.SkipStatic
+					}
+					if ov.WriteStaticList != nil {
+						currCfg.WriteStaticList = *ov.WriteStaticList
+					}
+					if ov.Grace != nil {
+						currCfg.Grace = *ov.Grace
+					}
+				}
+			}
+
 			maxSamples := (2048 / defaultStep) * (2048 / defaultStep)
 			prevRGB := make([]uint32, maxSamples)
 			currRGB := make([]uint32, maxSamples)
 
 			for {
-				frames++
-				uptime := time.Since(start).Seconds()
+				t1 := time.Now()
 
-				// --- capture ---
-				width := int(res.Map[12])<<8 | int(res.Map[13])
-				height := int(res.Map[14])<<8 | int(res.Map[15])
-				line := int(res.Map[16])<<8 | int(res.Map[17])
+				displayGame := fmt.Sprintf("[%s] %s", LastPlayedSystem.Id, LastPlayedName)
+				cleanGame, _ := utils.NormalizeEntry(LastPlayedName)
 
-				if width == 0 || height == 0 || line == 0 {
-					time.Sleep(time.Second / targetFPS)
-					continue
+				if displayGame != lastGame {
+					resetState(displayGame)
 				}
 
-				// sample pixels
+				// Capture frame
+				res.Header = int(res.Map[2])<<8 | int(res.Map[3])
+				res.Width = int(res.Map[6])<<8 | int(res.Map[7])
+				res.Height = int(res.Map[8])<<8 | int(res.Map[9])
+				res.Line = int(res.Map[10])<<8 | int(res.Map[11])
+
+				valid := !(res.Width < 64 || res.Width > 2048 ||
+					res.Height < 64 || res.Height > 2048 ||
+					res.Line < res.Width*3 || res.Line > 2048*4)
+
 				idx := 0
-				step := defaultStep
-				var sumR, sumG, sumB int64
-				counts := make(map[uint32]int)
-				stuck := 0
-
-				for y := 0; y < height; y += step {
-					for x := 0; x < width; x += step {
-						if idx >= maxSamples {
-							break
+				var sumR, sumG, sumB int
+				if !valid {
+					currRGB[0] = 0
+					idx = 1
+				} else {
+					for y := 0; y < res.Height; y += defaultStep {
+						row := res.Map[res.Header+y*res.Line:]
+						for x := 0; x < res.Width; x += defaultStep {
+							off := x * 3
+							if off+2 < res.Line {
+								r := row[off]
+								g := row[off+1]
+								b := row[off+2]
+								currRGB[idx] = uint32(r)<<16 | uint32(g)<<8 | uint32(b)
+								sumR += int(r)
+								sumG += int(g)
+								sumB += int(b)
+								idx++
+							}
 						}
-						offset := y*line + x*3
-						if offset+2 >= len(res.Map) {
-							continue
-						}
-						rv := int(res.Map[offset])
-						gv := int(res.Map[offset+1])
-						bv := int(res.Map[offset+2])
-						val := uint32(rv)<<16 | uint32(gv)<<8 | uint32(bv)
-
-						currRGB[idx] = val
-						if currRGB[idx] == prevRGB[idx] {
-							stuck++
-						}
-						prevRGB[idx] = val
-
-						sumR += int64(rv)
-						sumG += int64(gv)
-						sumB += int64(bv)
-						counts[val]++
-						idx++
 					}
 				}
 
 				samples := idx
-				if samples == 0 {
+				if samples <= 0 {
 					time.Sleep(time.Second / targetFPS)
 					continue
 				}
+				sampleFrames++
 
-				// averages
-				avgR := int(sumR / int64(samples))
-				avgG := int(sumG / int64(samples))
-				avgB := int(sumB / int64(samples))
+				avgR := sumR / samples
+				avgG := sumG / samples
+				avgB := sumB / samples
+
+				// Dominant color
+				sort.Slice(currRGB[:samples], func(i, j int) bool { return currRGB[i] < currRGB[j] })
+				bestCount := 0
+				currCount := 1
+				bestVal := currRGB[0]
+				for i := 1; i <= samples; i++ {
+					if i < samples && currRGB[i] == currRGB[i-1] {
+						currCount++
+					} else {
+						if currCount > bestCount {
+							bestCount = currCount
+							bestVal = currRGB[i-1]
+						}
+						currCount = 1
+					}
+				}
+				domR := int((bestVal >> 16) & 0xFF)
+				domG := int((bestVal >> 8) & 0xFF)
+				domB := int(bestVal & 0xFF)
+
+				// Check for static/black screen
+				frameTime := time.Now()
+				if !firstFrame {
+					changed := false
+					for i := 0; i < samples; i++ {
+						if currRGB[i] != prevRGB[i] {
+							changed = true
+							break
+						}
+					}
+					if !changed {
+						if staticScreenRun == 0 {
+							staticStartTime = frameTime.Sub(LastStartTime).Seconds()
+						}
+						staticScreenRun += frameTime.Sub(lastFrameTime).Seconds()
+					} else {
+						staticScreenRun = 0
+						staticStartTime = 0
+					}
+				}
+				copy(prevRGB, currRGB[:samples])
+				firstFrame = false
+				lastFrameTime = frameTime
+
+				uptime := frameTime.Sub(LastStartTime).Seconds()
 				avgHex := rgbToHex(avgR, avgG, avgB)
-				avgName := nearestColorName(avgR, avgG, avgB)
 
-				// dominant
-				var domVal uint32
-				maxCount := 0
-				for k, v := range counts {
-					if v > maxCount {
-						domVal = k
-						maxCount = v
-					}
-				}
-				domR := int((domVal >> 16) & 0xFF)
-				domG := int((domVal >> 8) & 0xFF)
-				domB := int(domVal & 0xFF)
-				dominantHex := rgbToHex(domR, domG, domB)
-				dominantName := nearestColorName(domR, domG, domB)
-
-				// static detection
-				if stuck > samples/2 {
-					if staticScreenRun == 0 {
-						staticStartTime = uptime
-					}
-					staticScreenRun = uptime - staticStartTime
-				} else {
-					staticScreenRun = 0
-					staticStartTime = 0
-				}
-
-				cleanGame := filepath.Base(LastPlayedPath)
-
-				// check thresholds
 				if uptime > currCfg.Grace {
-					// Black screen
+					// Black screen detection
 					if avgHex == "#000000" && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
 						if currCfg.WriteBlackList {
 							addToFile(LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
 						}
 						if currCfg.SkipBlack {
 							fmt.Printf("[StaticDetector] Auto-skip (black screen)\n")
-							Next(cfg, r) // timer reset handled there
+							Next(cfg, r) // timer handled by Next
 						}
 						handledBlack = true
 					}
 
-					// Static screen
+					// Static screen detection (non-black only)
 					if avgHex != "#000000" && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
 						if currCfg.WriteStaticList {
 							entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
@@ -324,34 +373,33 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 						}
 						if currCfg.SkipStatic {
 							fmt.Printf("[StaticDetector] Auto-skip (static screen)\n")
-							Next(cfg, r) // timer reset handled there
+							Next(cfg, r) // timer handled by Next
 						}
 						handledStatic = true
 					}
 				}
 
-				// emit event
-				ev := StaticEvent{
+				event := StaticEvent{
 					Uptime:       uptime,
-					Frames:       frames,
+					Frames:       sampleFrames,
 					StaticScreen: staticScreenRun,
-					StuckPixels:  stuck,
+					StuckPixels:  samples,
 					Samples:      samples,
-					Width:        width,
-					Height:       height,
-					DominantHex:  dominantHex,
-					DominantName: dominantName,
+					Width:        res.Width,
+					Height:       res.Height,
+					DominantHex:  rgbToHex(domR, domG, domB),
+					DominantName: nearestColorName(domR, domG, domB),
 					AverageHex:   avgHex,
-					AverageName:  avgName,
-					Game:         cleanGame,
+					AverageName:  nearestColorName(avgR, avgG, avgB),
+					Game:         displayGame,
 				}
+				streamCh <- event
 
-				select {
-				case streamCh <- ev:
-				default:
+				elapsed := time.Since(t1)
+				frameDur := time.Second / targetFPS
+				if elapsed < frameDur {
+					time.Sleep(frameDur - elapsed)
 				}
-
-				time.Sleep(time.Second / targetFPS)
 			}
 		}()
 	})
