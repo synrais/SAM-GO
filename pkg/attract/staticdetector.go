@@ -273,7 +273,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				// 🔥 handle game change before sampling
 				if displayGame != lastGame {
 					resetState(displayGame)
-					continue // skip loop so no stale frame bleeds through
+					continue // skip stale frame
 				}
 
 				// Capture frame
@@ -359,7 +359,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 						}
 						staticScreenRun += frameTime.Sub(lastFrameTime).Seconds()
 					} else {
-						// reset on actual motion
+						// only reset when actual motion happens
 						staticScreenRun = 0
 						staticStartTime = 0
 						handledStatic = false
@@ -375,48 +375,6 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 
 				avgHex := rgbToHex(avgR, avgG, avgB)
 
-				if uptime > currCfg.Grace {
-					if avgHex == "#000000" &&
-						staticScreenRun > currCfg.BlackThreshold &&
-						!handledBlack {
-						if currCfg.WriteBlackList {
-							addToFile(LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
-						}
-						if currCfg.SkipBlack {
-							Next(cfg, r)
-							fmt.Println("[StaticDetector] Auto-skip (black screen)")
-							resetState("")
-							for i := range prevRGB {
-								prevRGB[i] = 0
-								currRGB[i] = 0
-							}
-							firstFrame = true
-							continue // 🔥 don’t emit stale event
-						}
-						handledBlack = true
-					}
-					if avgHex != "#000000" &&
-						staticScreenRun > currCfg.StaticThreshold &&
-						!handledStatic {
-						if currCfg.WriteStaticList {
-							entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
-							addToFile(LastPlayedSystem.Id, entry, "_staticlist.txt")
-						}
-						if currCfg.SkipStatic {
-							Next(cfg, r)
-							fmt.Println("[StaticDetector] Auto-skip (static screen)")
-							resetState("")
-							for i := range prevRGB {
-								prevRGB[i] = 0
-								currRGB[i] = 0
-							}
-							firstFrame = true
-							continue // 🔥 don’t emit stale event
-						}
-						handledStatic = true
-					}
-				}
-
 				event := StaticEvent{
 					Uptime:       uptime,
 					Frames:       sampleFrames,
@@ -430,7 +388,36 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 					AverageHex:   avgHex,
 					AverageName:  nearestColorName(avgR, avgG, avgB),
 					Game:         displayGame,
+					DetectorSkip: false,
 				}
+
+				// Decide skip
+				if uptime > currCfg.Grace {
+					if avgHex == "#000000" &&
+						staticScreenRun > currCfg.BlackThreshold &&
+						!handledBlack {
+						if currCfg.WriteBlackList {
+							addToFile(LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
+						}
+						if currCfg.SkipBlack {
+							event.DetectorSkip = true
+						}
+						handledBlack = true
+					}
+					if avgHex != "#000000" &&
+						staticScreenRun > currCfg.StaticThreshold &&
+						!handledStatic {
+						if currCfg.WriteStaticList {
+							entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
+							addToFile(LastPlayedSystem.Id, entry, "_staticlist.txt")
+						}
+						if currCfg.SkipStatic {
+							event.DetectorSkip = true
+						}
+						handledStatic = true
+					}
+				}
+
 				streamCh <- event
 
 				elapsed := time.Since(t1)
