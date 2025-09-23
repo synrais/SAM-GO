@@ -219,7 +219,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 			handledStatic := false
 			currCfg := baseCfg
 
-			// 👇 per-title clock
+			// per-title clock
 			titleStartTime := time.Now()
 
 			resetState := func(game string) {
@@ -270,8 +270,10 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				displayGame := fmt.Sprintf("[%s] %s", LastPlayedSystem.Id, LastPlayedName)
 				cleanGame, _ := utils.NormalizeEntry(LastPlayedName)
 
+				// 🔥 handle game change *before* sampling a frame
 				if displayGame != lastGame {
 					resetState(displayGame)
+					continue // skip this loop so no stale frame bleeds through
 				}
 
 				// Capture frame
@@ -357,7 +359,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 						}
 						staticScreenRun += frameTime.Sub(lastFrameTime).Seconds()
 					} else {
-						// 🔥 only reset when actual motion happens
+						// only reset when actual motion happens
 						staticScreenRun = 0
 						staticStartTime = 0
 						handledStatic = false
