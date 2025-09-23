@@ -124,7 +124,7 @@ func Disabled(systemID string, gamePath string, cfg *config.UserConfig) bool {
 var usedPools = make(map[string]map[string]bool)
 
 // PickRandomGame chooses a random game without repeats until all for that system are used.
-// It also appends the chosen game into history, updates currentIndex, and runs it.
+// It also appends the chosen game into history, updates currentIndex, runs it, and resets timer.
 func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 	keys := ListKeys()
 	if len(keys) == 0 {
@@ -157,7 +157,7 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 	}
 	used := usedPools[listKey]
 
-	// Filter unused entries (normalize paths with utils.ParseLine)
+	// Filter unused entries
 	var unused []string
 	for _, line := range lines {
 		_, gamePath := utils.ParseLine(line)
@@ -166,7 +166,7 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 		}
 	}
 
-	// If exhausted, reset the pool and reuse all entries
+	// If exhausted, reset the pool
 	if len(unused) == 0 {
 		usedPools[listKey] = make(map[string]bool)
 		used = usedPools[listKey]
@@ -182,17 +182,20 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 		choice = unused[r.Intn(len(unused))]
 	}
 
-	// Mark as used (path only, no timestamp)
+	// Mark as used
 	used[choice] = true
 
-	// --- History management lives here ---
+	// Update history
 	hist := GetList("History.txt")
 	hist = append(hist, choice)
 	SetList("History.txt", hist)
 	currentIndex = len(hist) - 1
 
-	// Launch the game
+	// Launch game
 	Run([]string{choice})
+
+	// Reset timer
+	resetGlobalTimer(cfg, r)
 
 	return choice
 }
@@ -205,7 +208,6 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 var currentIndex int = -1
 
 // Next moves forward in history if possible, otherwise picks a new random game.
-// Always resets the global attract timer.
 func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
 
@@ -223,19 +225,17 @@ func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 		return path, true
 	}
 
-	// Case 2: end of history → pick new random (PickRandomGame handles Run + history)
+	// Case 2: end of history → PickRandomGame handles reset itself
 	path := PickRandomGame(cfg, r)
 	if path == "" {
 		fmt.Println("[Attract] No game available to play.")
 		return "", false
 	}
 
-	resetGlobalTimer(cfg, r)
 	return path, true
 }
 
 // Back moves backward in history if possible.
-// Always resets the global attract timer.
 func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	hist := GetList("History.txt")
 
@@ -247,7 +247,6 @@ func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 		return path, true
 	}
 
-	// Nothing to go back to
 	return "", false
 }
 
@@ -261,6 +260,7 @@ func resetGlobalTimer(cfg *config.UserConfig, r *rand.Rand) {
 // -----------------------------
 // Global Attract Timer
 // -----------------------------
+//
 
 var (
 	attractTimer   *time.Timer
@@ -343,6 +343,5 @@ func Run(args []string) error {
 
 	fmt.Printf("[RUN] Now Playing %s: %s\n", system.Name, LastPlayedName)
 
-	// Directly launch with the default core loader
 	return mister.LaunchGame(&config.UserConfig{}, system, runPath)
 }
