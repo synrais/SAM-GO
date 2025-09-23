@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
@@ -303,25 +305,39 @@ func AttractTimerChan() <-chan time.Time {
 const nowPlayingFile = "/tmp/Now_Playing.txt"
 
 var (
-	LastPlayedSystem games.System
-	LastPlayedPath   string
-	LastPlayedName   string
-	LastStartTime    time.Time
+	LastPlayedPath string
+	LastStartTime  time.Time
+
+	lastSystemPtr unsafe.Pointer // *games.System
+	lastNamePtr   unsafe.Pointer // *string
 )
 
 func setLastPlayed(system games.System, path string) {
-	LastPlayedSystem = system
 	LastPlayedPath = path
 	LastStartTime = time.Now()
 
 	base := filepath.Base(path)
-	LastPlayedName = strings.TrimSuffix(base, filepath.Ext(base))
+	name := strings.TrimSuffix(base, filepath.Ext(base))
+
+	// Store atomically
+	atomic.StorePointer(&lastSystemPtr, unsafe.Pointer(&system))
+	atomic.StorePointer(&lastNamePtr, unsafe.Pointer(&name))
+}
+
+func getLastPlayed() (games.System, string) {
+	sysPtr := (*games.System)(atomic.LoadPointer(&lastSystemPtr))
+	namePtr := (*string)(atomic.LoadPointer(&lastNamePtr))
+	if sysPtr != nil && namePtr != nil {
+		return *sysPtr, *namePtr
+	}
+	return games.System{}, ""
 }
 
 func writeNowPlayingFile() error {
-	line1 := fmt.Sprintf("[%s] %s", LastPlayedSystem.Name, LastPlayedName)
+	system, name := getLastPlayed()
+	line1 := fmt.Sprintf("[%s] %s", system.Name, name)
 	base := filepath.Base(LastPlayedPath)
-	line2 := fmt.Sprintf("%s %s", LastPlayedSystem.Id, base)
+	line2 := fmt.Sprintf("%s %s", system.Id, base)
 	line3 := LastPlayedPath
 	content := strings.Join([]string{line1, line2, line3}, "\n")
 	return os.WriteFile(nowPlayingFile, []byte(content), 0644)
@@ -348,7 +364,8 @@ func Run(args []string) error {
 		fmt.Println("[DEBUG][Run] Now_Playing.txt updated")
 	}
 
-	fmt.Printf("[RUN] Now Playing %s: %s\n", system.Name, LastPlayedName)
+	_, name := getLastPlayed()
+	fmt.Printf("[RUN] Now Playing %s: %s\n", system.Name, name)
 
 	err := mister.LaunchGame(&config.UserConfig{}, system, runPath)
 	if err != nil {
