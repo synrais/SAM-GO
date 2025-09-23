@@ -1,4 +1,4 @@
-package staticdetector
+package attract
 
 import (
 	"bufio"
