@@ -267,9 +267,8 @@ func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 // -----------------------------
 
 var (
-	attractTimer    *time.Timer
-	attractTimerMu  sync.Mutex
-	detectorResetCh = make(chan struct{}, 1) // 🔥 notify static detector
+	attractTimer   *time.Timer
+	attractTimerMu sync.Mutex
 )
 
 func ResetAttractTimer(d time.Duration) {
@@ -285,13 +284,6 @@ func ResetAttractTimer(d time.Duration) {
 		}
 	}
 	attractTimer = time.NewTimer(d)
-
-	// 🔥 tell static detector to reset too
-	select {
-	case detectorResetCh <- struct{}{}:
-	default:
-		// already a reset pending
-	}
 }
 
 func AttractTimerChan() <-chan time.Time {
