@@ -174,16 +174,13 @@ func (e StaticEvent) String() string {
 		e.Game)
 }
 
-// -----------------------------
-// Static Detector
-// -----------------------------
-
 // Stream launches the static screen detector and streams events (singleton).
 func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 	streamOnce.Do(func() {
 		streamCh = make(chan StaticEvent, 1)
 
 		baseCfg := cfg.StaticDetector
+		overrides := cfg.StaticDetector.Systems
 
 		go func() {
 			defer close(streamCh)
@@ -218,10 +215,9 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				handledBlack = false
 				handledStatic = false
 
-				// merge system-specific overrides
 				currCfg = baseCfg
 				sysName := strings.ToLower(LastPlayedSystem.Id)
-				if ov, ok := cfg.StaticDetector.Systems[sysName]; ok {
+				if ov, ok := overrides[sysName]; ok {
 					if ov.BlackThreshold != nil {
 						currCfg.BlackThreshold = *ov.BlackThreshold
 					}
@@ -325,7 +321,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				domG := int((bestVal >> 8) & 0xFF)
 				domB := int(bestVal & 0xFF)
 
-				// Check for static/black screen
+				// Check for static screen
 				frameTime := time.Now()
 				if !firstFrame {
 					changed := false
@@ -350,30 +346,28 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				lastFrameTime = frameTime
 
 				uptime := frameTime.Sub(LastStartTime).Seconds()
+
 				avgHex := rgbToHex(avgR, avgG, avgB)
 
 				if uptime > currCfg.Grace {
-					// Black screen detection
 					if avgHex == "#000000" && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
 						if currCfg.WriteBlackList {
 							addToFile(LastPlayedSystem.Id, cleanGame, "_blacklist.txt")
 						}
 						if currCfg.SkipBlack {
-							fmt.Printf("[StaticDetector] Auto-skip (black screen)\n")
-							Next(cfg, r) // timer handled by Next
+							Next(cfg, r) // 🔥 use shared RNG
+							fmt.Println("[StaticDetector] Auto-skip (black screen)")
 						}
 						handledBlack = true
 					}
-
-					// Static screen detection (non-black only)
 					if avgHex != "#000000" && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
 						if currCfg.WriteStaticList {
 							entry := fmt.Sprintf("<%.0f> %s", staticStartTime, cleanGame)
 							addToFile(LastPlayedSystem.Id, entry, "_staticlist.txt")
 						}
 						if currCfg.SkipStatic {
-							fmt.Printf("[StaticDetector] Auto-skip (static screen)\n")
-							Next(cfg, r) // timer handled by Next
+							Next(cfg, r) // 🔥 use shared RNG
+							fmt.Println("[StaticDetector] Auto-skip (static screen)")
 						}
 						handledStatic = true
 					}
