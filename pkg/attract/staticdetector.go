@@ -205,6 +205,9 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 			handledStatic := false
 			currCfg := baseCfg
 
+			// 👇 new per-title clock
+			titleStartTime := time.Now()
+
 			resetState := func(game string) {
 				lastGame = game
 				staticScreenRun = 0
@@ -214,6 +217,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				lastFrameTime = time.Now()
 				handledBlack = false
 				handledStatic = false
+				titleStartTime = time.Now() // 👈 reset uptime per title
 
 				currCfg = baseCfg
 				sysName := strings.ToLower(LastPlayedSystem.Id)
@@ -335,7 +339,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 					}
 					if !changed {
 						if staticScreenRun == 0 {
-							staticStartTime = frameTime.Sub(LastStartTime).Seconds()
+							staticStartTime = frameTime.Sub(titleStartTime).Seconds() // 👈 relative to this title
 						}
 						staticScreenRun += frameTime.Sub(lastFrameTime).Seconds()
 					} else {
@@ -347,7 +351,8 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 				firstFrame = false
 				lastFrameTime = frameTime
 
-				uptime := frameTime.Sub(LastStartTime).Seconds()
+				// 👇 uptime per title
+				uptime := frameTime.Sub(titleStartTime).Seconds()
 
 				avgHex := rgbToHex(avgR, avgG, avgB)
 
