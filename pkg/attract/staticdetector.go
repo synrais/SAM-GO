@@ -261,9 +261,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 						}
 						if currCfg.SkipBlack {
 							fmt.Printf("[StaticDetector] Auto-skip (black screen)\n")
-							if _, ok := Next(cfg, r); ok {
-								resetGlobalTimer(cfg, r) // 🔥 changed from resetGlobalTicker
-							}
+							Next(cfg, r) // 🔥 no manual timer reset
 						}
 						handledBlack = true
 					}
@@ -276,9 +274,7 @@ func Stream(cfg *config.UserConfig, r *rand.Rand) <-chan StaticEvent {
 						}
 						if currCfg.SkipStatic {
 							fmt.Printf("[StaticDetector] Auto-skip (static screen)\n")
-							if _, ok := Next(cfg, r); ok {
-								resetGlobalTimer(cfg, r) // 🔥 changed from resetGlobalTicker
-							}
+							Next(cfg, r) // 🔥 no manual timer reset
 						}
 						handledStatic = true
 					}
