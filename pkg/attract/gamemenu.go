@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 	"os"
+	"os/exec"  
 	"strings"
 
 	"github.com/synrais/SAM-GO/pkg/input"
@@ -123,26 +124,29 @@ func GameMenu8() error {
 	return nil
 }
 
-// MENU 9: reset, open console, and run script
+// MENU 9: open console via F9, then run SAM_MENU.sh
 func GameMenu9() error {
-	// Step 1: Reset back to menu core
-	err := os.WriteFile("/dev/MiSTer_cmd", []byte("load_core /media/fat/menu.rbf\n"), 0644)
+	kb, err := input.NewVirtualKeyboard()
 	if err != nil {
-		return fmt.Errorf("failed to reset to menu core: %w", err)
+		return fmt.Errorf("failed to create virtual keyboard: %w", err)
+	}
+	defer kb.Close()
+
+	fmt.Println("[MENU9] Sending F9 to MiSTer to open console...")
+	kb.Console()
+	time.Sleep(500 * time.Millisecond) // give the system a moment to switch
+
+	scriptPath := "/media/fat/Scripts/SAM_MENU.sh"
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		return fmt.Errorf("script not found: %s", scriptPath)
 	}
 
-	// Step 2: Give MiSTer time to load
-	time.Sleep(2 * time.Second)
-
-	// Step 3: Run SAM_MENU.sh
-	scriptPath := "/media/fat/Scripts/SAM_MENU.sh"
 	cmd := exec.Command("bash", scriptPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
 	fmt.Println("[MENU9] Launching SAM_MENU.sh...")
-
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to run %s: %w", scriptPath, err)
 	}
