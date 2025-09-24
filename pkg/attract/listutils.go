@@ -17,7 +17,11 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// mergeCounts merges multiple count maps into one.
+//
+// -----------------------------
+// Merge helpers
+// -----------------------------
+
 func mergeCounts(ms ...map[string]int) map[string]int {
 	out := map[string]int{}
 	for _, m := range ms {
@@ -26,19 +30,6 @@ func mergeCounts(ms ...map[string]int) map[string]int {
 		}
 	}
 	return out
-}
-
-//
-// -----------------------------
-// Helpers for splitting/normalizing
-// -----------------------------
-
-func SplitNTrim(s, sep string, n int) []string {
-	parts := strings.SplitN(s, sep, n)
-	for i := range parts {
-		parts[i] = strings.TrimSpace(parts[i])
-	}
-	return parts
 }
 
 //
@@ -272,7 +263,7 @@ func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.
 	hadLists := false
 	counts := map[string]int{"White": 0, "Black": 0, "Static": 0, "Folder": 0, "File": 0}
 
-	if cfg.List.UseWhitelist && AllowedFor(systemID, cfg.List.WhitelistInclude, cfg.List.WhitelistExclude) {
+	if cfg.List.UseWhitelist && Allowed(systemID, cfg.List.WhitelistInclude, cfg.List.WhitelistExclude) {
 		whitelist := ReadNameSet(filepath.Join(filterBase, systemID+"_whitelist.txt"))
 		if whitelist != nil {
 			hadLists = true
@@ -289,7 +280,7 @@ func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.
 		}
 	}
 
-	if cfg.List.UseBlacklist && AllowedFor(systemID, cfg.List.BlacklistInclude, cfg.List.BlacklistExclude) {
+	if cfg.List.UseBlacklist && Allowed(systemID, cfg.List.BlacklistInclude, cfg.List.BlacklistExclude) {
 		bl := ReadNameSet(filepath.Join(filterBase, systemID+"_blacklist.txt"))
 		if bl != nil {
 			hadLists = true
@@ -306,7 +297,7 @@ func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.
 		}
 	}
 
-	if cfg.List.UseStaticlist && AllowedFor(systemID, cfg.List.StaticlistInclude, cfg.List.StaticlistExclude) {
+	if cfg.List.UseStaticlist && Allowed(systemID, cfg.List.StaticlistInclude, cfg.List.StaticlistExclude) {
 		sm := ReadStaticMap(filepath.Join(filterBase, systemID+"_staticlist.txt"))
 		if sm != nil {
 			hadLists = true
@@ -422,15 +413,11 @@ func ContainsInsensitive(list []string, item string) bool {
 	return false
 }
 
-func MatchesSystem(list []string, system string) bool {
-	return ContainsInsensitive(list, system)
-}
-
-func AllowedFor(system string, include, exclude []string) bool {
-	if len(include) > 0 && !MatchesSystem(include, system) {
+func Allowed(system string, include, exclude []string) bool {
+	if len(include) > 0 && !ContainsInsensitive(include, system) {
 		return false
 	}
-	if MatchesSystem(exclude, system) {
+	if ContainsInsensitive(exclude, system) {
 		return false
 	}
 	return true
@@ -479,36 +466,6 @@ func ReadStaticMap(path string) map[string]string {
 		m[name] = ts
 	}
 	return m
-}
-
-func ReadStaticTimestamp(systemID, game string) float64 {
-	filterBase := config.FilterlistDir()
-	path := filepath.Join(filterBase, systemID+"_staticlist.txt")
-
-	f, err := os.Open(path)
-	if err != nil {
-		return 0
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, " ", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		tsStr := strings.Trim(parts[0], "<>")
-		name, _ := utils.NormalizeEntry(parts[1])
-		if name == game {
-			ts, _ := strconv.ParseFloat(tsStr, 64)
-			return ts
-		}
-	}
-	return 0
 }
 
 func matchRule(rule, candidate string) bool {
