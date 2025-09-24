@@ -1,7 +1,6 @@
 package attract
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"net"
