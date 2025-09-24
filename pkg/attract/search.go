@@ -15,7 +15,7 @@ func SearchAndPlay(inputCh <-chan string) {
 	fmt.Println("[SEARCH] Type to filter, ENTER to launch, ESC to exit.")
 
 	// grab all games from GameIndex
-	index := FlattenIndex()
+	index := FlattenCache("index")
 	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(index))
 
 	var sb strings.Builder
