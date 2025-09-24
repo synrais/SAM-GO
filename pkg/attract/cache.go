@@ -10,15 +10,29 @@ import (
 )
 
 // -----------------------------
-// Core in-RAM cache
+// Core in-RAM caches
 // -----------------------------
 
 var (
 	mu     sync.RWMutex
-	lists  = make(map[string][]string) // gamelists per system
+	lists  = make(map[string][]string) // gamelists per system (per file)
 	master = make(map[string][]string) // master list per system
 	index  = make(map[string][]string) // index per system
 )
+
+// cacheSelector picks which map to use based on type string.
+func cacheSelector(cacheType string) map[string][]string {
+	switch cacheType {
+	case "lists":
+		return lists
+	case "master":
+		return master
+	case "index":
+		return index
+	default:
+		return nil
+	}
+}
 
 // -----------------------------
 // Reload / Reset (global)
@@ -56,6 +70,7 @@ func ReloadAll(dir string) error {
 		case "GameIndex":
 			index["__all__"] = append([]string(nil), lines...)
 		default:
+			// treat everything else as a system gamelist
 			lists[e.Name()] = append([]string(nil), lines...)
 		}
 	}
@@ -73,140 +88,91 @@ func ResetAll() {
 }
 
 // -----------------------------
-// Lists cache
+// Unified cache API
 // -----------------------------
 
-func GetList(name string) []string {
+func GetCache(cacheType, key string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
-	return append([]string(nil), lists[name]...)
+	cache := cacheSelector(cacheType)
+	if cache == nil {
+		return nil
+	}
+	return append([]string(nil), cache[key]...)
 }
 
-func SetList(name string, lines []string) {
+func SetCache(cacheType, key string, vals []string) {
 	mu.Lock()
 	defer mu.Unlock()
-	lists[name] = append([]string(nil), lines...)
+	cache := cacheSelector(cacheType)
+	if cache == nil {
+		return
+	}
+	cache[key] = append([]string(nil), vals...)
 }
 
-func RemoveList(name string) {
+func RemoveCache(cacheType, key string) {
 	mu.Lock()
 	defer mu.Unlock()
-	delete(lists, name)
+	cache := cacheSelector(cacheType)
+	if cache == nil {
+		return
+	}
+	delete(cache, key)
 }
 
-func AmendList(name string, lines []string) {
+func AmendCache(cacheType, key string, vals []string) {
 	mu.Lock()
 	defer mu.Unlock()
-	lists[name] = append([]string(nil), lines...)
+	cache := cacheSelector(cacheType)
+	if cache == nil {
+		return
+	}
+	cache[key] = append([]string(nil), vals...)
 }
 
-func ListKeys() []string {
+func CacheKeys(cacheType string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
-	keys := make([]string, 0, len(lists))
-	for k := range lists {
+	cache := cacheSelector(cacheType)
+	if cache == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(cache))
+	for k := range cache {
 		keys = append(keys, k)
 	}
 	return keys
 }
 
 // -----------------------------
-// MasterList cache
+// Flatten helpers
 // -----------------------------
 
-func GetMasterSystem(systemID string) []string {
+// FlattenCache returns the full contents of master or index with system headers.
+func FlattenCache(cacheType string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
-	return append([]string(nil), master[systemID]...)
-}
-
-func SetMasterSystem(systemID string, paths []string) {
-	mu.Lock()
-	defer mu.Unlock()
-	master[systemID] = append([]string(nil), paths...)
-}
-
-func RemoveMasterSystem(systemID string) {
-	mu.Lock()
-	defer mu.Unlock()
-	delete(master, systemID)
-}
-
-func AmendMasterSystem(systemID string, paths []string) {
-	mu.Lock()
-	defer mu.Unlock()
-	master[systemID] = append([]string(nil), paths...)
-}
-
-func MasterKeys() []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	keys := make([]string, 0, len(master))
-	for k := range master {
-		keys = append(keys, k)
+	cache := cacheSelector(cacheType)
+	if cache == nil {
+		return nil
 	}
-	return keys
-}
 
-// FlattenMaster returns the full master list as one slice of lines.
-func FlattenMaster() []string {
-	mu.RLock()
-	defer mu.RUnlock()
 	all := []string{}
-	for sys, lines := range master {
+	for sys, lines := range cache {
 		all = append(all, "# SYSTEM: "+sys)
 		all = append(all, lines...)
 	}
 	return all
 }
 
-// -----------------------------
-// GameIndex cache
-// -----------------------------
-
-func GetIndexSystem(systemID string) []string {
+// FlattenSystem returns only the lines for a given system in lists/master/index.
+func FlattenSystem(cacheType, systemID string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
-	return append([]string(nil), index[systemID]...)
-}
-
-func SetIndexSystem(systemID string, paths []string) {
-	mu.Lock()
-	defer mu.Unlock()
-	index[systemID] = append([]string(nil), paths...)
-}
-
-func RemoveIndexSystem(systemID string) {
-	mu.Lock()
-	defer mu.Unlock()
-	delete(index, systemID)
-}
-
-func AmendIndexSystem(systemID string, paths []string) {
-	mu.Lock()
-	defer mu.Unlock()
-	index[systemID] = append([]string(nil), paths...)
-}
-
-func IndexKeys() []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	keys := make([]string, 0, len(index))
-	for k := range index {
-		keys = append(keys, k)
+	cache := cacheSelector(cacheType)
+	if cache == nil {
+		return nil
 	}
-	return keys
-}
-
-// FlattenIndex returns the full index as one slice of lines.
-func FlattenIndex() []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	all := []string{}
-	for sys, lines := range index {
-		for _, l := range lines {
-			all = append(all, fmt.Sprintf("%s|%s", sys, l))
-		}
-	}
-	return all
+	return append([]string(nil), cache[systemID]...)
 }
