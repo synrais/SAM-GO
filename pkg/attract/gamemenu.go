@@ -283,6 +283,18 @@ func readLines(file string) []string {
 
 // ===== Entry Points =====
 
+
 func RunMenu() {
 	root := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
-	p := tea.NewProgram(newMenuModel(root), tea.WithAltScreen
+	p := tea.NewProgram(newMenuModel(root), tea.WithAltScreen())
+	if err := p.Start(); err != nil {
+		fmt.Println("Error running menu:", err)
+		os.Exit(1)
+	}
+}
+
+func LaunchMenu(cfg *config.UserConfig) error {
+	fmt.Println("[DEBUG] LaunchMenu() called")
+	RunMenu()
+	return nil
+}
