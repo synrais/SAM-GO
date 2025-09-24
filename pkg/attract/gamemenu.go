@@ -1,13 +1,11 @@
 package attract
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -222,57 +220,33 @@ func (m menuModel) goBack() menuModel {
 
 // ===== Helpers =====
 
+// 🚀 This version avoids FlattenCache — grab per-system lists directly
 func buildSystemsFromCache() map[string][]Node {
 	systems := make(map[string][]Node)
-	lines := FlattenCache("master") // <-- pull from in-RAM cache
-	currentSystem := ""
 
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "# SYSTEM:") {
-			system := strings.TrimSpace(line[len("# SYSTEM:"):])
-			currentSystem = system
-			if _, ok := systems[currentSystem]; !ok {
-				systems[currentSystem] = []Node{}
-				fmt.Printf("[DEBUG] Found system: %s\n", currentSystem)
-			}
-			continue
-		}
-		if currentSystem != "" {
-			game := filepath.Base(line)
-			systems[currentSystem] = append(systems[currentSystem], Node{
-				Display: game,
-				Path:    line,
+	masterCache := GetCacheMap("master") // systemID → []string
+	for sys, entries := range masterCache {
+		nodes := make([]Node, 0, len(entries))
+		for _, path := range entries {
+			nodes = append(nodes, Node{
+				Display: filepath.Base(path),
+				Path:    path,
 				IsDir:   false,
 			})
-			fmt.Printf("[DEBUG] Added game to %s → %s\n", currentSystem, game)
 		}
+		systems[sys] = nodes
+		fmt.Printf("[DEBUG] System %s → %d games\n", sys, len(nodes))
 	}
+
 	return systems
 }
 
 func toListItems(nodes []Node) []list.Item {
-	var out []list.Item
-	for _, n := range nodes {
-		out = append(out, n)
+	out := make([]list.Item, len(nodes))
+	for i, n := range nodes {
+		out[i] = n
 	}
 	return out
-}
-
-func readLines(file string) []string {
-	f, err := os.Open(file)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	var lines []string
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		lines = append(lines, strings.TrimSpace(sc.Text()))
-	}
-	return lines
 }
 
 // ===== Entry Points =====
