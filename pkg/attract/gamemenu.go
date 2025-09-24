@@ -229,7 +229,7 @@ func GameMenu9() error {
 	}
 	fmt.Println("[MENU9] Reloaded MiSTer menu core")
 
-	// Step 2: wait until menu core is active again (poll tty0 instead of fixed sleep)
+	// Step 2: wait until menu core is active again (tty0 ready)
 	tries := 0
 	for {
 		tty, err := getTTY()
@@ -244,34 +244,34 @@ func GameMenu9() error {
 		}
 	}
 
-	// Step 3: press F9 (open terminal)
+	// Step 3: press F9 repeatedly until tty1 (console) is active
 	kb, err := input.NewVirtualKeyboard()
 	if err != nil {
 		return fmt.Errorf("failed to create virtual keyboard: %w", err)
 	}
 	defer kb.Close()
 
-	if err := kb.Console(); err != nil {
-		return fmt.Errorf("failed to press F9: %w", err)
-	}
-	fmt.Println("[MENU9] Sent F9 to open terminal")
-
-	// Step 4: wait until tty1 (console) is active
 	tries = 0
 	for {
+		if tries > 20 { // ~2s worth of tries
+			return errors.New("timeout waiting for console to open (tty1)")
+		}
+
+		if err := kb.Console(); err != nil {
+			return fmt.Errorf("failed to press F9: %w", err)
+		}
+
+		time.Sleep(100 * time.Millisecond)
+
 		tty, err := getTTY()
 		if err == nil && tty == "tty1" {
 			fmt.Println("[MENU9] Console open on tty1")
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
 		tries++
-		if tries > 50 { // ~5s timeout
-			return errors.New("timeout waiting for console to open (tty1)")
-		}
 	}
 
-	// Step 5: switch to tty2 (reserved for scripts)
+	// Step 4: switch to tty2 (reserved for scripts)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := exec.CommandContext(ctx, "chvt", "2").Run(); err != nil {
@@ -279,7 +279,7 @@ func GameMenu9() error {
 	}
 	fmt.Println("[MENU9] Switched to tty2")
 
-	// Step 6: run SAM_MENU.sh on tty2 with agetty
+	// Step 5: run SAM_MENU.sh on tty2 with agetty
 	cmd := exec.CommandContext(
 		context.Background(),
 		"/sbin/agetty",
