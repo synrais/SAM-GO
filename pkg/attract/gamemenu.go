@@ -6,8 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
 	"strings"
+	"time"
+
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
@@ -39,48 +40,36 @@ func GameMenu9() error {
 	}
 	fmt.Println("[DEBUG] Reload command written successfully")
 
-	// Step 2: wait for menu reload
-	fmt.Println("[DEBUG] Sleeping 3s to let menu reload…")
 	time.Sleep(3 * time.Second)
 
 	// Step 3: press F9 (open terminal)
-	fmt.Println("[DEBUG] Creating virtual keyboard…")
 	kb, err := input.NewVirtualKeyboard()
 	if err != nil {
 		return fmt.Errorf("[DEBUG] failed to create virtual keyboard: %w", err)
 	}
 	defer kb.Close()
 
-	fmt.Println("[DEBUG] Sending Console() → F9")
 	if err := kb.Console(); err != nil {
 		return fmt.Errorf("[DEBUG] failed to press F9: %w", err)
 	}
-	fmt.Println("[DEBUG] F9 pressed")
-
-	fmt.Println("[DEBUG] Sleeping 2s after F9…")
 	time.Sleep(2 * time.Second)
 
 	// Step 4: switch to tty2
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	fmt.Println("[DEBUG] Running chvt 2")
 	if err := exec.CommandContext(ctx, "chvt", "2").Run(); err != nil {
 		return fmt.Errorf("[DEBUG] failed to switch to tty2: %w", err)
 	}
-	fmt.Println("[DEBUG] Successfully switched to tty2")
 
 	// Step 5: redirect stdio to tty2 and run internal menu
-	fmt.Println("[DEBUG] Opening /dev/tty2…")
 	tty, err := os.OpenFile("/dev/tty2", os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("[DEBUG] failed to open /dev/tty2: %w", err)
 	}
-
 	os.Stdout = tty
 	os.Stderr = tty
 	os.Stdin = tty
 
-	fmt.Println("[DEBUG] Handing control to RunMenu() on tty2")
 	RunMenu()
 	return nil
 }
@@ -100,15 +89,24 @@ func (n Node) Title() string {
 	return "🎮 " + n.Display
 }
 
-func (n Node) Description() string { return n.Path }
+func (n Node) Description() string { return "" } // clean, no paths
 func (n Node) FilterValue() string { return n.Display }
 
 // ===== Styles =====
 
 var (
-	borderStyle  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Foreground(lipgloss.Color("33"))
-	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
-	selectedItem = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Background(lipgloss.Color("33"))
+	borderStyle = lipgloss.NewStyle().
+			Border(lipgloss.ThickBorder()).
+			Padding(1, 2).
+			BorderForeground(lipgloss.Color("33"))
+
+	selectedItem = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("0")).
+			Background(lipgloss.Color("39")).
+			Bold(true)
+
+	normalItem = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("252"))
 )
 
 // ===== Menu Model =====
@@ -116,7 +114,7 @@ var (
 type menuModel struct {
 	list    list.Model
 	stack   []string
-	systems map[string][]Node // system → games
+	systems map[string][]Node
 	cursor  int
 }
 
@@ -135,14 +133,16 @@ func newMenuModel() menuModel {
 
 	delegate := list.NewDefaultDelegate()
 	delegate.Styles.SelectedTitle = selectedItem
+	delegate.Styles.NormalTitle = normalItem
 	delegate.Styles.SelectedDesc = selectedItem
+	delegate.Styles.NormalDesc = normalItem
 
-	l := list.New(toListItems(systemNodes), delegate, 50, 20)
-	l.Title = "SAM Masterlist Browser"
+	l := list.New(toListItems(systemNodes), delegate, 0, 0) // auto-resize
+	l.Title = "📜 SAM Masterlist Browser"
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
-	l.SetShowHelp(true)
-	l.SetShowPagination(true)
+	l.SetShowHelp(false)
+	l.SetShowPagination(false)
 
 	return menuModel{list: l, stack: []string{}, systems: systems, cursor: 0}
 }
@@ -171,16 +171,6 @@ func (m menuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "q", "esc":
 			return m.goBack(), nil
-		case "up":
-			m.cursor--
-			if m.cursor < 0 {
-				m.cursor = len(m.list.Items()) - 1
-			}
-		case "down":
-			m.cursor++
-			if m.cursor >= len(m.list.Items()) {
-				m.cursor = 0
-			}
 		}
 	}
 	var cmd tea.Cmd
@@ -194,11 +184,6 @@ func (m menuModel) View() string {
 
 func (m menuModel) goBack() menuModel {
 	if len(m.stack) == 0 {
-		return m
-	}
-	m.stack = m.stack[:len(m.stack)-1]
-	if len(m.stack) == 0 {
-		// back to systems
 		var systemNodes []Node
 		for sys := range m.systems {
 			systemNodes = append(systemNodes, Node{
@@ -208,45 +193,46 @@ func (m menuModel) goBack() menuModel {
 			})
 		}
 		m.list.SetItems(toListItems(systemNodes))
-		m.list.Title = "SAM Masterlist Browser"
-	} else {
-		system := m.stack[len(m.stack)-1]
-		children := append([]Node{{Display: ".. Back", Path: "..", IsDir: true}}, m.systems[system]...)
-		m.list.SetItems(toListItems(children))
-		m.list.Title = system
+		m.list.Title = "📜 SAM Masterlist Browser"
+		return m
 	}
+	m.stack = m.stack[:len(m.stack)-1]
+	system := m.stack[len(m.stack)-1]
+	children := append([]Node{{Display: ".. Back", Path: "..", IsDir: true}}, m.systems[system]...)
+	m.list.SetItems(toListItems(children))
+	m.list.Title = system
 	return m
 }
 
 // ===== Helpers =====
 
 func buildSystemsFromCache() map[string][]Node {
-    systems := make(map[string][]Node)
-    lines := FlattenCache("master") // one big slice, already in RAM
-    currentSystem := ""
+	systems := make(map[string][]Node)
+	lines := FlattenCache("master")
+	currentSystem := ""
 
-    for _, line := range lines {
-        if line == "" {
-            continue
-        }
-        if strings.HasPrefix(line, "# SYSTEM:") {
-            system := strings.TrimSpace(line[len("# SYSTEM:"):])
-            currentSystem = system
-            if _, ok := systems[currentSystem]; !ok {
-                systems[currentSystem] = []Node{}
-            }
-            continue
-        }
-        if currentSystem != "" {
-            game := filepath.Base(line)
-            systems[currentSystem] = append(systems[currentSystem], Node{
-                Display: game,
-                Path:    line,
-                IsDir:   false,
-            })
-        }
-    }
-    return systems
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "# SYSTEM:") {
+			system := strings.TrimSpace(line[len("# SYSTEM:"):])
+			currentSystem = system
+			if _, ok := systems[currentSystem]; !ok {
+				systems[currentSystem] = []Node{}
+			}
+			continue
+		}
+		if currentSystem != "" {
+			game := strings.TrimSuffix(filepath.Base(line), filepath.Ext(line))
+			systems[currentSystem] = append(systems[currentSystem], Node{
+				Display: game,
+				Path:    line,
+				IsDir:   false,
+			})
+		}
+	}
+	return systems
 }
 
 func toListItems(nodes []Node) []list.Item {
