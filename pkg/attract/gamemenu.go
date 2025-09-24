@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rivo/tview"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/input"
 )
@@ -65,63 +66,65 @@ func GameMenu9() error {
 	}
 	fmt.Println("[DEBUG] Successfully switched to tty2")
 
-	// Step 5: redirect this process stdio to tty2 and run internal menu
+	// Step 5: redirect stdio to tty2 and run internal menu
 	fmt.Println("[DEBUG] Opening /dev/tty2…")
 	tty, err := os.OpenFile("/dev/tty2", os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("[DEBUG] failed to open /dev/tty2: %w", err)
 	}
-	// No defer tty.Close() — keep alive during menu
 
 	os.Stdout = tty
 	os.Stderr = tty
 	os.Stdin = tty
 
 	fmt.Println("[DEBUG] Handing control to RunMenu() on tty2")
-	RunMenu() // now directly uses the in-RAM MasterList
+	RunMenu() // run tview menu directly in-process
 
 	return nil
 }
 
-// ===== Direct in-RAM Menu =====
+// ===== Direct in-RAM Menu (tview) =====
 
 func RunMenu() {
 	fmt.Println("[DEBUG] Entered RunMenu()")
 
-	// Directly use flattened master list only
 	allMaster := FlattenCache("master")
-
 	if len(allMaster) == 0 {
 		fmt.Println("[MENU] No games available in master list (RAM empty?)")
 		return
 	}
 
-	for {
-		fmt.Println("==== MASTER LIST ====")
-		for i, g := range allMaster {
-			base := filepath.Base(g)
-			name := strings.TrimSuffix(base, filepath.Ext(base))
-			if len(name) > 70 {
-				name = name[:67] + "..."
-			}
-			fmt.Printf("%5d) %s\n", i+1, name)
-		}
+	app := tview.NewApplication()
 
-		var gameChoice int
-		fmt.Print("Choose a game (0 to quit): ")
-		fmt.Scanln(&gameChoice)
+	list := tview.NewList().
+		ShowSecondaryText(false).
+		SetHighlightFullLine(true)
 
-		if gameChoice == 0 {
-			return
+	for i, g := range allMaster {
+		base := filepath.Base(g)
+		name := strings.TrimSuffix(base, filepath.Ext(base))
+		if len(name) > 70 {
+			name = name[:67] + "..."
 		}
-		if gameChoice < 1 || gameChoice > len(allMaster) {
-			fmt.Println("[MENU] Invalid game choice")
-			continue
-		}
+		index := i
+		list.AddItem(name, "", 0, func() {
+			chosenGame := allMaster[index]
+			app.Stop() // exit tview loop before launching
+			fmt.Printf("[MENU] Launching: %s\n", chosenGame)
+			Run([]string{chosenGame})
+			// Relaunch the menu after the game exits
+			RunMenu()
+		})
+	}
 
-		chosenGame := allMaster[gameChoice-1]
-		fmt.Printf("[MENU] Launching: %s\n", chosenGame)
-		Run([]string{chosenGame}) // call into attract.Run()
+	list.SetBorder(true).SetTitle(" SAM Game Browser (MasterList) ")
+
+	list.SetDoneFunc(func() {
+		app.Stop()
+	})
+
+	if err := app.SetRoot(list, true).Run(); err != nil {
+		panic(err)
 	}
 }
 
