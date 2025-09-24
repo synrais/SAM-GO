@@ -13,6 +13,28 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
+// RemoveCache deletes a key from the chosen cache.
+func RemoveCache(cacheType, key string) {
+	mu.Lock()
+	defer mu.Unlock()
+	cache := cacheSelector(cacheType)
+	if cache == nil {
+		return
+	}
+	delete(cache, key)
+}
+
+// AmendCache appends values onto an existing cache entry.
+func AmendCache(cacheType, key string, vals []string) {
+	mu.Lock()
+	defer mu.Unlock()
+	cache := cacheSelector(cacheType)
+	if cache == nil {
+		return
+	}
+	cache[key] = append(cache[key], vals...)
+}
+
 // -----------------------------
 // Core in-RAM caches
 // -----------------------------
