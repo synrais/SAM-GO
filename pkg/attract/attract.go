@@ -40,7 +40,7 @@ func PrepareAttractLists(cfg *config.UserConfig, showStream bool) {
 	}
 
 	// 🔥 RAM-only gamelist keys
-	files := ListKeys()
+	files := CacheKeys("lists")
 	if len(files) == 0 {
 		fmt.Println("[Attract] No gamelists found in memory.")
 		os.Exit(1)
