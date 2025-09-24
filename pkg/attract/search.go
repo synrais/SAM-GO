@@ -89,10 +89,8 @@ func findMatches(qn, qext string, index []string) []string {
 
 func launchGame(path string) {
 	name, ext := utils.NormalizeEntry(path)
-	systemID := DetectSystemFromPath(path) // you'll need a helper or map for this
-	fmt.Printf("[SEARCH] %s %s %s <%s>\n",
+	fmt.Printf("[SEARCH] %s %s <%s>\n",
 		time.Now().Format("15:04:05"),
-		systemID,
 		strings.TrimSuffix(name, ext),
 		path,
 	)
