@@ -94,6 +94,11 @@ func RunMenu() {
 		return
 	}
 
+	// Ensure TERM is set so tview/tcell can initialize
+	if os.Getenv("TERM") == "" {
+		os.Setenv("TERM", "linux")
+	}
+
 	app := tview.NewApplication()
 
 	list := tview.NewList().
