@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/synrais/SAM-GO/pkg/utils"
@@ -15,37 +14,30 @@ import (
 // -----------------------------
 
 var (
-	mu sync.RWMutex
-
-	// system gamelists
-	gamelists    = make(map[string][]string) // working copy
-	gamelistBase = make(map[string][]string) // pristine originals
-
-	// global indexes (MasterList, GameIndex, etc.)
-	indexes    = make(map[string][]string) // working copy
-	indexBase  = make(map[string][]string) // pristine originals
+	mu     sync.RWMutex
+	lists  = make(map[string][]string) // gamelists per system
+	master = make(map[string][]string) // master list per system
+	index  = make(map[string][]string) // index per system
 )
 
 // -----------------------------
-// Reload + Reset
+// Reload / Reset (global)
 // -----------------------------
 
-// ReloadAll clears and reloads all gamelists + indexes from a directory into RAM.
+// ReloadAll clears and reloads all files (lists, master, index) from a directory into RAM.
 func ReloadAll(dir string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// reset everything
-	gamelists = make(map[string][]string)
-	gamelistBase = make(map[string][]string)
-	indexes = make(map[string][]string)
-	indexBase = make(map[string][]string)
+	// Reset everything
+	lists = make(map[string][]string)
+	master = make(map[string][]string)
+	index = make(map[string][]string)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf("reload cache: %w", err)
 	}
-
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -58,107 +50,138 @@ func ReloadAll(dir string) error {
 			continue
 		}
 
-		// classify into indexes or gamelists
 		switch e.Name() {
-		case "MasterList", "GameIndex":
-			indexes[e.Name()] = append([]string(nil), lines...)
-			indexBase[e.Name()] = append([]string(nil), lines...)
+		case "MasterList":
+			master["__all__"] = append([]string(nil), lines...)
+		case "GameIndex":
+			index["__all__"] = append([]string(nil), lines...)
 		default:
-			// treat all other text files as gamelists
-			if !strings.HasSuffix(e.Name(), ".txt") {
-				continue
-			}
-			gamelists[e.Name()] = append([]string(nil), lines...)
-			gamelistBase[e.Name()] = append([]string(nil), lines...)
+			lists[e.Name()] = append([]string(nil), lines...)
 		}
 	}
+
 	return nil
 }
 
-// ResetAll restores all working gamelists + indexes from their pristine originals.
+// ResetAll clears all caches completely.
 func ResetAll() {
 	mu.Lock()
 	defer mu.Unlock()
-
-	gamelists = make(map[string][]string, len(gamelistBase))
-	for k, v := range gamelistBase {
-		gamelists[k] = append([]string(nil), v...)
-	}
-
-	indexes = make(map[string][]string, len(indexBase))
-	for k, v := range indexBase {
-		indexes[k] = append([]string(nil), v...)
-	}
+	lists = make(map[string][]string)
+	master = make(map[string][]string)
+	index = make(map[string][]string)
 }
 
 // -----------------------------
-// Gamelist helpers
+// Lists cache
 // -----------------------------
 
-func GetGamelist(name string) []string {
+func GetList(name string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
-	return append([]string(nil), gamelists[name]...)
+	return append([]string(nil), lists[name]...)
 }
 
-func SetGamelist(name string, lines []string) {
+func SetList(name string, lines []string) {
 	mu.Lock()
 	defer mu.Unlock()
-	copied := append([]string(nil), lines...)
-	gamelists[name] = copied
-	if _, ok := gamelistBase[name]; !ok {
-		gamelistBase[name] = append([]string(nil), lines...)
-	}
+	lists[name] = append([]string(nil), lines...)
 }
 
-func ListGamelistKeys() []string {
+func RemoveList(name string) {
+	mu.Lock()
+	defer mu.Unlock()
+	delete(lists, name)
+}
+
+func AmendList(name string, lines []string) {
+	mu.Lock()
+	defer mu.Unlock()
+	lists[name] = append([]string(nil), lines...)
+}
+
+func ListKeys() []string {
 	mu.RLock()
 	defer mu.RUnlock()
-	keys := make([]string, 0, len(gamelists))
-	for k := range gamelists {
+	keys := make([]string, 0, len(lists))
+	for k := range lists {
 		keys = append(keys, k)
 	}
 	return keys
 }
 
-func DeleteGamelist(name string) {
-	mu.Lock()
-	defer mu.Unlock()
-	delete(gamelists, name)
-}
-
 // -----------------------------
-// Index helpers (MasterList, GameIndex…)
+// MasterList cache
 // -----------------------------
 
-func GetIndex(name string) []string {
+func GetMasterSystem(systemID string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
-	return append([]string(nil), indexes[name]...)
+	return append([]string(nil), master[systemID]...)
 }
 
-func SetIndex(name string, lines []string) {
+func SetMasterSystem(systemID string, paths []string) {
 	mu.Lock()
 	defer mu.Unlock()
-	copied := append([]string(nil), lines...)
-	indexes[name] = copied
-	if _, ok := indexBase[name]; !ok {
-		indexBase[name] = append([]string(nil), lines...)
-	}
+	master[systemID] = append([]string(nil), paths...)
 }
 
-func ListIndexKeys() []string {
+func RemoveMasterSystem(systemID string) {
+	mu.Lock()
+	defer mu.Unlock()
+	delete(master, systemID)
+}
+
+func AmendMasterSystem(systemID string, paths []string) {
+	mu.Lock()
+	defer mu.Unlock()
+	master[systemID] = append([]string(nil), paths...)
+}
+
+func MasterKeys() []string {
 	mu.RLock()
 	defer mu.RUnlock()
-	keys := make([]string, 0, len(indexes))
-	for k := range indexes {
+	keys := make([]string, 0, len(master))
+	for k := range master {
 		keys = append(keys, k)
 	}
 	return keys
 }
 
-func DeleteIndex(name string) {
+// -----------------------------
+// GameIndex cache
+// -----------------------------
+
+func GetIndexSystem(systemID string) []string {
+	mu.RLock()
+	defer mu.RUnlock()
+	return append([]string(nil), index[systemID]...)
+}
+
+func SetIndexSystem(systemID string, paths []string) {
 	mu.Lock()
 	defer mu.Unlock()
-	delete(indexes, name)
+	index[systemID] = append([]string(nil), paths...)
+}
+
+func RemoveIndexSystem(systemID string) {
+	mu.Lock()
+	defer mu.Unlock()
+	delete(index, systemID)
+}
+
+func AmendIndexSystem(systemID string, paths []string) {
+	mu.Lock()
+	defer mu.Unlock()
+	index[systemID] = append([]string(nil), paths...)
+}
+
+func IndexKeys() []string {
+	mu.RLock()
+	defer mu.RUnlock()
+	keys := make([]string, 0, len(index))
+	for k := range index {
+		keys = append(keys, k)
+	}
+	return keys
 }
