@@ -17,11 +17,7 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-//
-// -----------------------------
-// Merge helpers
-// -----------------------------
-
+// mergeCounts merges multiple count maps into one.
 func mergeCounts(ms ...map[string]int) map[string]int {
 	out := map[string]int{}
 	for _, m := range ms {
@@ -30,6 +26,19 @@ func mergeCounts(ms ...map[string]int) map[string]int {
 		}
 	}
 	return out
+}
+
+//
+// -----------------------------
+// Helpers for splitting/normalizing
+// -----------------------------
+
+func SplitNTrim(s, sep string, n int) []string {
+	parts := strings.SplitN(s, sep, n)
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
 }
 
 //
@@ -63,7 +72,69 @@ func Stage2Filters(files []string) ([]string, map[string]int) {
 }
 
 func Stage3Filters(gamelistDir, systemID string, diskLines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
-	return ApplyFilterlists(gamelistDir, systemID, diskLines, cfg)
+	filterBase := config.FilterlistDir()
+	hadLists := false
+	counts := map[string]int{"White": 0, "Black": 0, "Static": 0, "Folder": 0, "File": 0}
+
+	lines := diskLines
+
+	// Whitelist
+	if cfg.List.UseWhitelist && AllowedFor(systemID, cfg.List.WhitelistInclude, cfg.List.WhitelistExclude) {
+		whitelist := ReadNameSet(filepath.Join(filterBase, systemID+"_whitelist.txt"))
+		if whitelist != nil {
+			hadLists = true
+			var kept []string
+			for _, l := range lines {
+				name, _ := utils.NormalizeEntry(l)
+				if _, ok := whitelist[name]; ok {
+					kept = append(kept, l)
+				} else {
+					counts["White"]++
+				}
+			}
+			lines = kept
+		}
+	}
+
+	// Blacklist
+	if cfg.List.UseBlacklist && AllowedFor(systemID, cfg.List.BlacklistInclude, cfg.List.BlacklistExclude) {
+		bl := ReadNameSet(filepath.Join(filterBase, systemID+"_blacklist.txt"))
+		if bl != nil {
+			hadLists = true
+			var kept []string
+			for _, l := range lines {
+				name, _ := utils.NormalizeEntry(l)
+				if _, bad := bl[name]; bad {
+					counts["Black"]++
+					continue
+				}
+				kept = append(kept, l)
+			}
+			lines = kept
+		}
+	}
+
+	// Staticlist with timestamps
+	if cfg.List.UseStaticlist && AllowedFor(systemID, cfg.List.StaticlistInclude, cfg.List.StaticlistExclude) {
+		sm := ReadStaticMap(filepath.Join(filterBase, systemID+"_staticlist.txt"))
+		if sm != nil {
+			hadLists = true
+			for i, l := range lines {
+				name, _ := utils.NormalizeEntry(l)
+				if ts, ok := sm[name]; ok {
+					lines[i] = "<" + ts + ">" + l
+					counts["Static"]++
+				}
+			}
+		}
+	}
+
+	// Folder/file filters
+	before := len(lines)
+	lines = FilterFoldersAndFiles(lines, systemID, cfg)
+	counts["Folder"] = before - len(lines)
+
+	return lines, counts, hadLists
 }
 
 //
@@ -255,67 +326,52 @@ func FilterExtensions(files []string, systemID string, cfg *config.UserConfig) [
 
 //
 // -----------------------------
-// Filterlist pipeline
+// Filterlist helpers
 // -----------------------------
 
-func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.UserConfig) ([]string, map[string]int, bool) {
-	filterBase := config.FilterlistDir()
-	hadLists := false
-	counts := map[string]int{"White": 0, "Black": 0, "Static": 0, "Folder": 0, "File": 0}
-
-	if cfg.List.UseWhitelist && Allowed(systemID, cfg.List.WhitelistInclude, cfg.List.WhitelistExclude) {
-		whitelist := ReadNameSet(filepath.Join(filterBase, systemID+"_whitelist.txt"))
-		if whitelist != nil {
-			hadLists = true
-			var kept []string
-			for _, l := range lines {
-				name, _ := utils.NormalizeEntry(l)
-				if _, ok := whitelist[name]; ok {
-					kept = append(kept, l)
-				} else {
-					counts["White"]++
-				}
-			}
-			lines = kept
-		}
+func ReadNameSet(path string) map[string]struct{} {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
 	}
+	defer f.Close()
 
-	if cfg.List.UseBlacklist && Allowed(systemID, cfg.List.BlacklistInclude, cfg.List.BlacklistExclude) {
-		bl := ReadNameSet(filepath.Join(filterBase, systemID+"_blacklist.txt"))
-		if bl != nil {
-			hadLists = true
-			var kept []string
-			for _, l := range lines {
-				name, _ := utils.NormalizeEntry(l)
-				if _, bad := bl[name]; bad {
-					counts["Black"]++
-					continue
-				}
-				kept = append(kept, l)
-			}
-			lines = kept
+	set := make(map[string]struct{})
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
 		}
+		name, _ := utils.NormalizeEntry(line)
+		set[name] = struct{}{}
 	}
+	return set
+}
 
-	if cfg.List.UseStaticlist && Allowed(systemID, cfg.List.StaticlistInclude, cfg.List.StaticlistExclude) {
-		sm := ReadStaticMap(filepath.Join(filterBase, systemID+"_staticlist.txt"))
-		if sm != nil {
-			hadLists = true
-			for i, l := range lines {
-				name, _ := utils.NormalizeEntry(l)
-				if ts, ok := sm[name]; ok {
-					lines[i] = "<" + ts + ">" + l
-					counts["Static"]++
-				}
-			}
+func ReadStaticMap(path string) map[string]string {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	m := make(map[string]string)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
 		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		ts := strings.Trim(parts[0], "<>")
+		name, _ := utils.NormalizeEntry(parts[1])
+		m[name] = ts
 	}
-
-	before := len(lines)
-	lines = FilterFoldersAndFiles(lines, systemID, cfg)
-	counts["Folder"] = before - len(lines)
-
-	return lines, counts, hadLists
+	return m
 }
 
 //
@@ -413,59 +469,18 @@ func ContainsInsensitive(list []string, item string) bool {
 	return false
 }
 
-func Allowed(system string, include, exclude []string) bool {
-	if len(include) > 0 && !ContainsInsensitive(include, system) {
+func MatchesSystem(list []string, system string) bool {
+	return ContainsInsensitive(list, system)
+}
+
+func AllowedFor(system string, include, exclude []string) bool {
+	if len(include) > 0 && !MatchesSystem(include, system) {
 		return false
 	}
-	if ContainsInsensitive(exclude, system) {
+	if MatchesSystem(exclude, system) {
 		return false
 	}
 	return true
-}
-
-func ReadNameSet(path string) map[string]struct{} {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-
-	set := make(map[string]struct{})
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		name, _ := utils.NormalizeEntry(line)
-		set[name] = struct{}{}
-	}
-	return set
-}
-
-func ReadStaticMap(path string) map[string]string {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-
-	m := make(map[string]string)
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, " ", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		ts := strings.Trim(parts[0], "<>")
-		name, _ := utils.NormalizeEntry(parts[1])
-		m[name] = ts
-	}
-	return m
 }
 
 func matchRule(rule, candidate string) bool {
