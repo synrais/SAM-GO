@@ -15,145 +15,150 @@ import (
 // -----------------------------
 
 var (
-	mu       sync.RWMutex
-	lists    = make(map[string][]string) // working copy (mutates as games are consumed)
-	masters  = make(map[string][]string) // pristine originals (never touched)
-	gameIndex []string                   // full search index, lines like "name|path"
+	mu sync.RWMutex
+
+	// system gamelists
+	gamelists    = make(map[string][]string) // working copy
+	gamelistBase = make(map[string][]string) // pristine originals
+
+	// global indexes (MasterList, GameIndex, etc.)
+	indexes    = make(map[string][]string) // working copy
+	indexBase  = make(map[string][]string) // pristine originals
 )
 
 // -----------------------------
-// List cache (gamelists, masterlist, history)
+// Reload + Reset
 // -----------------------------
 
-// ReloadAll clears and reloads all list files and GameIndex from a directory into RAM.
-// Both working and master copies are initialized, and GameIndex is rebuilt too.
+// ReloadAll clears and reloads all gamelists + indexes from a directory into RAM.
 func ReloadAll(dir string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Reset everything
-	lists = make(map[string][]string)
-	masters = make(map[string][]string)
-	gameIndex = []string{}
+	// reset everything
+	gamelists = make(map[string][]string)
+	gamelistBase = make(map[string][]string)
+	indexes = make(map[string][]string)
+	indexBase = make(map[string][]string)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf("reload cache: %w", err)
 	}
+
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
 
-		// 🔥 Special case: rebuild GameIndex from its file
-		if e.Name() == "GameIndex" {
-			path := filepath.Join(dir, e.Name())
-			lines, err := utils.ReadLines(path)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[WARN] failed to read %s: %v\n", path, err)
-				continue
-			}
-			gameIndex = append(gameIndex, lines...)
-			continue
-		}
-
-		// Normal list files
 		path := filepath.Join(dir, e.Name())
 		lines, err := utils.ReadLines(path)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[WARN] failed to read %s: %v\n", path, err)
 			continue
 		}
-		lists[e.Name()] = append([]string(nil), lines...)
-		masters[e.Name()] = append([]string(nil), lines...)
-	}
 
+		// classify into indexes or gamelists
+		switch e.Name() {
+		case "MasterList", "GameIndex":
+			indexes[e.Name()] = append([]string(nil), lines...)
+			indexBase[e.Name()] = append([]string(nil), lines...)
+		default:
+			// treat all other text files as gamelists
+			if !strings.HasSuffix(e.Name(), ".txt") {
+				continue
+			}
+			gamelists[e.Name()] = append([]string(nil), lines...)
+			gamelistBase[e.Name()] = append([]string(nil), lines...)
+		}
+	}
 	return nil
 }
 
-// GetList returns the cached working copy for a filename.
-func GetList(name string) []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	return append([]string(nil), lists[name]...) // defensive copy
-}
-
-// SetList replaces or creates a list in cache.
-// The first time we see a name, we also set its master copy.
-func SetList(name string, lines []string) {
+// ResetAll restores all working gamelists + indexes from their pristine originals.
+func ResetAll() {
 	mu.Lock()
 	defer mu.Unlock()
-	copied := append([]string(nil), lines...) // defensive copy
-	lists[name] = copied
-	if _, ok := masters[name]; !ok {
-		masters[name] = append([]string(nil), lines...)
+
+	gamelists = make(map[string][]string, len(gamelistBase))
+	for k, v := range gamelistBase {
+		gamelists[k] = append([]string(nil), v...)
+	}
+
+	indexes = make(map[string][]string, len(indexBase))
+	for k, v := range indexBase {
+		indexes[k] = append([]string(nil), v...)
 	}
 }
 
-// ListKeys returns all cached filenames (working copy).
-func ListKeys() []string {
+// -----------------------------
+// Gamelist helpers
+// -----------------------------
+
+func GetGamelist(name string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
-	keys := make([]string, 0, len(lists))
-	for k := range lists {
+	return append([]string(nil), gamelists[name]...)
+}
+
+func SetGamelist(name string, lines []string) {
+	mu.Lock()
+	defer mu.Unlock()
+	copied := append([]string(nil), lines...)
+	gamelists[name] = copied
+	if _, ok := gamelistBase[name]; !ok {
+		gamelistBase[name] = append([]string(nil), lines...)
+	}
+}
+
+func ListGamelistKeys() []string {
+	mu.RLock()
+	defer mu.RUnlock()
+	keys := make([]string, 0, len(gamelists))
+	for k := range gamelists {
 		keys = append(keys, k)
 	}
 	return keys
 }
 
-// DeleteKey removes a list entirely from cache (working only).
-func DeleteKey(name string) {
+func DeleteGamelist(name string) {
 	mu.Lock()
 	defer mu.Unlock()
-	delete(lists, name)
-	// leave masters untouched so ResetAll can restore it later
-}
-
-// ResetAll restores all working lists back to their master originals,
-// and also clears the GameIndex.
-func ResetAll() {
-	mu.Lock()
-	defer mu.Unlock()
-
-	// reset lists
-	lists = make(map[string][]string, len(masters))
-	for k, v := range masters {
-		lists[k] = append([]string(nil), v...)
-	}
-
-	// 🔥 also reset index
-	gameIndex = []string{}
+	delete(gamelists, name)
 }
 
 // -----------------------------
-// GameIndex cache
+// Index helpers (MasterList, GameIndex…)
 // -----------------------------
 
-// AppendGameIndex adds one line ("name|path") into the in-RAM index.
-func AppendGameIndex(line string) {
-	mu.Lock()
-	defer mu.Unlock()
-	gameIndex = append(gameIndex, line)
-}
-
-// GetGameIndex returns a snapshot of the current index.
-func GetGameIndex() []string {
+func GetIndex(name string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
-	return append([]string(nil), gameIndex...)
+	return append([]string(nil), indexes[name]...)
 }
 
-// ReloadGameIndexFromDisk repopulates index if it's empty (for reused runs).
-func ReloadGameIndexFromDisk(path string) {
+func SetIndex(name string, lines []string) {
 	mu.Lock()
 	defer mu.Unlock()
-	if len(gameIndex) > 0 {
-		return
+	copied := append([]string(nil), lines...)
+	indexes[name] = copied
+	if _, ok := indexBase[name]; !ok {
+		indexBase[name] = append([]string(nil), lines...)
 	}
-	lines, err := utils.ReadLines(path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[WARN] failed to read %s: %v\n", path, err)
-		return
+}
+
+func ListIndexKeys() []string {
+	mu.RLock()
+	defer mu.RUnlock()
+	keys := make([]string, 0, len(indexes))
+	for k := range indexes {
+		keys = append(keys, k)
 	}
-	gameIndex = append(gameIndex, lines...)
+	return keys
+}
+
+func DeleteIndex(name string) {
+	mu.Lock()
+	defer mu.Unlock()
+	delete(indexes, name)
 }
