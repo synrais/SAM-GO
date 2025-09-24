@@ -148,6 +148,18 @@ func MasterKeys() []string {
 	return keys
 }
 
+// FlattenMaster returns the full master list as one slice of lines.
+func FlattenMaster() []string {
+	mu.RLock()
+	defer mu.RUnlock()
+	all := []string{}
+	for sys, lines := range master {
+		all = append(all, "# SYSTEM: "+sys)
+		all = append(all, lines...)
+	}
+	return all
+}
+
 // -----------------------------
 // GameIndex cache
 // -----------------------------
@@ -184,4 +196,17 @@ func IndexKeys() []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// FlattenIndex returns the full index as one slice of lines.
+func FlattenIndex() []string {
+	mu.RLock()
+	defer mu.RUnlock()
+	all := []string{}
+	for sys, lines := range index {
+		for _, l := range lines {
+			all = append(all, fmt.Sprintf("%s|%s", sys, l))
+		}
+	}
+	return all
 }
