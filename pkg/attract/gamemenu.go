@@ -1,219 +1,129 @@
 package attract
 
 import (
+	"bufio"
 	"fmt"
-	"log"
 	"os"
-	"os/exec"
 	"strings"
-
-	"github.com/gdamore/tcell/v2"
-	"github.com/rivo/tview"
 )
 
-// Shared launcher: reset root and run
-func runApp(p tview.Primitive) error {
-	app := tview.NewApplication()
-	if err := app.SetRoot(p, true).Run(); err != nil {
-		return fmt.Errorf("tview run error: %w", err)
-	}
+// waitKey reads a line (blocking)
+func waitKey() string {
+	reader := bufio.NewReader(os.Stdin)
+	text, _ := reader.ReadString('\n')
+	return strings.TrimSpace(text)
+}
+
+// MENU 1: one-shot message
+func GameMenu1() error {
+	fmt.Println("=== TEST MENU 1 ===")
+	fmt.Println("Press Enter to exit.")
+	waitKey()
 	return nil
 }
 
-// ---------------
-// MENU 1: Simple modal (one-shot popup)
-// ---------------
-func GameMenu1() error {
-	modal := tview.NewModal().
-		SetText("This is Test Menu 1").
-		AddButtons([]string{"OK"}).
-		SetDoneFunc(func(i int, label string) { log.Println("Menu 1 closed") })
-	return runApp(modal)
-}
-
-// ---------------
-// MENU 2: List of fixed items
-// ---------------
+// MENU 2: static list
 func GameMenu2() error {
-	list := tview.NewList().
-		AddItem("Option A", "Demo entry", 'a', nil).
-		AddItem("Option B", "Another entry", 'b', nil).
-		AddItem("Quit", "Return", 'q', func() { log.Println("Menu 2 quit") })
-	return runApp(list)
+	fmt.Println("=== TEST MENU 2 ===")
+	fmt.Println("1) Option A\n2) Option B\nq) Quit")
+	choice := waitKey()
+	fmt.Println("You picked:", choice)
+	return nil
 }
 
-// ---------------
-// MENU 3: Two-column system/game browser (static data)
-// ---------------
+// MENU 3: system/game browser (hardcoded)
 func GameMenu3() error {
 	systems := []string{"NES", "SNES", "Genesis"}
 	games := map[string][]string{
-		"NES":     {"Mario Bros", "Zelda"},
-		"SNES":    {"Super Mario World", "Donkey Kong Country"},
+		"NES":     {"Mario", "Zelda"},
+		"SNES":    {"SMW", "DKC"},
 		"Genesis": {"Sonic", "Streets of Rage"},
 	}
-
-	sysList := tview.NewList()
-	gameList := tview.NewList()
-
-	for _, sys := range systems {
-		s := sys // local copy for closure
-		sysList.AddItem(s, "", 0, func() {
-			gameList.Clear()
-			for _, g := range games[s] {
-				game := g
-				gameList.AddItem(game, "", 0, func() {
-					fmt.Printf("Launching %s on %s\n", game, s)
-				})
-			}
-		})
+	fmt.Println("Pick a system:", systems)
+	sys := waitKey()
+	if g, ok := games[sys]; ok {
+		fmt.Println("Games:", g)
+	} else {
+		fmt.Println("Unknown system:", sys)
 	}
-
-	flex := tview.NewFlex().
-		AddItem(sysList, 0, 1, true).
-		AddItem(gameList, 0, 2, false)
-
-	return runApp(flex)
+	waitKey()
+	return nil
 }
 
-// ---------------
-// MENU 4: Input form (like a settings dialog)
-// ---------------
+// MENU 4: fake settings form
 func GameMenu4() error {
-	form := tview.NewForm().
-		AddInputField("Name", "", 20, nil, nil).
-		AddPasswordField("Password", "", 20, '*', nil).
-		AddCheckbox("Enable feature", false, nil).
-		AddButton("Save", func() { fmt.Println("Saved!") }).
-		AddButton("Cancel", func() { log.Println("Cancelled") })
-	form.SetBorder(true).SetTitle("Settings").SetTitleAlign(tview.AlignCenter)
-	return runApp(form)
+	fmt.Println("=== SETTINGS ===")
+	fmt.Print("Enter Name: ")
+	name := waitKey()
+	fmt.Print("Enable feature (y/n): ")
+	enable := waitKey()
+	fmt.Println("Saved", name, enable)
+	return nil
 }
 
-// ---------------
-// MENU 5: TextView log output (scrollable console)
-// ---------------
+// MENU 5: scrolling log
 func GameMenu5() error {
-	text := tview.NewTextView().SetDynamicColors(true).SetScrollable(true)
-	fmt.Fprintln(text, "[yellow]System Log[white]")
+	fmt.Println("=== LOG ===")
 	for i := 1; i <= 20; i++ {
-		fmt.Fprintf(text, "Line %d: Demo output\n", i)
+		fmt.Printf("Line %d: Demo\n", i)
 	}
-	return runApp(text)
+	waitKey()
+	return nil
 }
 
-// ---------------
-// MENU 6: Table (rows/cols)
-// ---------------
+// MENU 6: table
 func GameMenu6() error {
-	table := tview.NewTable().SetBorders(true)
-	headers := []string{"ID", "Name", "Status"}
-	for c, h := range headers {
-		table.SetCell(0, c, tview.NewTableCell(h).
-			SetTextColor(tcell.ColorYellow).
-			SetAlign(tview.AlignCenter).
-			SetSelectable(false))
-	}
-	data := [][]string{
-		{"1", "Mario", "OK"},
-		{"2", "Zelda", "Missing"},
-		{"3", "Sonic", "OK"},
-	}
-	for r, row := range data {
-		for c, val := range row {
-			table.SetCell(r+1, c, tview.NewTableCell(val))
-		}
-	}
-	return runApp(table)
+	fmt.Println("ID | Name   | Status")
+	fmt.Println("1  | Mario  | OK")
+	fmt.Println("2  | Zelda  | Missing")
+	fmt.Println("3  | Sonic  | OK")
+	waitKey()
+	return nil
 }
 
-// ---------------
-// MENU 7: Pages (switchable views)
-// ---------------
+// MENU 7: pages
 func GameMenu7() error {
-	pages := tview.NewPages()
-	pages.AddPage("main", tview.NewTextView().SetText("Main Page (press n)"), true, true)
-	pages.AddPage("next", tview.NewTextView().SetText("Next Page (press b)"), true, false)
-
-	app := tview.NewApplication()
-	app.SetRoot(pages, true)
-
-	pages.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		switch ev.Rune() {
-		case 'n':
-			pages.SwitchToPage("next")
-		case 'b':
-			pages.SwitchToPage("main")
-		case 'q':
-			app.Stop()
+	for {
+		fmt.Println("=== PAGE MAIN === (n=next, q=quit)")
+		k := waitKey()
+		if k == "n" {
+			fmt.Println("=== PAGE NEXT === (b=back, q=quit)")
+			k2 := waitKey()
+			if k2 == "b" {
+				continue
+			} else if k2 == "q" {
+				break
+			}
+		} else if k == "q" {
+			break
 		}
-		return ev
-	})
-
-	if err := app.Run(); err != nil {
-		return fmt.Errorf("menu 7 run error: %w", err)
 	}
 	return nil
 }
 
-// ---------------
-// MENU 8: Like your shell script – systems & games from files
-// ---------------
+// MENU 8: read gamelists from filesystem
 func GameMenu8() error {
 	root := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
-	sysList := tview.NewList()
-	gameList := tview.NewList()
-
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return fmt.Errorf("error reading %s: %w", root, err)
 	}
 
+	fmt.Println("Systems:")
 	for _, e := range entries {
-		name := e.Name()
-		if !e.IsDir() && strings.HasSuffix(name, "_gamelist.txt") {
-			system := strings.TrimSuffix(name, "_gamelist.txt")
-			sysList.AddItem(system, "", 0, func() {
-				gameList.Clear()
-				path := root + "/" + system + "_gamelist.txt"
-				data, _ := os.ReadFile(path)
-				lines := strings.Split(string(data), "\n")
-				for _, l := range lines {
-					if l != "" {
-						game := l
-						gameList.AddItem(game, "", 0, func() {
-							fmt.Printf("Would run %s on %s\n", game, system)
-						})
-					}
-				}
-			})
+		if strings.HasSuffix(e.Name(), "_gamelist.txt") {
+			sys := strings.TrimSuffix(e.Name(), "_gamelist.txt")
+			fmt.Println("-", sys)
 		}
 	}
-
-	flex := tview.NewFlex().
-		AddItem(sysList, 0, 1, true).
-		AddItem(gameList, 0, 2, false)
-	return runApp(flex)
+	waitKey()
+	return nil
 }
 
-// ---------------
-// MENU 9: Run SAM_MENU.sh script
-// ---------------
+// MENU 9: fullscreen msg
 func GameMenu9() error {
-	scriptPath := "/media/fat/Scripts/SAM_MENU.sh"
-
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		return fmt.Errorf("script not found: %s", scriptPath)
-	}
-
-	cmd := exec.Command("bash", scriptPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to run %s: %w", scriptPath, err)
-	}
-
+	fmt.Println("=== TEST MENU 9 ===")
+	fmt.Println("Press any key to quit.")
+	waitKey()
 	return nil
 }
