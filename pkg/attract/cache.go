@@ -210,41 +210,42 @@ func StartIPCServer() error {
 }
 
 func handleConn(conn net.Conn) {
-	defer conn.Close()
-	scanner := bufio.NewScanner(conn)
-	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.SplitN(line, " ", 2)
-		cmd := parts[0]
-		arg := ""
-		if len(parts) > 1 {
-			arg = parts[1]
-		}
+    defer conn.Close()
 
-		switch cmd {
-		case "LIST_SYSTEMS":
-			for _, sys := range CacheKeys("lists") {
-				fmt.Fprintln(conn, sys)
-			}
-		case "LIST_GAMES":
-			for _, g := range GetCache("lists", arg) {
-				fmt.Fprintln(conn, g)
-			}
-		case "LIST_MASTER":
-			for _, g := range FlattenCache("master") {
-				fmt.Fprintln(conn, g)
-			}
-		case "LIST_INDEX":
-			for _, g := range FlattenCache("index") {
-				fmt.Fprintln(conn, g)
-			}
-		case "RUN":
-			Run([]string{arg}) // call main process launcher
-			fmt.Fprintln(conn, "OK")
-		default:
-			fmt.Fprintln(conn, "ERR unknown command")
-		}
-	}
+    buf, err := io.ReadAll(conn)
+    if err != nil {
+        fmt.Println("[IPC] read error:", err)
+        return
+    }
+    msg := strings.TrimSpace(string(buf))
+    fmt.Println("[IPC] Received:", msg)
+
+    var reply string
+    switch {
+    case msg == "LIST_SYSTEMS":
+        keys := CacheKeys("lists")
+        fmt.Printf("[IPC] LIST_SYSTEMS returning %d systems\n", len(keys))
+        reply = strings.Join(keys, "\n")
+
+    case strings.HasPrefix(msg, "LIST_MASTER "):
+        sys := strings.TrimPrefix(msg, "LIST_MASTER ")
+        fmt.Println("[IPC] LIST_MASTER for", sys)
+        reply = strings.Join(GetCache("master", sys), "\n")
+
+    case strings.HasPrefix(msg, "RUN_GAME "):
+        game := strings.TrimPrefix(msg, "RUN_GAME ")
+        fmt.Println("[IPC] RUN_GAME:", game)
+        // here you’d call your launcher
+        reply = "OK"
+
+    default:
+        fmt.Println("[IPC] Unknown command:", msg)
+        reply = "ERR unknown command"
+    }
+
+    if _, err := conn.Write([]byte(reply)); err != nil {
+        fmt.Println("[IPC] write error:", err)
+    }
 }
 
 // IPCRequest is a helper for menu clients to send commands to the main SAM process.
