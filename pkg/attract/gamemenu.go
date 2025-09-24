@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
-
+	"strings"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
