@@ -14,12 +14,8 @@ func SearchAndPlay(inputCh <-chan string) {
 	fmt.Println("[SEARCH] 🔍 Entered search mode (Attract paused).")
 	fmt.Println("[SEARCH] Type to filter, ENTER to launch, ESC to exit.")
 
-	// flatten index map to slice of paths
-	allIndex := GetAllIndex()
-	var index []string
-	for _, paths := range allIndex {
-		index = append(index, paths...)
-	}
+	// grab all games from GameIndex
+	index := FlattenIndex()
 	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(index))
 
 	var sb strings.Builder
