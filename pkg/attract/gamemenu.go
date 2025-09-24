@@ -25,48 +25,63 @@ func GameMenu7() error { fmt.Println("[DEBUG] GameMenu7 called"); return nil }
 func GameMenu8() error { fmt.Println("[DEBUG] GameMenu8 called"); return nil }
 
 // ===== Menu 9 (special, spawns tty2) =====
-
 func GameMenu9() error {
 	fmt.Println("[DEBUG] Entered GameMenu9()")
 
+	// Step 1: reload MiSTer menu core
 	cmdPath := "/dev/MiSTer_cmd"
 	fmt.Printf("[DEBUG] Writing reload command to %s\n", cmdPath)
 	if err := os.WriteFile(cmdPath, []byte("load_core /media/fat/menu.rbf\n"), 0644); err != nil {
 		return fmt.Errorf("[DEBUG] failed to reload menu core: %w", err)
 	}
+	fmt.Println("[DEBUG] Reload command written successfully")
+
+	// Step 2: wait for menu reload
+	fmt.Println("[DEBUG] Sleeping 2s to let menu reload…")
 	time.Sleep(2 * time.Second)
 
+	// Step 3: press F9 (open terminal)
+	fmt.Println("[DEBUG] Creating virtual keyboard…")
 	kb, err := input.NewVirtualKeyboard()
 	if err != nil {
 		return fmt.Errorf("[DEBUG] failed to create virtual keyboard: %w", err)
 	}
 	defer kb.Close()
+	fmt.Println("[DEBUG] Virtual keyboard ready")
 
+	fmt.Println("[DEBUG] Sending Console() → F9")
 	if err := kb.Console(); err != nil {
 		return fmt.Errorf("[DEBUG] failed to press F9: %w", err)
 	}
+	fmt.Println("[DEBUG] F9 pressed")
 
+	// Step 4: switch to tty2
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	fmt.Println("[DEBUG] Running chvt 2")
 	if err := exec.CommandContext(ctx, "chvt", "2").Run(); err != nil {
 		return fmt.Errorf("[DEBUG] failed to switch to tty2: %w", err)
 	}
+	fmt.Println("[DEBUG] Successfully switched to tty2")
 
-	agettyArgs := []string{
-		"-a", "root",
-		"-l", "/media/fat/Scripts/.MiSTer_SAM/SAM -menu",
-		"--nohostname",
-		"-L",
-		"tty2",
-		"linux",
-	}
-	cmd := exec.CommandContext(context.Background(), "/sbin/agetty", agettyArgs...)
+	// Step 5: run SAM binary in menu mode directly on tty2
+	fmt.Println("[DEBUG] Launching SAM -menu directly on tty2")
+
+	cmd := exec.Command("/media/fat/Scripts/.MiSTer_SAM/SAM", "-menu")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("[DEBUG] failed to run SAM in menu mode via agetty: %w", err)
+	cmd.Stdin = os.Stdin
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid:  true,
+		Setctty: true,
+		Ctty:    2, // tty2
 	}
-	fmt.Printf("[DEBUG] agetty PID %d started\n", cmd.Process.Pid)
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("[DEBUG] failed to run SAM -menu on tty2: %w", err)
+	}
+
+	fmt.Printf("[DEBUG] SAM menu started on tty2 (PID %d)\n", cmd.Process.Pid)
 	return nil
 }
 
