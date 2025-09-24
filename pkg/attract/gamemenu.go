@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
 	"github.com/synrais/SAM-GO/pkg/config"
@@ -56,8 +57,7 @@ func GameMenu9() error {
 	}
 	fmt.Println("[DEBUG] F9 pressed")
 
-	// Give terminal time to open
-	fmt.Println("[DEBUG] Sleeping 3s to let terminal appear…")
+	fmt.Println("[DEBUG] Sleeping 3s to let terminal settle…")
 	time.Sleep(3 * time.Second)
 
 	// Step 4: switch to tty2
@@ -69,47 +69,41 @@ func GameMenu9() error {
 	}
 	fmt.Println("[DEBUG] Successfully switched to tty2")
 
-	// Step 5: redirect stdio to tty2 and run internal menu
-	fmt.Println("[DEBUG] Opening /dev/tty2…")
-	tty, err := os.OpenFile("/dev/tty2", os.O_RDWR, 0)
-	if err != nil {
-		return fmt.Errorf("[DEBUG] failed to open /dev/tty2: %w", err)
-	}
-
-	os.Stdout = tty
-	os.Stderr = tty
-	os.Stdin = tty
-
+	// Step 5: run a TUI test menu directly on tty2
 	fmt.Println("[DEBUG] Handing control to RunMenu() on tty2")
 	RunMenu()
 	return nil
 }
 
-// ===== Temporary Zaparoo TextView Demo =====
+// ===== Direct in-RAM Menu (tview test modal) =====
 
 func RunMenu() {
-	fmt.Println("[DEBUG] Entered RunMenu() (Zaparoo demo)")
+	fmt.Println("[DEBUG] Entered RunMenu()")
 
-	// Make sure TERM is set
-	if os.Getenv("TERM") == "" {
-		os.Setenv("TERM", "linux")
-	}
+	// force TERM so tcell knows what to load
+	os.Setenv("TERM", "linux")
 
 	app := tview.NewApplication()
 
-	text := tview.NewTextView().
-		SetTextAlign(tview.AlignCenter).
-		SetText("Hello from Zaparoo Demo!\n\nPress ESC to quit.")
-
-	// ESC exits
-	text.SetDoneFunc(func(key tview.Key) {
-		if key == tview.KeyEscape {
+	// simple test modal like Zaparoo’s installer
+	modal := tview.NewModal().
+		SetText("Hello from SAM TUI!\nThis proves tview/tcell works.").
+		AddButtons([]string{"OK"}).
+		SetDoneFunc(func(_ int, _ string) {
 			app.Stop()
+		})
+
+	// allow ESC to exit
+	modal.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEscape {
+			app.Stop()
+			return nil
 		}
+		return event
 	})
 
-	if err := app.SetRoot(text, true).Run(); err != nil {
-		fmt.Printf("[MENU] Failed to run TUI: %v\n", err)
+	if err := app.SetRoot(modal, true).EnableMouse(true).Run(); err != nil {
+		fmt.Printf("[MENU] Failed to start TUI: %v\n", err)
 	}
 }
 
