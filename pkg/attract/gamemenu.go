@@ -145,3 +145,11 @@ func RunMenu() {
 		}
 	}
 }
+
+// LaunchMenu is the entry point for `SAM -menu`.
+// It just runs the internal Go-based menu.
+func LaunchMenu(cfg *config.UserConfig) error {
+    fmt.Println("[MENU] Launching interactive game menu")
+    RunMenu()
+    return nil
+}
