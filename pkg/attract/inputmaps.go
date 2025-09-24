@@ -56,7 +56,12 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, inputCh <-chan string
 		"6": func() { if err := GameMenu6(); err != nil { fmt.Println("[Menu6 ERR]", err) } },
 		"7": func() { if err := GameMenu7(); err != nil { fmt.Println("[Menu7 ERR]", err) } },
 		"8": func() { if err := GameMenu8(); err != nil { fmt.Println("[Menu8 ERR]", err) } },
-		"9": func() { if err := GameMenu9(); err != nil { fmt.Println("[Menu9 ERR]", err) } },
+		"9": func() {
+    		if err := GameMenu9(); err != nil {
+        		fmt.Println("Error:", err)
+    		}
+		},
+
 
 		// ----------------------------
 		// Controller Buttons
