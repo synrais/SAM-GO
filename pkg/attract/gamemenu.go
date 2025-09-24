@@ -98,10 +98,9 @@ func RunMenu() {
 		return
 	}
 
-	// force TERM so tcell knows what to load
-	os.Setenv("TERM", "linux")
+	// force TERM so tcell loads the right terminfo
+	os.Setenv("TERM", "xterm")
 
-	// 🔑 zaparoo pattern: open tty2 directly
 	tty, err := tcell.NewDevTtyFromDev("/dev/tty2")
 	if err != nil {
 		fmt.Printf("[MENU] Failed to open tty2: %v\n", err)
@@ -144,8 +143,9 @@ func RunMenu() {
 		app.Stop()
 	})
 
-	// 🔑 zaparoo pattern: bind screen into tview app
-	if err := app.SetScreen(screen).SetRoot(list, true).Run(); err != nil {
+	// Give list focus and force initial draw
+	app.SetFocus(list)
+	if err := app.SetScreen(screen).SetRoot(list, true).EnableMouse(false).Run(); err != nil {
 		fmt.Printf("[MENU] Failed to start TUI: %v\n", err)
 	}
 }
