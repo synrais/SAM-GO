@@ -211,39 +211,33 @@ func StartIPCServer() error {
 func handleConn(conn net.Conn) {
     defer conn.Close()
 
-    buf, err := io.ReadAll(conn)
-    if err != nil {
-        fmt.Println("[IPC] read error:", err)
+    scanner := bufio.NewScanner(conn)
+    if !scanner.Scan() { // only read one command
         return
     }
-    msg := strings.TrimSpace(string(buf))
-    fmt.Println("[IPC] Received:", msg)
-
-    var reply string
-    switch {
-    case msg == "LIST_SYSTEMS":
-        keys := CacheKeys("lists")
-        fmt.Printf("[IPC] LIST_SYSTEMS returning %d systems\n", len(keys))
-        reply = strings.Join(keys, "\n")
-
-    case strings.HasPrefix(msg, "LIST_MASTER "):
-        sys := strings.TrimPrefix(msg, "LIST_MASTER ")
-        fmt.Println("[IPC] LIST_MASTER for", sys)
-        reply = strings.Join(GetCache("master", sys), "\n")
-
-    case strings.HasPrefix(msg, "RUN_GAME "):
-        game := strings.TrimPrefix(msg, "RUN_GAME ")
-        fmt.Println("[IPC] RUN_GAME:", game)
-        // here you’d call your launcher
-        reply = "OK"
-
-    default:
-        fmt.Println("[IPC] Unknown command:", msg)
-        reply = "ERR unknown command"
+    line := scanner.Text()
+    parts := strings.SplitN(line, " ", 2)
+    cmd := parts[0]
+    arg := ""
+    if len(parts) > 1 {
+        arg = parts[1]
     }
 
-    if _, err := conn.Write([]byte(reply)); err != nil {
-        fmt.Println("[IPC] write error:", err)
+    switch cmd {
+    case "LIST_SYSTEMS":
+        reply := strings.Join(CacheKeys("lists"), "\n")
+        fmt.Fprint(conn, reply)
+    case "LIST_MASTER":
+        reply := strings.Join(GetCache("master", arg), "\n")
+        fmt.Fprint(conn, reply)
+    case "LIST_INDEX":
+        reply := strings.Join(GetCache("index", arg), "\n")
+        fmt.Fprint(conn, reply)
+    case "RUN":
+        Run([]string{arg})
+        fmt.Fprint(conn, "OK")
+    default:
+        fmt.Fprint(conn, "ERR unknown command")
     }
 }
 
