@@ -77,11 +77,7 @@ func GameMenu9() error {
 	cmd.Stdin = tty
 	cmd.Stdout = tty
 	cmd.Stderr = tty
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid:  true,
-		Setctty: true,
-		Ctty:    int(tty.Fd()),
-	}
+	// no SysProcAttr fiddling — Linux will attach tty2 automatically
 
 	fmt.Println("[DEBUG] Starting SAM -menu on tty2…")
 	if err := cmd.Start(); err != nil {
