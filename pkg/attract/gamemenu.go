@@ -124,33 +124,44 @@ func GameMenu8() error {
 	return nil
 }
 
-// MENU 9: open console via F9, then run SAM_MENU.sh
+// MENU 9: Reset to menu, spam F9, then run SAM_MENU.sh
 func GameMenu9() error {
-	kb, err := input.NewVirtualKeyboard()
-	if err != nil {
-		return fmt.Errorf("failed to create virtual keyboard: %w", err)
-	}
-	defer kb.Close()
+    // Reset to MiSTer menu core
+    if err := os.WriteFile("/dev/MiSTer_cmd", []byte("load_core /media/fat/menu.rbf\n"), 0644); err != nil {
+        return fmt.Errorf("failed to reset to menu core: %w", err)
+    }
+    fmt.Println("[MENU9] Reset to MiSTer menu core.")
 
-	fmt.Println("[MENU9] Sending F9 to MiSTer to open console...")
-	kb.Console()
-	time.Sleep(500 * time.Millisecond) // give the system a moment to switch
+    // Virtual keyboard
+    kb, err := input.NewVirtualKeyboard()
+    if err != nil {
+        return fmt.Errorf("failed to create virtual keyboard: %w", err)
+    }
+    defer kb.Close()
 
-	scriptPath := "/media/fat/Scripts/SAM_MENU.sh"
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		return fmt.Errorf("script not found: %s", scriptPath)
-	}
+    // Spam F9 a few times to ensure console opens
+    fmt.Println("[MENU9] Spamming F9 to drop into console...")
+    for i := 0; i < 3; i++ {
+        kb.Console()
+        time.Sleep(200 * time.Millisecond)
+    }
 
-	cmd := exec.Command("bash", scriptPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
+    // Run the SAM menu script
+    scriptPath := "/media/fat/Scripts/SAM_MENU.sh"
+    if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+        return fmt.Errorf("script not found: %s", scriptPath)
+    }
 
-	fmt.Println("[MENU9] Launching SAM_MENU.sh...")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to run %s: %w", scriptPath, err)
-	}
+    cmd := exec.Command("bash", scriptPath)
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    cmd.Stdin = os.Stdin
 
-	return nil
+    if err := cmd.Run(); err != nil {
+        return fmt.Errorf("failed to run script: %w", err)
+    }
+
+    fmt.Println("[MENU9] SAM_MENU.sh finished.")
+    return nil
 }
 
