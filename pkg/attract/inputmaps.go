@@ -48,15 +48,15 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, inputCh <-chan string
 		// ----------------------------
 		// Test Menus (Hotkeys 1–9)
 		// ----------------------------
-		"1": func() { GameMenu1() },
-		"2": func() { GameMenu2() },
-		"3": func() { GameMenu3() },
-		"4": func() { GameMenu4() },
-		"5": func() { GameMenu5() },
-		"6": func() { GameMenu6() },
-		"7": func() { GameMenu7() },
-		"8": func() { GameMenu8() },
-		"9": func() { GameMenu9() },
+		"1": func() { if err := GameMenu1(); err != nil { fmt.Println("[Menu1 ERR]", err) } },
+		"2": func() { if err := GameMenu2(); err != nil { fmt.Println("[Menu2 ERR]", err) } },
+		"3": func() { if err := GameMenu3(); err != nil { fmt.Println("[Menu3 ERR]", err) } },
+		"4": func() { if err := GameMenu4(); err != nil { fmt.Println("[Menu4 ERR]", err) } },
+		"5": func() { if err := GameMenu5(); err != nil { fmt.Println("[Menu5 ERR]", err) } },
+		"6": func() { if err := GameMenu6(); err != nil { fmt.Println("[Menu6 ERR]", err) } },
+		"7": func() { if err := GameMenu7(); err != nil { fmt.Println("[Menu7 ERR]", err) } },
+		"8": func() { if err := GameMenu8(); err != nil { fmt.Println("[Menu8 ERR]", err) } },
+		"9": func() { if err := GameMenu9(); err != nil { fmt.Println("[Menu9 ERR]", err) } },
 
 		// ----------------------------
 		// Controller Buttons
