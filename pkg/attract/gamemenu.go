@@ -1,19 +1,102 @@
 package attract
 
 import (
-	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
-// waitKey reads a line (blocking)
-func waitKey() string {
-	reader := bufio.NewReader(os.Stdin)
-	text, _ := reader.ReadString('\n')
-	return strings.TrimSpace(text)
+// getTTY reads the active tty from sysfs
+func getTTY() (string, error) {
+	sys := "/sys/devices/virtual/tty/tty0/active"
+	tty, err := os.ReadFile(sys)
+	if err != nil {
+		return "", fmt.Errorf("getTTY: %w", err)
+	}
+	return strings.TrimSpace(string(tty)), nil
 }
+
+// pressF9 emulates F9 keypress (using evemu or input-event injection)
+func pressF9() error {
+	// On MiSTer this is usually handled by zaparoo’s KeyboardPress.
+	// Simplest approach: use "chvt 1" after forcing tty3, since F9 maps to it.
+	cmd := exec.Command("chvt", "1")
+	return cmd.Run()
+}
+
+// openConsole forces MiSTer to give us tty1 via F9 keypress
+func openConsole() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// switch to tty3 (unused)
+	if err := exec.CommandContext(ctx, "chvt", "3").Run(); err != nil {
+		return fmt.Errorf("chvt 3 failed: %w", err)
+	}
+
+	// spam F9 (or just chvt 1) until tty1 becomes active
+	for i := 0; i < 10; i++ {
+		if err := pressF9(); err != nil {
+			return err
+		}
+		time.Sleep(100 * time.Millisecond)
+
+		tty, err := getTTY()
+		if err == nil && tty == "tty1" {
+			return nil
+		}
+	}
+	return errors.New("could not switch to tty1 via F9")
+}
+
+// GameMenu9 launches SAM_MENU.sh through MiSTer’s tty2 mechanism
+func GameMenu9() error {
+	script := "/media/fat/Scripts/SAM_MENU.sh"
+
+	// First force console switch like F9 would
+	if err := openConsole(); err != nil {
+		return err
+	}
+
+	// Prepare /tmp/script launcher
+	launcher := fmt.Sprintf(`#!/bin/bash
+export LC_ALL=en_US.UTF-8
+export HOME=/root
+export LESSKEY=/media/fat/linux/lesskey
+export ZAPAROO_RUN_SCRIPT=1
+cd $(dirname "%s")
+%s
+`, script, script)
+
+	tmpScript := "/tmp/script"
+	if err := os.WriteFile(tmpScript, []byte(launcher), 0o750); err != nil {
+		return fmt.Errorf("failed to write launcher: %w", err)
+	}
+
+	// Switch to tty2 (MiSTer convention for scripts)
+	if err := exec.Command("chvt", "2").Run(); err != nil {
+		return fmt.Errorf("failed chvt 2: %w", err)
+	}
+
+	// Run agetty to execute script as login shell
+	cmd := exec.Command("/sbin/agetty",
+		"-a", "root",
+		"-l", tmpScript,
+		"--nohostname", "-L",
+		"tty2", "linux",
+	)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	fmt.Println("[MENU9] Launching SAM_MENU.sh via tty2 + agetty…")
+	return cmd.Run()
+}
+
 
 // MENU 1: one-shot message
 func GameMenu1() error {
@@ -118,23 +201,5 @@ func GameMenu8() error {
 		}
 	}
 	waitKey()
-	return nil
-}
-
-// MENU 9: launch SAM_MENU.sh script
-func GameMenu9() error {
-	script := "/media/fat/Scripts/SAM_MENU.sh"
-
-	fmt.Println("=== TEST MENU 9 ===")
-	fmt.Println("Launching:", script)
-
-	cmd := exec.Command(script)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to run %s: %w", script, err)
-	}
-
 	return nil
 }
