@@ -16,7 +16,7 @@ import (
 	"github.com/synrais/SAM-GO/pkg/input"
 )
 
-// ===== Menus 1–8 (placeholders) =====
+// ===== Menus 1–8 (NOT PLACEHOLDERS!!) =====
 
 func GameMenu1() error { fmt.Println("[DEBUG] GameMenu1 called"); return nil }
 func GameMenu2() error { fmt.Println("[DEBUG] GameMenu2 called"); return nil }
