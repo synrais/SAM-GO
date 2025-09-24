@@ -118,14 +118,14 @@ var (
 type menuModel struct {
 	list    list.Model
 	stack   []string
-	systems map[string][]Node // system → game nodes
+	systems map[string][]Node // system → games
 	cursor  int
 }
 
-func newMenuModel(masterlistPath string) menuModel {
-	systems := buildSystemsFromMasterlist(masterlistPath)
+func newMenuModel() menuModel {
+	systems := buildSystemsFromCache()
 
-	// System nodes at root level
+	// root list = all systems
 	var systemNodes []Node
 	for sys := range systems {
 		systemNodes = append(systemNodes, Node{
@@ -161,7 +161,6 @@ func (m menuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if sel.IsDir {
-				// Show system’s games
 				if games, ok := m.systems[sel.Path]; ok {
 					children := append([]Node{{Display: ".. Back", Path: "..", IsDir: true}}, games...)
 					m.list.SetItems(toListItems(children))
@@ -201,7 +200,7 @@ func (m menuModel) goBack() menuModel {
 	}
 	m.stack = m.stack[:len(m.stack)-1]
 	if len(m.stack) == 0 {
-		// Back to systems
+		// back to systems
 		var systemNodes []Node
 		for sys := range m.systems {
 			systemNodes = append(systemNodes, Node{
@@ -213,7 +212,6 @@ func (m menuModel) goBack() menuModel {
 		m.list.SetItems(toListItems(systemNodes))
 		m.list.Title = "SAM Masterlist Browser"
 	} else {
-		// Shouldn’t normally happen (2-level tree: systems → games)
 		system := m.stack[len(m.stack)-1]
 		children := append([]Node{{Display: ".. Back", Path: "..", IsDir: true}}, m.systems[system]...)
 		m.list.SetItems(toListItems(children))
@@ -224,9 +222,9 @@ func (m menuModel) goBack() menuModel {
 
 // ===== Helpers =====
 
-func buildSystemsFromMasterlist(masterlistPath string) map[string][]Node {
+func buildSystemsFromCache() map[string][]Node {
 	systems := make(map[string][]Node)
-	lines := readLines(masterlistPath)
+	lines := FlattenCache("master") // <-- pull from in-RAM cache
 	currentSystem := ""
 
 	for _, line := range lines {
@@ -234,19 +232,22 @@ func buildSystemsFromMasterlist(masterlistPath string) map[string][]Node {
 			continue
 		}
 		if strings.HasPrefix(line, "# SYSTEM:") {
-			system := strings.TrimSpace(strings.TrimPrefix(line, "# SYSTEM:"))
+			system := strings.TrimSpace(line[len("# SYSTEM:"):])
 			currentSystem = system
 			if _, ok := systems[currentSystem]; !ok {
 				systems[currentSystem] = []Node{}
+				fmt.Printf("[DEBUG] Found system: %s\n", currentSystem)
 			}
 			continue
 		}
 		if currentSystem != "" {
+			game := filepath.Base(line)
 			systems[currentSystem] = append(systems[currentSystem], Node{
-				Display: filepath.Base(line),
+				Display: game,
 				Path:    line,
 				IsDir:   false,
 			})
+			fmt.Printf("[DEBUG] Added game to %s → %s\n", currentSystem, game)
 		}
 	}
 	return systems
@@ -277,8 +278,7 @@ func readLines(file string) []string {
 // ===== Entry Points =====
 
 func RunMenu() {
-	masterlist := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelist_Master.txt"
-	p := tea.NewProgram(newMenuModel(masterlist), tea.WithAltScreen())
+	p := tea.NewProgram(newMenuModel(), tea.WithAltScreen())
 	if err := p.Start(); err != nil {
 		fmt.Println("Error running menu:", err)
 		os.Exit(1)
