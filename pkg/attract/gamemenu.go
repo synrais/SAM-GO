@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/synrais/SAM-GO/pkg/input"
 )
 
 // waitKey reads a line (blocking)
@@ -122,8 +124,17 @@ func GameMenu8() error {
 
 // MENU 9: fullscreen msg
 func GameMenu9() error {
-	fmt.Println("=== TEST MENU 9 ===")
-	fmt.Println("Press any key to quit.")
-	waitKey()
+	kb, err := input.NewVirtualKeyboard()
+	if err != nil {
+		return fmt.Errorf("failed to create virtual keyboard: %w", err)
+	}
+	defer kb.Close()
+
+	fmt.Println("[MENU9] Sending F9 to MiSTer to open console...")
+	if err := kb.Console(); err != nil {
+		return fmt.Errorf("failed to press F9: %w", err)
+	}
+
+	fmt.Println("[MENU9] Console should now be visible. Type manually there.")
 	return nil
 }
