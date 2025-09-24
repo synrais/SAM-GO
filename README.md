@@ -1,81 +1,97 @@
 # SAM-GO
-SAM ported to GO
+A modern Go port of **SAM** (Super Attract Mode) for MiSTer.  
+Fast, memory-efficient, and fully integrated with Go’s concurrency model.
 
-## Running multiple commands
+---
 
-SAM can execute several commands in parallel. Separate command groups with
-`--` and every group will run in its own goroutine:
+## 🚀 Usage
 
-```
-SAM -list -s NES -- -run SuperMario -- -attract
-```
-
-If an instance is already running, the commands are forwarded to it through the
-UNIX socket at `/tmp/sam.sock`. The socket also accepts multiple commands in a
-single request when each line contains a command with its arguments separated by
-NUL characters (`\x00`).
-
+### Start Attract Mode
+```bash
 SAM
------------
-Starts Attract Mode
+```
+Runs Attract Mode, cycling through your games automatically.
 
+---
+
+### Start Attract Mode with Static Detector Debug
+```bash
 SAM -s
------------
-Starts Attract Mode with staticdetector debug output
+```
+Same as Attract Mode, but with live debug output from the static detector.
 
-Following commands are depreciated
+---
 
------------
-SAM -list <flags>
------------
+### Run a Single Game
+```bash
+SAM -run /full/path/to/game
+```
+Launches a single game directly and updates `Now_Playing.txt`.  
+Useful for integrating with scripts or quick testing.
 
--o <dir>         Output directory for gamelist files
-                 Default: "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
+---
 
--s <systems>     List of systems to index (comma separated)
-                 Default: "all"
-                 Example: -s NES,SNES,Genesis
+### Launch Interactive Game Browser Menu
+```bash
+SAM -menu
+```
+Opens the new **Go-based interactive menu**, letting you browse by system and game.  
+No shell scripts required — runs entirely within SAM-GO.
 
--p               Print output formatted for a dialog gauge
-                 Default: false
+---
 
--q               Suppress all status output (quiet mode)
-                 Default: false
+## ⚡️ Features
 
--d               List active system folders (no gamelists built)
-                 Default: false
+- **Unified caching**: all gamelists, masterlist, and index handled consistently in RAM.  
+- **History navigation**: step back/forward through previously played titles.  
+- **Search mode**: fast in-RAM search across all indexed games (ignores system header lines automatically).  
+- **Now Playing integration**: writes `/tmp/Now_Playing.txt` for external tools.  
+- **MiSTer integration**: launches games directly via the MiSTer command system.  
+- **Lightweight**: ~128MB memory limit, built for efficiency.
 
--nodupes         Filter out duplicate games (prefers .mgl files)
-                 Default: false
-				 
--overwrite		 Overwrite exisiting gamelists (instead of skipping)
-				 Default: false
-				 
--exclude <sys>   Exclude systems from scanning/list building
-                 Comma separated list of system IDs
-                 Default: none
+---
 
-SAM -run <target>
------------
+## 📂 Gamelist Storage
 
-  <target> can be:
-    • An AmigaVision game name (string without slashes)
-    • An .mgl file path
-    • A generic file path (ROM, etc.)
-	
-	
-SAM -attract
------------
-Starts Attract Mode
+- Gamelists and metadata live under:
+  ```
+  /media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists
+  ```
+- On startup, SAM-GO:
+  - Loads `MasterList` and `GameIndex` into RAM
+  - Generates system gamelists (`*_gamelist.txt`)
+  - Applies filters (include/exclude)
+  - Keeps everything in memory for instant access
 
-SAM -mouse
------------
-Starts the mouse watcher
+---
 
-SAM -joystick
------------
-Starts the joystick watcher
+## 🛠 Development Notes
 
-SAM -keyboard
------------
-Starts the keyboard watcher
+- **Attract Mode (`SAM`, `SAM -s`)**: main event loop, auto-cycling games.
+- **Menu Mode (`SAM -menu`)**: interactive menu (port of old `SAM_MENU.sh`).
+- **Run Mode (`SAM -run <path>`)**: launches directly into a game.
+- **Search**: in-RAM search engine (prefix, substring, fuzzy).
+
+---
+
+## ✅ Example Workflows
+
+Start Attract Mode:
+```bash
+SAM
+```
+
+Run with debug stream:
+```bash
+SAM -s
+```
+
+Jump straight into Sonic 2:
+```bash
+SAM -run /media/fat/games/Genesis/Sonic2.bin
+```
+
+Browse all NES games via menu:
+```bash
+SAM -menu
+```
