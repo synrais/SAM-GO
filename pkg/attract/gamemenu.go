@@ -65,19 +65,25 @@ func GameMenu9() error {
 	}
 	fmt.Println("[DEBUG] Successfully switched to tty2")
 
-	// Step 5: run SAM binary in menu mode directly on tty2
-	fmt.Println("[DEBUG] Launching SAM -menu directly on tty2")
+	// Step 5: open tty2 and exec SAM -menu on it
+	fmt.Println("[DEBUG] Opening /dev/tty2…")
+	tty, err := os.OpenFile("/dev/tty2", os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("[DEBUG] failed to open /dev/tty2: %w", err)
+	}
+	defer tty.Close()
 
 	cmd := exec.Command("/media/fat/Scripts/.MiSTer_SAM/SAM", "-menu")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
+	cmd.Stdin = tty
+	cmd.Stdout = tty
+	cmd.Stderr = tty
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid:  true,
 		Setctty: true,
-		Ctty:    2, // tty2
+		Ctty:    int(tty.Fd()),
 	}
 
+	fmt.Println("[DEBUG] Starting SAM -menu on tty2…")
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("[DEBUG] failed to run SAM -menu on tty2: %w", err)
 	}
