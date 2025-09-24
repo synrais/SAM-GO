@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
 	"github.com/synrais/SAM-GO/pkg/config"
@@ -57,7 +56,9 @@ func GameMenu9() error {
 	}
 	fmt.Println("[DEBUG] F9 pressed")
 
-	time.Sleep(2 * time.Second)
+	// Give terminal time to open
+	fmt.Println("[DEBUG] Sleeping 3s to let terminal appear…")
+	time.Sleep(3 * time.Second)
 
 	// Step 4: switch to tty2
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -84,27 +85,30 @@ func GameMenu9() error {
 	return nil
 }
 
-// ===== Temporary Zaparoo Modal Menu =====
+// ===== Temporary Zaparoo TextView Demo =====
 
-// RunMenu is temporarily replaced with a Zaparoo-style demo modal
 func RunMenu() {
 	fmt.Println("[DEBUG] Entered RunMenu() (Zaparoo demo)")
 
+	// Make sure TERM is set
 	if os.Getenv("TERM") == "" {
 		os.Setenv("TERM", "linux")
 	}
 
 	app := tview.NewApplication()
-	modal := tview.NewModal().
-		SetTitle("Test Modal").
-		SetText("Hello from Zaparoo!\nESC or No to quit.").
-		AddButtons([]string{"Yes", "No"}).
-		SetDoneFunc(func(_ int, buttonLabel string) {
-			fmt.Printf("[MENU] Button pressed: %s\n", buttonLabel)
-			app.Stop()
-		})
 
-	if err := app.SetRoot(modal, true).Run(); err != nil {
+	text := tview.NewTextView().
+		SetTextAlign(tview.AlignCenter).
+		SetText("Hello from Zaparoo Demo!\n\nPress ESC to quit.")
+
+	// ESC exits
+	text.SetDoneFunc(func(key tview.Key) {
+		if key == tview.KeyEscape {
+			app.Stop()
+		}
+	})
+
+	if err := app.SetRoot(text, true).Run(); err != nil {
 		fmt.Printf("[MENU] Failed to run TUI: %v\n", err)
 	}
 }
