@@ -154,8 +154,8 @@ func GameMenu9() error {
 		return fmt.Errorf("failed to press F9: %w", err)
 	}
 
-	// Step 4: wait a moment for console to settle
-	time.Sleep(1 * time.Second)
+	// Step 4: wait a bit for console to actually switch
+	time.Sleep(2 * time.Second)
 
 	// Step 5: write /tmp/script launcher so console runs SAM_MENU.sh
 	launcher := `#!/bin/bash
