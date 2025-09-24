@@ -86,80 +86,44 @@ func GameMenu9() error {
 	return nil
 }
 
-// ===== Direct in-RAM Menu =====
+// ===== Direct in-RAM Menu (MasterList only) =====
 
 func RunMenu() {
 	fmt.Println("[DEBUG] Entered RunMenu()")
 
-	// grab per-system keys
-	systems := CacheKeys("master")
-	// grab full flattened master
+	// Grab the full master list
 	allMaster := FlattenCache("master")
-
-	if len(systems) == 0 && len(allMaster) == 0 {
-		fmt.Println("[MENU] No gamelists available in memory")
+	if len(allMaster) == 0 {
+		fmt.Println("[MENU] No MasterList available in memory")
 		return
 	}
 
 	for {
-		fmt.Println("==== Systems ====")
-		for i, sys := range systems {
-			fmt.Printf("%2d) %s\n", i+1, sys)
+		fmt.Println("==== MASTER LIST ====")
+		for i, g := range allMaster {
+			base := filepath.Base(g)
+			name := strings.TrimSuffix(base, filepath.Ext(base))
+			if len(name) > 70 {
+				name = name[:67] + "..."
+			}
+			fmt.Printf("%5d) %s\n", i+1, name)
 		}
-		fmt.Printf("%2d) %s\n", len(systems)+1, "ALL SYSTEMS (flattened master)")
 
-		var sysChoice int
-		fmt.Print("Choose a system (0 to quit): ")
-		fmt.Scanln(&sysChoice)
+		var gameChoice int
+		fmt.Print("Choose a game (0 to quit): ")
+		fmt.Scanln(&gameChoice)
 
-		if sysChoice == 0 {
+		if gameChoice == 0 {
 			return
 		}
-		if sysChoice == len(systems)+1 {
-			fmt.Println("==== ALL SYSTEMS (master) ====")
-			for i, g := range allMaster {
-				fmt.Printf("%5d) %s\n", i+1, g)
-			}
-			continue
-		}
-		if sysChoice < 1 || sysChoice > len(systems) {
-			fmt.Println("[MENU] Invalid system choice")
+		if gameChoice < 1 || gameChoice > len(allMaster) {
+			fmt.Println("[MENU] Invalid game choice")
 			continue
 		}
 
-		chosenSys := systems[sysChoice-1]
-		games := GetCache("master", chosenSys)
-		if len(games) == 0 {
-			fmt.Printf("[MENU] No games found for %s\n", chosenSys)
-			continue
-		}
-
-		for {
-			fmt.Printf("==== %s Games ====\n", chosenSys)
-			for i, g := range games {
-				base := filepath.Base(g)
-				name := strings.TrimSuffix(base, filepath.Ext(base))
-				if len(name) > 70 {
-					name = name[:67] + "..."
-				}
-				fmt.Printf("%4d) %s\n", i+1, name)
-			}
-
-			var gameChoice int
-			fmt.Print("Choose a game (0 to go back): ")
-			fmt.Scanln(&gameChoice)
-			if gameChoice == 0 {
-				break
-			}
-			if gameChoice < 1 || gameChoice > len(games) {
-				fmt.Println("[MENU] Invalid game choice")
-				continue
-			}
-
-			chosenGame := games[gameChoice-1]
-			fmt.Printf("[MENU] Launching: %s\n", chosenGame)
-			Run([]string{chosenGame}) // call into attract.Run()
-		}
+		chosenGame := allMaster[gameChoice-1]
+		fmt.Printf("[MENU] Launching: %s\n", chosenGame)
+		Run([]string{chosenGame}) // call into attract.Run()
 	}
 }
 
