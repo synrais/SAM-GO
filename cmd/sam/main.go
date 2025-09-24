@@ -14,13 +14,15 @@ import (
 
 const iniFileName = "SAM.ini"
 
-var streamDebug = flag.Bool("s", false, "Enable static detector stream debug output")
+// CLI flags
+var (
+	streamDebug = flag.Bool("s", false, "Enable static detector stream debug output")
+	runPath     = flag.String("run", "", "Run a single game by path")
+	menuMode    = flag.Bool("menu", false, "Launch interactive game browser menu")
+)
 
-// main is the entrypoint for SAM.
-// It ensures config exists, loads it, and then hands off to Attract Mode.
 func main() {
 	debug.SetMemoryLimit(128 * 1024 * 1024) // 128MB soft limit
-
 	flag.Parse()
 
 	exePath, _ := os.Executable()
@@ -46,6 +48,24 @@ func main() {
 	}
 	fmt.Println("[MAIN] Loaded config from:", cfg.IniPath)
 
-	// Hand off directly to attract mode
-	attract.PrepareAttractLists(cfg, *streamDebug)
+	// --- Mode selection ---
+	switch {
+	case *runPath != "":
+		// Direct run mode
+		if err := attract.Run([]string{*runPath}); err != nil {
+			fmt.Fprintln(os.Stderr, "[MAIN] Run error:", err)
+			os.Exit(1)
+		}
+
+	case *menuMode:
+		// Menu mode
+		if err := attract.LaunchMenu(cfg); err != nil {
+			fmt.Fprintln(os.Stderr, "[MAIN] Menu error:", err)
+			os.Exit(1)
+		}
+
+	default:
+		// Attract mode (with optional -s stream debug)
+		attract.PrepareAttractLists(cfg, *streamDebug)
+	}
 }
