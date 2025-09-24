@@ -39,7 +39,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	// preload MasterList
 	preStart := time.Now()
 	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "MasterList")); err == nil {
-		SetMasterSystem("preload", lines)
+		SetCache("master", "preload", lines)
 		if !quiet {
 			fmt.Printf("[DEBUG] preload MasterList → survivors=%d (%.2fs)\n",
 				len(lines), time.Since(preStart).Seconds())
@@ -49,7 +49,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	// preload GameIndex
 	idxStart := time.Now()
 	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "GameIndex")); err == nil {
-		SetIndexSystem("preload", lines)
+		SetCache("index", "preload", lines)
 		if !quiet {
 			fmt.Printf("[DEBUG] preload GameIndex → survivors=%d (%.2fs)\n",
 				len(lines), time.Since(idxStart).Seconds())
@@ -111,8 +111,8 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 
 			// cleanup old entries
 			cleanStart := time.Now()
-			RemoveMasterSystem(system.Id)
-			RemoveIndexSystem(system.Id)
+			RemoveCache("master", system.Id)
+			RemoveCache("index", system.Id)
 			if !quiet {
 				fmt.Printf("[DEBUG] %s cleanup complete (%.2fs)\n",
 					system.Id, time.Since(cleanStart).Seconds())
@@ -125,7 +125,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 				fmt.Printf("[DEBUG] %s Stage1 → survivors=%d (removed=file=%d) (%.2fs)\n",
 					system.Id, len(stage1), c1["File"], time.Since(s1Start).Seconds())
 			}
-			AmendMasterSystem(system.Id, stage1)
+			AmendCache("master", system.Id, stage1)
 
 			// Stage 2
 			s2Start := time.Now()
@@ -134,12 +134,12 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 				fmt.Printf("[DEBUG] %s Stage2 → survivors=%d (removed=file=%d) (%.2fs)\n",
 					system.Id, len(stage2), c2["File"], time.Since(s2Start).Seconds())
 			}
-			AmendIndexSystem(system.Id, stage2)
+			AmendCache("index", system.Id, stage2)
 			_ = WriteLinesIfChanged(gamelistPath, stage2)
 
 			// Stage 3
 			stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
-			SetList(GamelistFilename(system.Id), stage3)
+			SetCache("lists", GamelistFilename(system.Id), stage3)
 
 			counts := mergeCounts(c1, c2, c3)
 			totalGames += len(stage3)
@@ -157,15 +157,15 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			}
 
 			if FileExists(gamelistPath) {
-				if len(GetList(GamelistFilename(system.Id))) == 0 {
+				if len(GetCache("lists", GamelistFilename(system.Id))) == 0 {
 					if lines, err := utils.ReadLines(gamelistPath); err == nil {
-						SetList(GamelistFilename(system.Id), lines)
+						SetCache("lists", GamelistFilename(system.Id), lines)
 					}
 				}
 
-				stage2, _ := Stage2Filters(GetList(GamelistFilename(system.Id)))
+				stage2, _ := Stage2Filters(GetCache("lists", GamelistFilename(system.Id)))
 				stage3, _, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
-				SetList(GamelistFilename(system.Id), stage3)
+				SetCache("lists", GamelistFilename(system.Id), stage3)
 
 				totalGames += len(stage3)
 				if !quiet {
@@ -192,21 +192,21 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		fmt.Fprintf(os.Stderr, "[Attract] Error expanding exclude groups: %v\n", err)
 		return 0
 	}
-	allKeys := ListKeys()
+	allKeys := CacheKeys("lists")
 	allowed := FilterAllowed(allKeys, inc, exc)
 
 	for _, k := range allKeys {
 		systemID := strings.TrimSuffix(k, "_gamelist.txt")
 		if !ContainsInsensitive(allowed, systemID) {
-			RemoveList(k)
+			RemoveCache("lists", k)
 		}
 	}
 
 	// global write
 	writeStart := time.Now()
-	if freshCount > 0 || len(FlattenMaster()) == 0 || len(FlattenIndex()) == 0 {
-		_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "MasterList"), FlattenMaster())
-		_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "GameIndex"), FlattenIndex())
+	if freshCount > 0 || len(FlattenCache("master")) == 0 || len(FlattenCache("index")) == 0 {
+		_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "MasterList"), FlattenCache("master"))
+		_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "GameIndex"), FlattenCache("index"))
 		_ = saveTimestamps(gamelistDir, newTimestamps)
 		if !quiet {
 			fmt.Printf("[DEBUG] global write complete (%.2fs)\n", time.Since(writeStart).Seconds())
@@ -214,13 +214,13 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	}
 
 	if !quiet {
-		fmt.Printf("[List] MasterList contains %d titles\n", len(FlattenMaster()))
-		fmt.Printf("[List] GameIndex contains %d titles\n", len(FlattenIndex()))
+		fmt.Printf("[List] MasterList contains %d titles\n", len(FlattenCache("master")))
+		fmt.Printf("[List] GameIndex contains %d titles\n", len(FlattenCache("index")))
 		fmt.Printf("[List] Done in %.1fs (%d fresh, %d reused systems)\n",
 			time.Since(start).Seconds(), freshCount, reuseCount)
 	}
 
-	if len(FlattenIndex()) == 0 {
+	if len(FlattenCache("index")) == 0 {
 		fmt.Println("[Attract] List build failed: no games indexed")
 	}
 	return totalGames
