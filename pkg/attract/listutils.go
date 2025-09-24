@@ -333,7 +333,7 @@ func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.
 // -----------------------------
 
 func CountMaster() int {
-	all := FlattenMaster()
+	all := FlattenCache("master")
 	count := 0
 	for _, line := range all {
 		if !strings.HasPrefix(line, "# SYSTEM:") {
@@ -345,7 +345,7 @@ func CountMaster() int {
 
 func UpdateGameIndex(systemID string, files []string) {
 	unique := utils.DedupeFiles(files)
-	AmendIndexSystem(systemID, unique)
+	AmendCache("index", systemID, unique)
 }
 
 //
