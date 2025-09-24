@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 	"os"
-	"os/exec"  
 	"strings"
 
 	"github.com/synrais/SAM-GO/pkg/input"
