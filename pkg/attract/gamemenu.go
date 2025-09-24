@@ -76,7 +76,6 @@ func GameMenu9() error {
 	cmd.Stdin = tty
 	cmd.Stdout = tty
 	cmd.Stderr = tty
-	// no SysProcAttr fiddling — Linux will attach tty2 automatically
 
 	fmt.Println("[DEBUG] Starting SAM -menu on tty2…")
 	if err := cmd.Start(); err != nil {
@@ -92,8 +91,12 @@ func GameMenu9() error {
 func RunMenu() {
 	fmt.Println("[DEBUG] Entered RunMenu()")
 
+	// grab per-system keys
 	systems := CacheKeys("master")
-	if len(systems) == 0 {
+	// grab full flattened master
+	allMaster := FlattenCache("master")
+
+	if len(systems) == 0 && len(allMaster) == 0 {
 		fmt.Println("[MENU] No gamelists available in memory")
 		return
 	}
@@ -103,19 +106,28 @@ func RunMenu() {
 		for i, sys := range systems {
 			fmt.Printf("%2d) %s\n", i+1, sys)
 		}
+		fmt.Printf("%2d) %s\n", len(systems)+1, "ALL SYSTEMS (flattened master)")
 
 		var sysChoice int
 		fmt.Print("Choose a system (0 to quit): ")
 		fmt.Scanln(&sysChoice)
+
 		if sysChoice == 0 {
 			return
+		}
+		if sysChoice == len(systems)+1 {
+			fmt.Println("==== ALL SYSTEMS (master) ====")
+			for i, g := range allMaster {
+				fmt.Printf("%5d) %s\n", i+1, g)
+			}
+			continue
 		}
 		if sysChoice < 1 || sysChoice > len(systems) {
 			fmt.Println("[MENU] Invalid system choice")
 			continue
 		}
-		chosenSys := systems[sysChoice-1]
 
+		chosenSys := systems[sysChoice-1]
 		games := GetCache("master", chosenSys)
 		if len(games) == 0 {
 			fmt.Printf("[MENU] No games found for %s\n", chosenSys)
@@ -146,7 +158,7 @@ func RunMenu() {
 
 			chosenGame := games[gameChoice-1]
 			fmt.Printf("[MENU] Launching: %s\n", chosenGame)
-			Run([]string{chosenGame}) // direct call into attract.Run()
+			Run([]string{chosenGame}) // call into attract.Run()
 		}
 	}
 }
