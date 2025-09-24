@@ -120,10 +120,20 @@ func GameMenu8() error {
 	return nil
 }
 
-// MENU 9: fullscreen msg
+// MENU 9: launch SAM_MENU.sh script
 func GameMenu9() error {
+	script := "/media/fat/Scripts/SAM_MENU.sh"
+
 	fmt.Println("=== TEST MENU 9 ===")
-	fmt.Println("Press any key to quit.")
-	waitKey()
+	fmt.Println("Launching:", script)
+
+	cmd := exec.Command(script)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to run %s: %w", script, err)
+	}
+
 	return nil
 }
