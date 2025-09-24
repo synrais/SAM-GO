@@ -245,7 +245,7 @@ func GameMenu9() error {
 	fmt.Println("[MENU9] Sent F9 to open terminal")
 
 	// Step 4: wait briefly for console to spawn
-	time.Sleep(2 * time.Second)
+	// time.Sleep(2 * time.Second)
 
 	// Step 5: switch to tty2
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
