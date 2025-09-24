@@ -2,7 +2,6 @@ package attract
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -108,13 +107,16 @@ func (n Node) FilterValue() string { return n.Display }
 // ===== Styles =====
 
 var (
-	// Basic UI Styles
-	borderStyle  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Foreground(lipgloss.Color("12"))
+	// General border and text styles
+	borderStyle  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Foreground(lipgloss.Color("33")) // Darker blue for the border
 	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
-	selectedItem = lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Background(lipgloss.Color("57"))
+	selectedItem = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Background(lipgloss.Color("33")) // Light blue for highlighted
 
-	// Header Styles
-	blueBgStyle = lipgloss.NewStyle().Background(lipgloss.Color("33")).Foreground(lipgloss.Color("255")).Bold(true)
+	// Blue background for the main window and menu items
+	blueBgStyle = lipgloss.NewStyle().Background(lipgloss.Color("33")).Foreground(lipgloss.Color("255")).Bold(true) // Dark blue background with white text
+
+	// Background for unselected items, lighter blue
+	normalItemBgStyle = lipgloss.NewStyle().Background(lipgloss.Color("24")).Foreground(lipgloss.Color("255")) // Lighter blue
 )
 
 // ===== Menu Model =====
@@ -283,15 +285,4 @@ func readLines(file string) []string {
 
 func RunMenu() {
 	root := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
-	p := tea.NewProgram(newMenuModel(root), tea.WithAltScreen())
-	if err := p.Start(); err != nil {
-		fmt.Println("Error running menu:", err)
-		os.Exit(1)
-	}
-}
-
-func LaunchMenu(cfg *config.UserConfig) error {
-	fmt.Println("[DEBUG] LaunchMenu() called")
-	RunMenu()
-	return nil
-}
+	p := tea.NewProgram(newMenuModel(root), tea.WithAltScreen
