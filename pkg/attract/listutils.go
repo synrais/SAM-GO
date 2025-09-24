@@ -32,34 +32,19 @@ func SplitNTrim(s, sep string, n int) []string {
 // Master/GameIndex helpers
 // -----------------------------
 
-// removeSystemFromMaster removes the entire block for a given system from Masterlist slice.
-func removeSystemFromMaster(master []string, systemID string) []string {
-	out := []string{}
-	skip := false
-	for _, line := range master {
-		if len(line) > 9 && line[:9] == "# SYSTEM:" {
-			if line == "# SYSTEM: "+systemID {
-				skip = true
-				continue
-			}
-			skip = false
-		}
-		if !skip {
-			out = append(out, line)
-		}
+// CountMaster counts all titles across every system in the master map.
+func CountMaster() int {
+	total := 0
+	for _, games := range GetAllMaster() {
+		total += len(games)
 	}
-	return out
+	return total
 }
 
-// removeSystemFromGameIndex removes all entries for a given system from GameIndex slice.
-func removeSystemFromGameIndex(entries []GameEntry, systemID string) []GameEntry {
-	out := []GameEntry{}
-	for _, e := range entries {
-		if e.SystemID != systemID {
-			out = append(out, e)
-		}
-	}
-	return out
+// UpdateGameIndex dedupes files and stores them in the index map.
+func UpdateGameIndex(systemID string, files []string) {
+	unique := utils.DedupeFiles(files)
+	AmendIndexSystem(systemID, unique)
 }
 
 // mergeCounts merges three sets of filter counts into a single summary map.
@@ -98,20 +83,20 @@ func Stage1Filters(files []string, systemID string, cfg *config.UserConfig) ([]s
 // - Normalized name deduplication (utils.DedupeFiles)
 // Returns the diskLines and counts (File = mglRemoved + dedupeRemoved).
 func Stage2Filters(files []string) ([]string, map[string]int) {
-    counts := map[string]int{"File": 0}
+	counts := map[string]int{"File": 0}
 
-	// .mgl precedence	
-    beforeMGL := len(files)
-    filtered := FilterUniqueWithMGL(files)
-    mglRemoved := beforeMGL - len(filtered)
-	
+	// .mgl precedence
+	beforeMGL := len(files)
+	filtered := FilterUniqueWithMGL(files)
+	mglRemoved := beforeMGL - len(filtered)
+
 	// Normalized dedup
-    beforeDedupe := len(filtered)
-    filtered = utils.DedupeFiles(filtered)
-    dedupeRemoved := beforeDedupe - len(filtered)
+	beforeDedupe := len(filtered)
+	filtered = utils.DedupeFiles(filtered)
+	dedupeRemoved := beforeDedupe - len(filtered)
 
-    counts["File"] = mglRemoved + dedupeRemoved
-    return filtered, counts
+	counts["File"] = mglRemoved + dedupeRemoved
+	return filtered, counts
 }
 
 // Stage3Filters applies semantic filterlists.
@@ -127,25 +112,25 @@ func Stage3Filters(gamelistDir, systemID string, diskLines []string, cfg *config
 // to in-RAM gamelist filenames (like "nes_gamelist.txt").
 // It returns the list of allowed system IDs (not filenames).
 func FilterAllowed(all []string, includeRaw, excludeRaw []string) []string {
-    include, _ := ExpandGroups(includeRaw)
-    exclude, _ := ExpandGroups(excludeRaw)
+	include, _ := ExpandGroups(includeRaw)
+	exclude, _ := ExpandGroups(excludeRaw)
 
-    var filtered []string
-    for _, key := range all {
-        systemID := strings.TrimSuffix(key, "_gamelist.txt")
+	var filtered []string
+	for _, key := range all {
+		systemID := strings.TrimSuffix(key, "_gamelist.txt")
 
-        // include check
-        if len(include) > 0 && !ContainsInsensitive(include, systemID) {
-            continue
-        }
-        // exclude check
-        if ContainsInsensitive(exclude, systemID) {
-            continue
-        }
+		// include check
+		if len(include) > 0 && !ContainsInsensitive(include, systemID) {
+			continue
+		}
+		// exclude check
+		if ContainsInsensitive(exclude, systemID) {
+			continue
+		}
 
-        filtered = append(filtered, systemID)
-    }
-    return filtered
+		filtered = append(filtered, systemID)
+	}
+	return filtered
 }
 
 //
@@ -392,37 +377,6 @@ func ApplyFilterlists(gamelistDir, systemID string, lines []string, cfg *config.
 
 //
 // -----------------------------
-// Index + Master helpers
-// -----------------------------
-
-// CountGames counts all non-#SYSTEM lines in masterlist.
-func CountGames(master []string) int {
-	count := 0
-	for _, line := range master {
-		if !strings.HasPrefix(line, "# SYSTEM:") {
-			count++
-		}
-	}
-	return count
-}
-
-// UpdateGameIndex builds GameEntry objects and pushes them to the cache.
-func UpdateGameIndex(systemID string, files []string) {
-	unique := utils.DedupeFiles(files)
-	for _, f := range unique {
-		name, ext := utils.NormalizeEntry(f)
-		entry := GameEntry{
-			SystemID: systemID,
-			Name:     name,
-			Ext:      ext,
-			Path:     f,
-		}
-		AppendGameIndex(entry)
-	}
-}
-
-//
-// -----------------------------
 // Timestamps
 // -----------------------------
 
@@ -461,20 +415,20 @@ func loadSavedTimestamps(gamelistDir string) ([]SavedTimestamp, error) {
 
 // isFolderModified checks if the root folder was modified since the saved timestamp.
 func isFolderModified(systemID, path string, saved []SavedTimestamp) (bool, time.Time, error) {
-    info, err := os.Stat(path)
-    if err != nil {
-        return false, time.Time{}, fmt.Errorf("[Modtime] Failed to stat %s: %w", path, err)
-    }
-    latestMod := info.ModTime()
+	info, err := os.Stat(path)
+	if err != nil {
+		return false, time.Time{}, fmt.Errorf("[Modtime] Failed to stat %s: %w", path, err)
+	}
+	latestMod := info.ModTime()
 
-    for _, ts := range saved {
-        if ts.SystemID == systemID && ts.Path == path {
-            return latestMod.After(ts.ModTime), latestMod, nil
-        }
-    }
+	for _, ts := range saved {
+		if ts.SystemID == systemID && ts.Path == path {
+			return latestMod.After(ts.ModTime), latestMod, nil
+		}
+	}
 
-    // No record for this system → treat as modified
-    return true, latestMod, nil
+	// No record for this system → treat as modified
+	return true, latestMod, nil
 }
 
 // updateTimestamp updates or adds an entry to the SavedTimestamp list.
