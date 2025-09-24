@@ -238,19 +238,21 @@ func handleConn(conn net.Conn) {
 }
 
 // IPCRequest is a helper for menu clients to send commands to the main SAM process.
-func IPCRequest(cmd string) ([]string, error) {
-	conn, err := net.Dial("unix", socketPath)
-	if err != nil {
-		return nil, fmt.Errorf("connect failed: %w", err)
-	}
-	defer conn.Close()
+func IPCRequest(msg string) (string, error) {
+    conn, err := net.Dial("unix", "/tmp/sam.sock")
+    if err != nil {
+        return "", err
+    }
+    defer conn.Close()
 
-	fmt.Fprintln(conn, cmd)
+    if _, err := conn.Write([]byte(msg + "\n")); err != nil {
+        return "", err
+    }
 
-	var out []string
-	scanner := bufio.NewScanner(conn)
-	for scanner.Scan() {
-		out = append(out, scanner.Text())
-	}
-	return out, scanner.Err()
+    // read everything
+    buf, err := io.ReadAll(conn)
+    if err != nil {
+        return "", err
+    }
+    return string(buf), nil
 }
