@@ -1,9 +1,12 @@
 package attract
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/synrais/SAM-GO/pkg/utils"
@@ -175,4 +178,79 @@ func FlattenSystem(cacheType, systemID string) []string {
 		return nil
 	}
 	return append([]string(nil), cache[systemID]...)
+}
+
+// -----------------------------
+// IPC (Unix socket for menu access)
+// -----------------------------
+
+const socketPath = "/tmp/sam.sock"
+
+// StartIPCServer launches a background goroutine to serve cache queries over a Unix socket.
+func StartIPCServer() error {
+	_ = os.Remove(socketPath) // cleanup old socket
+	ln, err := net.Listen("unix", socketPath)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", socketPath, err)
+	}
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				continue
+			}
+			go handleConn(conn)
+		}
+	}()
+	return nil
+}
+
+func handleConn(conn net.Conn) {
+	defer conn.Close()
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.SplitN(line, " ", 2)
+		cmd := parts[0]
+		arg := ""
+		if len(parts) > 1 {
+			arg = parts[1]
+		}
+
+		switch cmd {
+		case "LIST_SYSTEMS":
+			for _, sys := range CacheKeys("lists") {
+				fmt.Fprintln(conn, sys)
+			}
+		case "LIST_GAMES":
+			for _, g := range GetCache("lists", arg) {
+				fmt.Fprintln(conn, g)
+			}
+		case "RUN":
+			// Important: Run launches the game from the main SAM process.
+			Run([]string{arg})
+			fmt.Fprintln(conn, "OK")
+		default:
+			fmt.Fprintln(conn, "ERR unknown command")
+		}
+	}
+}
+
+// IPCRequest is a helper for menu clients to send commands to the main SAM process.
+func IPCRequest(cmd string) ([]string, error) {
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		return nil, fmt.Errorf("connect failed: %w", err)
+	}
+	defer conn.Close()
+
+	fmt.Fprintln(conn, cmd)
+
+	var out []string
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		out = append(out, scanner.Text())
+	}
+	return out, scanner.Err()
 }
