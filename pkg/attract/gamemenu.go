@@ -24,7 +24,8 @@ func GameMenu6() error { fmt.Println("[DEBUG] GameMenu6 called"); return nil }
 func GameMenu7() error { fmt.Println("[DEBUG] GameMenu7 called"); return nil }
 func GameMenu8() error { fmt.Println("[DEBUG] GameMenu8 called"); return nil }
 
-// ===== Menu 9 (special, spawns tty2) =====
+// ===== Menu 9 (special: switch to tty2 and run internal menu) =====
+
 func GameMenu9() error {
 	fmt.Println("[DEBUG] Entered GameMenu9()")
 
@@ -64,37 +65,34 @@ func GameMenu9() error {
 	}
 	fmt.Println("[DEBUG] Successfully switched to tty2")
 
-	// Step 5: open tty2 and exec SAM -menu on it
+	// Step 5: redirect this process stdio to tty2 and run internal menu
 	fmt.Println("[DEBUG] Opening /dev/tty2…")
 	tty, err := os.OpenFile("/dev/tty2", os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("[DEBUG] failed to open /dev/tty2: %w", err)
 	}
-	defer tty.Close()
+	// No defer tty.Close() — keep alive during menu
 
-	cmd := exec.Command("/media/fat/Scripts/.MiSTer_SAM/SAM", "-menu")
-	cmd.Stdin = tty
-	cmd.Stdout = tty
-	cmd.Stderr = tty
+	os.Stdout = tty
+	os.Stderr = tty
+	os.Stdin = tty
 
-	fmt.Println("[DEBUG] Starting SAM -menu on tty2…")
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("[DEBUG] failed to run SAM -menu on tty2: %w", err)
-	}
+	fmt.Println("[DEBUG] Handing control to RunMenu() on tty2")
+	RunMenu() // now directly uses the in-RAM MasterList
 
-	fmt.Printf("[DEBUG] SAM menu started on tty2 (PID %d)\n", cmd.Process.Pid)
 	return nil
 }
 
-// ===== Direct in-RAM Menu (MasterList only) =====
+// ===== Direct in-RAM Menu =====
 
 func RunMenu() {
 	fmt.Println("[DEBUG] Entered RunMenu()")
 
-	// Grab the full master list
+	// Directly use flattened master list only
 	allMaster := FlattenCache("master")
+
 	if len(allMaster) == 0 {
-		fmt.Println("[MENU] No MasterList available in memory")
+		fmt.Println("[MENU] No games available in master list (RAM empty?)")
 		return
 	}
 
