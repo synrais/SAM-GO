@@ -145,10 +145,15 @@ export LC_ALL=en_US.UTF-8
 export HOME=/root
 export LESSKEY=/media/fat/linux/lesskey
 cd /media/fat/Scripts
-/media/fat/Scripts/SAM_MENU.sh
+exec /media/fat/Scripts/SAM_MENU.sh
 `
-	if err := os.WriteFile(scriptPath, []byte(script), 0750); err != nil {
+	// Important: exec replaces the shell so you don’t fall back to /root
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
 		return fmt.Errorf("failed to write %s: %w", scriptPath, err)
+	}
+	// Make sure root owns it (same as Zaparoo convention)
+	if err := os.Chown(scriptPath, 0, 0); err != nil {
+		fmt.Println("[MENU9] Warning: could not chown /tmp/script:", err)
 	}
 	fmt.Println("[MENU9] Launcher written to /tmp/script")
 
@@ -167,5 +172,9 @@ cd /media/fat/Scripts
 		return fmt.Errorf("failed to press F9: %w", err)
 	}
 
+	// Step 5: give console a moment to spawn and pick up /tmp/script
+	time.Sleep(2 * time.Second)
+
+	fmt.Println("[MENU9] If everything worked, SAM_MENU.sh should now be running.")
 	return nil
 }
