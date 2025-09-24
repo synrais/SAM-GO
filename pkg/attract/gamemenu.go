@@ -95,21 +95,18 @@ func GameMenu9() error {
 
 // ===== Internal Go-based Menu (via IPC) =====
 
+// RunMenu talks to the Attract IPC server
 func RunMenu() {
 	fmt.Println("[DEBUG] Entered RunMenu()")
 
-	// Get system list from IPC
-	fmt.Println("[DEBUG] Sending IPCRequest(LIST_SYSTEMS)")
 	resp, err := IPCRequest("LIST_SYSTEMS")
 	if err != nil {
-		fmt.Println("[DEBUG] IPC error fetching systems:", err)
+		fmt.Println("[MENU] IPC error fetching systems:", err)
 		return
 	}
-	fmt.Printf("[DEBUG] IPC LIST_SYSTEMS response: %q\n", resp)
-
 	systems := strings.Split(strings.TrimSpace(resp), "\n")
 	if len(systems) == 0 || (len(systems) == 1 && systems[0] == "") {
-		fmt.Println("[DEBUG] No gamelists available from IPC")
+		fmt.Println("[MENU] No gamelists available from IPC")
 		return
 	}
 
@@ -122,32 +119,24 @@ func RunMenu() {
 		var sysChoice int
 		fmt.Print("Choose a system (0 to quit): ")
 		fmt.Scanln(&sysChoice)
-		fmt.Printf("[DEBUG] User picked system choice: %d\n", sysChoice)
-
 		if sysChoice == 0 {
-			fmt.Println("[DEBUG] Exiting RunMenu()")
 			return
 		}
 		if sysChoice < 1 || sysChoice > len(systems) {
-			fmt.Println("[DEBUG] Invalid system choice")
+			fmt.Println("[MENU] Invalid system choice")
 			continue
 		}
 		chosenSys := systems[sysChoice-1]
-		fmt.Printf("[DEBUG] Chosen system: %s\n", chosenSys)
 
-		// Fetch games for this system via IPC
-		req := "LIST_GAMES " + chosenSys
-		fmt.Printf("[DEBUG] Sending IPCRequest(%q)\n", req)
-		resp, err := IPCRequest(req)
+		// Fetch games from MasterList (or switch to LIST_INDEX if needed)
+		resp, err := IPCRequest("LIST_MASTER " + chosenSys)
 		if err != nil {
-			fmt.Println("[DEBUG] IPC error fetching games:", err)
+			fmt.Println("[MENU] IPC error fetching games:", err)
 			continue
 		}
-		fmt.Printf("[DEBUG] IPC LIST_GAMES response length: %d bytes\n", len(resp))
-
 		games := strings.Split(strings.TrimSpace(resp), "\n")
 		if len(games) == 0 || (len(games) == 1 && games[0] == "") {
-			fmt.Printf("[DEBUG] No games found for %s\n", chosenSys)
+			fmt.Printf("[MENU] No games found for %s\n", chosenSys)
 			continue
 		}
 
@@ -165,31 +154,27 @@ func RunMenu() {
 			var gameChoice int
 			fmt.Print("Choose a game (0 to go back): ")
 			fmt.Scanln(&gameChoice)
-			fmt.Printf("[DEBUG] User picked game choice: %d\n", gameChoice)
-
 			if gameChoice == 0 {
-				fmt.Println("[DEBUG] Returning to system menu")
 				break
 			}
 			if gameChoice < 1 || gameChoice > len(games) {
-				fmt.Println("[DEBUG] Invalid game choice")
+				fmt.Println("[MENU] Invalid game choice")
 				continue
 			}
 
 			chosenGame := games[gameChoice-1]
-			fmt.Printf("[DEBUG] Launching chosen game: %s\n", chosenGame)
+			fmt.Printf("[MENU] Launching: %s\n", chosenGame)
 
 			if _, err := IPCRequest("RUN_GAME " + chosenGame); err != nil {
-				fmt.Println("[DEBUG] IPC error launching game:", err)
+				fmt.Println("[MENU] IPC error launching game:", err)
 			}
 		}
 	}
 }
 
-// LaunchMenu is the entry point for `SAM -menu`.
+// Entry point for `SAM -menu`
 func LaunchMenu(cfg *config.UserConfig) error {
 	fmt.Println("[DEBUG] LaunchMenu() called")
 	RunMenu()
-	fmt.Println("[DEBUG] LaunchMenu() finished")
 	return nil
 }
