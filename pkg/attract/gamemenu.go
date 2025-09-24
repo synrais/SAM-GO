@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -58,10 +56,9 @@ func GameMenu9() error {
 		return fmt.Errorf("[DEBUG] failed to press F9: %w", err)
 	}
 	fmt.Println("[DEBUG] F9 pressed")
-	
-	fmt.Println("[DEBUG] Sleeping 3s to let menu reload…")
-	time.Sleep(3 * time.Second)
-	
+
+	time.Sleep(2 * time.Second)
+
 	// Step 4: switch to tty2
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -87,66 +84,28 @@ func GameMenu9() error {
 	return nil
 }
 
-// ===== Direct in-RAM Menu (tview) =====
+// ===== Temporary Zaparoo Modal Menu =====
 
+// RunMenu is temporarily replaced with a Zaparoo-style demo modal
 func RunMenu() {
-	fmt.Println("[DEBUG] Entered RunMenu()")
+	fmt.Println("[DEBUG] Entered RunMenu() (Zaparoo demo)")
 
-	allMaster := FlattenCache("master")
-	if len(allMaster) == 0 {
-		fmt.Println("[MENU] No games available in master list (RAM empty?)")
-		return
+	if os.Getenv("TERM") == "" {
+		os.Setenv("TERM", "linux")
 	}
-
-	// force TERM so tcell loads the right terminfo
-	os.Setenv("TERM", "xterm")
-
-	tty, err := tcell.NewDevTtyFromDev("/dev/tty2")
-	if err != nil {
-		fmt.Printf("[MENU] Failed to open tty2: %v\n", err)
-		return
-	}
-	defer tty.Close()
-
-	screen, err := tcell.NewTerminfoScreenFromTty(tty)
-	if err != nil {
-		fmt.Printf("[MENU] Failed to create screen: %v\n", err)
-		return
-	}
-	if err := screen.Init(); err != nil {
-		fmt.Printf("[MENU] Failed to init screen: %v\n", err)
-		return
-	}
-	defer screen.Fini()
 
 	app := tview.NewApplication()
-	list := tview.NewList().
-		ShowSecondaryText(false).
-		SetHighlightFullLine(true)
-
-	// Fill with master list
-	for i, g := range allMaster {
-		base := filepath.Base(g)
-		name := strings.TrimSuffix(base, filepath.Ext(base))
-		if len(name) > 70 {
-			name = name[:67] + "..."
-		}
-		gamePath := g
-		list.AddItem(fmt.Sprintf("%d) %s", i+1, name), "", 0, func() {
+	modal := tview.NewModal().
+		SetTitle("Test Modal").
+		SetText("Hello from Zaparoo!\nESC or No to quit.").
+		AddButtons([]string{"Yes", "No"}).
+		SetDoneFunc(func(_ int, buttonLabel string) {
+			fmt.Printf("[MENU] Button pressed: %s\n", buttonLabel)
 			app.Stop()
-			fmt.Printf("[MENU] Launching: %s\n", gamePath)
-			Run([]string{gamePath})
 		})
-	}
 
-	list.SetDoneFunc(func() {
-		app.Stop()
-	})
-
-	// Give list focus and force initial draw
-	app.SetFocus(list)
-	if err := app.SetScreen(screen).SetRoot(list, true).EnableMouse(false).Run(); err != nil {
-		fmt.Printf("[MENU] Failed to start TUI: %v\n", err)
+	if err := app.SetRoot(modal, true).Run(); err != nil {
+		fmt.Printf("[MENU] Failed to run TUI: %v\n", err)
 	}
 }
 
