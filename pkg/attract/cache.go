@@ -13,28 +13,6 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// RemoveCache deletes a key from the chosen cache.
-func RemoveCache(cacheType, key string) {
-	mu.Lock()
-	defer mu.Unlock()
-	cache := cacheSelector(cacheType)
-	if cache == nil {
-		return
-	}
-	delete(cache, key)
-}
-
-// AmendCache appends values onto an existing cache entry.
-func AmendCache(cacheType, key string, vals []string) {
-	mu.Lock()
-	defer mu.Unlock()
-	cache := cacheSelector(cacheType)
-	if cache == nil {
-		return
-	}
-	cache[key] = append(cache[key], vals...)
-}
-
 // -----------------------------
 // Core in-RAM caches
 // -----------------------------
@@ -46,6 +24,7 @@ var (
 	index  = make(map[string][]string) // index per system
 )
 
+// cacheSelector picks which map to use based on type string.
 func cacheSelector(cacheType string) map[string][]string {
 	switch cacheType {
 	case "lists":
@@ -60,21 +39,15 @@ func cacheSelector(cacheType string) map[string][]string {
 }
 
 // -----------------------------
-// Reset / Load helpers
+// Reload / Reset (global)
 // -----------------------------
 
-func ResetAll() {
-	mu.Lock()
-	defer mu.Unlock()
-	lists = make(map[string][]string)
-	master = make(map[string][]string)
-	index = make(map[string][]string)
-}
-
+// ReloadAll clears and reloads all files (lists, master, index) from a directory into RAM.
 func ReloadAll(dir string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
+	// Reset everything
 	lists = make(map[string][]string)
 	master = make(map[string][]string)
 	index = make(map[string][]string)
@@ -87,6 +60,7 @@ func ReloadAll(dir string) error {
 		if e.IsDir() {
 			continue
 		}
+
 		path := filepath.Join(dir, e.Name())
 		lines, err := utils.ReadLines(path)
 		if err != nil {
@@ -100,10 +74,21 @@ func ReloadAll(dir string) error {
 		case "GameIndex":
 			index["__all__"] = append([]string(nil), lines...)
 		default:
+			// treat everything else as a system gamelist
 			lists[e.Name()] = append([]string(nil), lines...)
 		}
 	}
+
 	return nil
+}
+
+// ResetAll clears all caches completely.
+func ResetAll() {
+	mu.Lock()
+	defer mu.Unlock()
+	lists = make(map[string][]string)
+	master = make(map[string][]string)
+	index = make(map[string][]string)
 }
 
 // -----------------------------
@@ -130,6 +115,28 @@ func SetCache(cacheType, key string, vals []string) {
 	cache[key] = append([]string(nil), vals...)
 }
 
+// RemoveCache deletes a key from the chosen cache.
+func RemoveCache(cacheType, key string) {
+	mu.Lock()
+	defer mu.Unlock()
+	cache := cacheSelector(cacheType)
+	if cache == nil {
+		return
+	}
+	delete(cache, key)
+}
+
+// AmendCache appends values onto an existing cache entry.
+func AmendCache(cacheType, key string, vals []string) {
+	mu.Lock()
+	defer mu.Unlock()
+	cache := cacheSelector(cacheType)
+	if cache == nil {
+		return
+	}
+	cache[key] = append(cache[key], vals...)
+}
+
 func CacheKeys(cacheType string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -144,6 +151,11 @@ func CacheKeys(cacheType string) []string {
 	return keys
 }
 
+// -----------------------------
+// Flatten helpers
+// -----------------------------
+
+// FlattenCache returns the full contents of master or index with system headers.
 func FlattenCache(cacheType string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -160,6 +172,7 @@ func FlattenCache(cacheType string) []string {
 	return all
 }
 
+// FlattenSystem returns only the lines for a given system in lists/master/index.
 func FlattenSystem(cacheType, systemID string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -176,8 +189,9 @@ func FlattenSystem(cacheType, systemID string) []string {
 
 const socketPath = "/tmp/sam.sock"
 
+// StartIPCServer launches a background goroutine to serve cache queries over a Unix socket.
 func StartIPCServer() error {
-	_ = os.Remove(socketPath)
+	_ = os.Remove(socketPath) // cleanup old socket
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", socketPath, err)
@@ -217,19 +231,15 @@ func handleConn(conn net.Conn) {
 				fmt.Fprintln(conn, g)
 			}
 		case "LIST_MASTER":
-			for _, g := range FlattenSystem("master", arg) {
+			for _, g := range FlattenCache("master") {
 				fmt.Fprintln(conn, g)
 			}
 		case "LIST_INDEX":
-			for _, g := range FlattenSystem("index", arg) {
+			for _, g := range FlattenCache("index") {
 				fmt.Fprintln(conn, g)
 			}
-		case "RUN_GAME":
-			if arg == "" {
-				fmt.Fprintln(conn, "ERR missing game path")
-				continue
-			}
-			go Run([]string{arg})
+		case "RUN":
+			Run([]string{arg}) // call main process launcher
 			fmt.Fprintln(conn, "OK")
 		default:
 			fmt.Fprintln(conn, "ERR unknown command")
@@ -237,6 +247,7 @@ func handleConn(conn net.Conn) {
 	}
 }
 
+// IPCRequest is a helper for menu clients to send commands to the main SAM process.
 func IPCRequest(msg string) (string, error) {
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
@@ -248,6 +259,7 @@ func IPCRequest(msg string) (string, error) {
 		return "", err
 	}
 
+	// read everything
 	buf, err := io.ReadAll(conn)
 	if err != nil {
 		return "", err
