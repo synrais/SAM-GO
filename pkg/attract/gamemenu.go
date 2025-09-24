@@ -136,10 +136,9 @@ func GameMenu9() error {
 		return fmt.Errorf("failed to write to %s: %w", cmdPath, err)
 	}
 	f.Close()
-
 	fmt.Println("[MENU9] Reloaded MiSTer menu core")
 
-	// Step 2: wait a bit for menu to actually load
+	// Step 2: wait for menu
 	time.Sleep(2 * time.Second)
 
 	// Step 3: use virtual keyboard to press F9
@@ -154,22 +153,23 @@ func GameMenu9() error {
 		return fmt.Errorf("failed to press F9: %w", err)
 	}
 
-	// Step 4: wait a bit for console to actually switch
+	// Step 4: give terminal time to appear
 	time.Sleep(2 * time.Second)
 
-	// Step 5: write /tmp/script launcher so console runs SAM_MENU.sh
-	launcher := `#!/bin/bash
+	// Step 5: create /tmp/script launcher that runs SAM_MENU.sh
+	scriptPath := "/tmp/script"
+	script := `#!/bin/bash
 export LC_ALL=en_US.UTF-8
 export HOME=/root
 export LESSKEY=/media/fat/linux/lesskey
 cd /media/fat/Scripts
 /media/fat/Scripts/SAM_MENU.sh
 `
-	if err := os.WriteFile("/tmp/script", []byte(launcher), 0750); err != nil {
-		return fmt.Errorf("failed to write /tmp/script: %w", err)
+	if err := os.WriteFile(scriptPath, []byte(script), 0750); err != nil {
+		return fmt.Errorf("failed to write %s: %w", scriptPath, err)
 	}
 
-	fmt.Println("[MENU9] Console visible and /tmp/script written -> SAM_MENU.sh should run now.")
+	fmt.Println("[MENU9] Launcher written to /tmp/script — SAM_MENU.sh will run in console")
 
 	return nil
 }
