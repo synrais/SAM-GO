@@ -230,7 +230,7 @@ func GameMenu9() error {
 	fmt.Println("[MENU9] Reloaded MiSTer menu core")
 
 	// Step 2: wait for menu reload
-	// time.Sleep(2 * time.Second)
+	time.Sleep(1 * time.Second)
 
 	// Step 3: press F9 (open terminal)
 	kb, err := input.NewVirtualKeyboard()
