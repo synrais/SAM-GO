@@ -1,175 +1,95 @@
 package input
 
 import (
-	"github.com/bendahl/uinput"
 	"time"
+
+	"github.com/bendahl/uinput"
 )
 
-// sleepTime defines the delay between key presses
+// delay between key presses
 const sleepTime = 40 * time.Millisecond
 
-// VirtualKeyboard struct represents a virtual keyboard device
+// VirtualKeyboard wraps a uinput.Keyboard device
 type VirtualKeyboard struct {
 	Device uinput.Keyboard
 }
 
-// NewVirtualKeyboard creates and returns a new VirtualKeyboard instance
-func NewVirtualKeyboard() (VirtualKeyboard, error) {
-	var kb VirtualKeyboard
-
-	vk, err := uinput.CreateKeyboard("/dev/uinput", []byte("mrext"))
+// NewVirtualKeyboard creates and returns a new VirtualKeyboard
+func NewVirtualKeyboard() (*VirtualKeyboard, error) {
+	vk, err := uinput.CreateKeyboard("/dev/uinput", []byte("SAM_Keyboard"))
 	if err != nil {
-		return kb, err
+		return nil, err
 	}
-
-	kb.Device = vk
-	return kb, nil
+	return &VirtualKeyboard{Device: vk}, nil
 }
 
-// Close closes the virtual keyboard device
-func (k *VirtualKeyboard) Close() {
-	k.Device.Close()
+// Close releases the keyboard device
+func (k *VirtualKeyboard) Close() error {
+	return k.Device.Close()
 }
 
-// Press simulates pressing and releasing a key on the virtual keyboard
-func (k *VirtualKeyboard) Press(key int) {
-	k.Device.KeyDown(key)
+// Press simulates a single key press
+func (k *VirtualKeyboard) Press(key int) error {
+	if err := k.Device.KeyDown(key); err != nil {
+		return err
+	}
 	time.Sleep(sleepTime)
-	k.Device.KeyUp(key)
+	if err := k.Device.KeyUp(key); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Combo simulates pressing and releasing a combination of keys
-func (k *VirtualKeyboard) Combo(keys ...int) {
+func (k *VirtualKeyboard) Combo(keys ...int) error {
 	for _, key := range keys {
-		k.Device.KeyDown(key)
+		if err := k.Device.KeyDown(key); err != nil {
+			return err
+		}
 	}
 	time.Sleep(sleepTime)
 	for _, key := range keys {
-		k.Device.KeyUp(key)
+		if err := k.Device.KeyUp(key); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-// KeyDown simulates pressing a key down
-func (k *VirtualKeyboard) KeyDown(key int) {
-	k.Device.KeyDown(key)
-}
+// --- Convenience Wrappers ---
 
-// KeyUp simulates releasing a key
-func (k *VirtualKeyboard) KeyUp(key int) {
-	k.Device.KeyUp(key)
+func (k *VirtualKeyboard) VolumeUp() error    { return k.Press(uinput.KeyVolumeup) }
+func (k *VirtualKeyboard) VolumeDown() error  { return k.Press(uinput.KeyVolumedown) }
+func (k *VirtualKeyboard) VolumeMute() error  { return k.Press(uinput.KeyMute) }
+func (k *VirtualKeyboard) Menu() error        { return k.Press(uinput.KeyEsc) }
+func (k *VirtualKeyboard) Back() error        { return k.Press(uinput.KeyBackspace) }
+func (k *VirtualKeyboard) Confirm() error     { return k.Press(uinput.KeyEnter) }
+func (k *VirtualKeyboard) Cancel() error      { return k.Menu() }
+func (k *VirtualKeyboard) Up() error          { return k.Press(uinput.KeyUp) }
+func (k *VirtualKeyboard) Down() error        { return k.Press(uinput.KeyDown) }
+func (k *VirtualKeyboard) Left() error        { return k.Press(uinput.KeyLeft) }
+func (k *VirtualKeyboard) Right() error       { return k.Press(uinput.KeyRight) }
+func (k *VirtualKeyboard) Osd() error         { return k.Press(uinput.KeyF12) }
+func (k *VirtualKeyboard) CoreSelect() error  { return k.Combo(uinput.KeyLeftalt, uinput.KeyF12) }
+func (k *VirtualKeyboard) Screenshot() error  { return k.Combo(uinput.KeyLeftalt, uinput.KeyScrolllock) }
+func (k *VirtualKeyboard) RawScreenshot() error {
+	return k.Combo(uinput.KeyLeftalt, uinput.KeyLeftshift, uinput.KeyScrolllock)
 }
-
-// VolumeUp simulates pressing the volume up key
-func (k *VirtualKeyboard) VolumeUp() {
-	k.Press(uinput.KeyVolumeup)
+func (k *VirtualKeyboard) User() error {
+	return k.Combo(uinput.KeyLeftctrl, uinput.KeyLeftalt, uinput.KeyRightalt)
 }
-
-// VolumeDown simulates pressing the volume down key
-func (k *VirtualKeyboard) VolumeDown() {
-	k.Press(uinput.KeyVolumedown)
+func (k *VirtualKeyboard) Reset() error {
+	return k.Combo(uinput.KeyLeftshift, uinput.KeyLeftctrl, uinput.KeyLeftalt, uinput.KeyRightalt)
 }
-
-// VolumeMute simulates pressing the mute key
-func (k *VirtualKeyboard) VolumeMute() {
-	k.Press(uinput.KeyMute)
+func (k *VirtualKeyboard) PairBluetooth() error { return k.Press(uinput.KeyF11) }
+func (k *VirtualKeyboard) ChangeBackground() error {
+	return k.Press(uinput.KeyF1)
 }
-
-// Menu simulates pressing the "Menu" (Escape) key
-func (k *VirtualKeyboard) Menu() {
-	k.Press(uinput.KeyEsc)
+func (k *VirtualKeyboard) ToggleCoreDates() error {
+	return k.Press(uinput.KeyF2)
 }
-
-// Back simulates pressing the backspace key
-func (k *VirtualKeyboard) Back() {
-	k.Press(uinput.KeyBackspace)
-}
-
-// Confirm simulates pressing the "Enter" key
-func (k *VirtualKeyboard) Confirm() {
-	k.Press(uinput.KeyEnter)
-}
-
-// Cancel simulates pressing the "Menu" key (Escape)
-func (k *VirtualKeyboard) Cancel() {
-	k.Menu()
-}
-
-// Up simulates pressing the "Up" arrow key
-func (k *VirtualKeyboard) Up() {
-	k.Press(uinput.KeyUp)
-}
-
-// Down simulates pressing the "Down" arrow key
-func (k *VirtualKeyboard) Down() {
-	k.Press(uinput.KeyDown)
-}
-
-// Left simulates pressing the "Left" arrow key
-func (k *VirtualKeyboard) Left() {
-	k.Press(uinput.KeyLeft)
-}
-
-// Right simulates pressing the "Right" arrow key
-func (k *VirtualKeyboard) Right() {
-	k.Press(uinput.KeyRight)
-}
-
-// Osd simulates pressing the "F12" key (for On-Screen Display)
-func (k *VirtualKeyboard) Osd() {
-	k.Press(uinput.KeyF12)
-}
-
-// CoreSelect simulates pressing the "LeftAlt + F12" keys for core selection
-func (k *VirtualKeyboard) CoreSelect() {
-	k.Combo(uinput.KeyLeftalt, uinput.KeyF12)
-}
-
-// Screenshot simulates pressing the "LeftAlt + ScrollLock" keys for taking a screenshot
-func (k *VirtualKeyboard) Screenshot() {
-	k.Combo(uinput.KeyLeftalt, uinput.KeyScrolllock)
-}
-
-// RawScreenshot simulates pressing the "LeftAlt + LeftShift + ScrollLock" keys for a raw screenshot
-func (k *VirtualKeyboard) RawScreenshot() {
-	k.Combo(uinput.KeyLeftalt, uinput.KeyLeftshift, uinput.KeyScrolllock)
-}
-
-// User simulates pressing the "LeftCtrl + LeftAlt + RightAlt" keys for user-defined action
-func (k *VirtualKeyboard) User() {
-	k.Combo(uinput.KeyLeftctrl, uinput.KeyLeftalt, uinput.KeyRightalt)
-}
-
-// Reset simulates pressing a combination of reset keys
-func (k *VirtualKeyboard) Reset() {
-	k.Combo(uinput.KeyLeftshift, uinput.KeyLeftctrl, uinput.KeyLeftalt, uinput.KeyRightalt)
-}
-
-// PairBluetooth simulates pressing the "F11" key for Bluetooth pairing
-func (k *VirtualKeyboard) PairBluetooth() {
-	k.Press(uinput.KeyF11)
-}
-
-// ChangeBackground simulates pressing the "F1" key for changing the background
-func (k *VirtualKeyboard) ChangeBackground() {
-	k.Press(uinput.KeyF1)
-}
-
-// ToggleCoreDates simulates pressing the "F2" key for toggling core dates
-func (k *VirtualKeyboard) ToggleCoreDates() {
-	k.Press(uinput.KeyF2)
-}
-
-// Console simulates pressing the "F9" key to open the console
-func (k *VirtualKeyboard) Console() {
-	k.Press(uinput.KeyF9)
-}
-
-// ExitConsole simulates pressing the "F12" key to exit the console
-func (k *VirtualKeyboard) ExitConsole() {
-	k.Press(uinput.KeyF12)
-}
-
-// ComputerOsd simulates pressing the "LeftMeta + F12" keys for a system OSD
-func (k *VirtualKeyboard) ComputerOsd() {
-	k.Combo(uinput.KeyLeftmeta, uinput.KeyF12)
+func (k *VirtualKeyboard) Console() error     { return k.Press(uinput.KeyF9) }
+func (k *VirtualKeyboard) ExitConsole() error { return k.Press(uinput.KeyF12) }
+func (k *VirtualKeyboard) ComputerOsd() error {
+	return k.Combo(uinput.KeyLeftmeta, uinput.KeyF12)
 }
