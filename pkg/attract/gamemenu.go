@@ -76,27 +76,26 @@ func GameMenu9() error {
 	return nil
 }
 
-// ===== Internal Go-based Menu =====
+// ===== Internal Go-based Menu (via IPC) =====
 
-// RunMenu runs the system+game browser (replacement for SAM_MENU.sh)
+// RunMenu talks to the Attract IPC server instead of direct RAM access.
 func RunMenu() {
-	master := FlattenCache("master")
-	if len(master) == 0 {
-		fmt.Println("[MENU] No MasterList in memory")
+	// Get system list from IPC
+	resp, err := IPCRequest("LIST_SYSTEMS")
+	if err != nil {
+		fmt.Println("[MENU] IPC error fetching systems:", err)
 		return
 	}
-
-	// system selection
-	systems := CacheKeys("lists")
-	if len(systems) == 0 {
-		fmt.Println("[MENU] No gamelists found")
+	systems := strings.Split(strings.TrimSpace(resp), "\n")
+	if len(systems) == 0 || (len(systems) == 1 && systems[0] == "") {
+		fmt.Println("[MENU] No gamelists available from IPC")
 		return
 	}
 
 	for {
 		fmt.Println("==== Systems ====")
 		for i, sys := range systems {
-			fmt.Printf("%2d) %s\n", i+1, strings.TrimSuffix(sys, "_gamelist.txt"))
+			fmt.Printf("%2d) %s\n", i+1, sys)
 		}
 
 		var sysChoice int
@@ -111,9 +110,14 @@ func RunMenu() {
 		}
 		chosenSys := systems[sysChoice-1]
 
-		// game selection
-		games := GetCache("lists", chosenSys)
-		if len(games) == 0 {
+		// Fetch games for this system via IPC
+		resp, err := IPCRequest("LIST_GAMES " + chosenSys)
+		if err != nil {
+			fmt.Println("[MENU] IPC error fetching games:", err)
+			continue
+		}
+		games := strings.Split(strings.TrimSpace(resp), "\n")
+		if len(games) == 0 || (len(games) == 1 && games[0] == "") {
 			fmt.Printf("[MENU] No games found for %s\n", chosenSys)
 			continue
 		}
@@ -142,15 +146,18 @@ func RunMenu() {
 
 			chosenGame := games[gameChoice-1]
 			fmt.Printf("[MENU] Launching: %s\n", chosenGame)
-			Run([]string{chosenGame})
+
+			// Launch game via IPC so Attract process does the actual run
+			if _, err := IPCRequest("RUN_GAME " + chosenGame); err != nil {
+				fmt.Println("[MENU] IPC error launching game:", err)
+			}
 		}
 	}
 }
 
 // LaunchMenu is the entry point for `SAM -menu`.
-// It just runs the internal Go-based menu.
 func LaunchMenu(cfg *config.UserConfig) error {
-    fmt.Println("[MENU] Launching interactive game menu")
-    RunMenu()
-    return nil
+	fmt.Println("[MENU] Launching interactive game menu (IPC mode)")
+	RunMenu()
+	return nil
 }
