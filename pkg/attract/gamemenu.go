@@ -3,6 +3,7 @@ package attract
 import (
 	"fmt"
 	"log"
+	"strings"
 	"os"
 
 	"github.com/gdamore/tcell/v2"
