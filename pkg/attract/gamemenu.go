@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -57,7 +59,7 @@ func GameMenu9() error {
 	}
 	fmt.Println("[DEBUG] F9 pressed")
 
-	fmt.Println("[DEBUG] Sleeping 3s to let terminal settle…")
+	fmt.Println("[DEBUG] Sleeping 3s for terminal…")
 	time.Sleep(3 * time.Second)
 
 	// Step 4: switch to tty2
@@ -69,40 +71,77 @@ func GameMenu9() error {
 	}
 	fmt.Println("[DEBUG] Successfully switched to tty2")
 
-	// Step 5: run a TUI test menu directly on tty2
-	fmt.Println("[DEBUG] Handing control to RunMenu() on tty2")
+	// Step 5: hand off to RunMenu
+	fmt.Println("[DEBUG] Launching RunMenu() on tty2")
 	RunMenu()
 	return nil
 }
 
-// ===== Direct in-RAM Menu (tview test modal) =====
+// ===== Direct in-RAM Menu (tview) =====
 
 func RunMenu() {
-	fmt.Println("[DEBUG] Entered RunMenu()")
+	allMaster := FlattenCache("master")
+	if len(allMaster) == 0 {
+		fmt.Println("[MENU] No games available in master list (RAM empty?)")
+		return
+	}
 
 	// force TERM so tcell knows what to load
 	os.Setenv("TERM", "linux")
 
+	// open tty2 directly
+	tty, err := tcell.NewDevTtyFromDev("/dev/tty2")
+	if err != nil {
+		fmt.Printf("[MENU] Failed to open tty2: %v\n", err)
+		return
+	}
+	defer tty.Close()
+
+	screen, err := tcell.NewTerminfoScreenFromTty(tty)
+	if err != nil {
+		fmt.Printf("[MENU] Failed to create screen: %v\n", err)
+		return
+	}
+	if err := screen.Init(); err != nil {
+		fmt.Printf("[MENU] Failed to init screen: %v\n", err)
+		return
+	}
+	defer screen.Fini()
+
 	app := tview.NewApplication()
+	list := tview.NewList().
+		ShowSecondaryText(false).
+		SetHighlightFullLine(true)
 
-	// simple test modal like Zaparoo’s installer
-	modal := tview.NewModal().
-		SetText("Hello from SAM TUI!\nThis proves tview/tcell works.").
-		AddButtons([]string{"OK"}).
-		SetDoneFunc(func(_ int, _ string) {
+	// Fill with master list
+	for _, g := range allMaster {
+		base := filepath.Base(g)
+		name := strings.TrimSuffix(base, filepath.Ext(base))
+		if len(name) > 70 {
+			name = name[:67] + "..."
+		}
+		gamePath := g
+		list.AddItem(name, "", 0, func() {
 			app.Stop()
+			fmt.Printf("[MENU] Launching: %s\n", gamePath)
+			Run([]string{gamePath})
 		})
+	}
 
-	// allow ESC to exit
-	modal.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyEscape {
+	list.SetDoneFunc(func() {
+		app.Stop()
+	})
+
+	// exit on ESC
+	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+		if ev.Key() == tcell.KeyEscape {
 			app.Stop()
 			return nil
 		}
-		return event
+		return ev
 	})
 
-	if err := app.SetRoot(modal, true).EnableMouse(true).Run(); err != nil {
+	if err := app.SetScreen(screen).SetRoot(list, true).Run(); err != nil {
 		fmt.Printf("[MENU] Failed to start TUI: %v\n", err)
 	}
 }
