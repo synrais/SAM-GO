@@ -108,41 +108,45 @@ func (n Node) FilterValue() string { return n.Display }
 // ===== Styles =====
 
 var (
-	// General border and text styles
-	borderStyle  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Foreground(lipgloss.Color("33")) // Darker blue for the border
+	borderStyle  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Foreground(lipgloss.Color("33"))
 	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
-	selectedItem = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Background(lipgloss.Color("33")) // Light blue for highlighted
-
-	// Blue background for the main window and menu items
-	blueBgStyle = lipgloss.NewStyle().Background(lipgloss.Color("33")).Foreground(lipgloss.Color("255")).Bold(true) // Dark blue background with white text
-
-	// Background for unselected items, lighter blue
-	normalItemBgStyle = lipgloss.NewStyle().Background(lipgloss.Color("24")).Foreground(lipgloss.Color("255")) // Lighter blue
+	selectedItem = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Background(lipgloss.Color("33"))
 )
 
 // ===== Menu Model =====
 
 type menuModel struct {
-	list   list.Model
-	stack  []string
-	root   string
-	cursor int
+	list    list.Model
+	stack   []string
+	systems map[string][]Node // system → game nodes
+	cursor  int
 }
 
-func newMenuModel(root string) menuModel {
-	items := buildRootItems(root)
+func newMenuModel(masterlistPath string) menuModel {
+	systems := buildSystemsFromMasterlist(masterlistPath)
+
+	// System nodes at root level
+	var systemNodes []Node
+	for sys := range systems {
+		systemNodes = append(systemNodes, Node{
+			Display: sys,
+			Path:    sys,
+			IsDir:   true,
+		})
+	}
+
 	delegate := list.NewDefaultDelegate()
 	delegate.Styles.SelectedTitle = selectedItem
 	delegate.Styles.SelectedDesc = selectedItem
 
-	l := list.New(toListItems(items), delegate, 50, 20)
-	l.Title = "SAM File Browser"
+	l := list.New(toListItems(systemNodes), delegate, 50, 20)
+	l.Title = "SAM Masterlist Browser"
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
 	l.SetShowHelp(true)
 	l.SetShowPagination(true)
 
-	return menuModel{list: l, stack: []string{}, root: root, cursor: 0}
+	return menuModel{list: l, stack: []string{}, systems: systems, cursor: 0}
 }
 
 func (m menuModel) Init() tea.Cmd { return nil }
@@ -157,14 +161,13 @@ func (m menuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if sel.IsDir {
-				if sel.Display == ".. Back" {
-					return m.goBack(), nil
+				// Show system’s games
+				if games, ok := m.systems[sel.Path]; ok {
+					children := append([]Node{{Display: ".. Back", Path: "..", IsDir: true}}, games...)
+					m.list.SetItems(toListItems(children))
+					m.list.Title = sel.Display
+					m.stack = append(m.stack, sel.Path)
 				}
-				m.stack = append(m.stack, sel.Path)
-				children := listDir(sel.Path)
-				children = append([]Node{{Display: ".. Back", Path: "..", IsDir: true}}, children...)
-				m.list.SetItems(toListItems(children))
-				m.list.Title = filepath.Base(sel.Path)
 			} else {
 				fmt.Printf("[MENU] Launching: %s\n", sel.Path)
 				Run([]string{sel.Path})
@@ -198,57 +201,55 @@ func (m menuModel) goBack() menuModel {
 	}
 	m.stack = m.stack[:len(m.stack)-1]
 	if len(m.stack) == 0 {
-		items := buildRootItems(m.root)
-		m.list.SetItems(toListItems(items))
-		m.list.Title = "SAM File Browser"
+		// Back to systems
+		var systemNodes []Node
+		for sys := range m.systems {
+			systemNodes = append(systemNodes, Node{
+				Display: sys,
+				Path:    sys,
+				IsDir:   true,
+			})
+		}
+		m.list.SetItems(toListItems(systemNodes))
+		m.list.Title = "SAM Masterlist Browser"
 	} else {
-		parent := m.stack[len(m.stack)-1]
-		children := listDir(parent)
-		children = append([]Node{{Display: ".. Back", Path: "..", IsDir: true}}, children...)
+		// Shouldn’t normally happen (2-level tree: systems → games)
+		system := m.stack[len(m.stack)-1]
+		children := append([]Node{{Display: ".. Back", Path: "..", IsDir: true}}, m.systems[system]...)
 		m.list.SetItems(toListItems(children))
-		m.list.Title = filepath.Base(parent)
+		m.list.Title = system
 	}
 	return m
 }
 
 // ===== Helpers =====
 
-func buildRootItems(root string) []Node {
-	var items []Node
-	entries, _ := filepath.Glob(filepath.Join(root, "*_gamelist.txt"))
-	for _, e := range entries {
-		lines := readLines(e)
-		for _, line := range lines {
-			if line == "" {
-				continue
+func buildSystemsFromMasterlist(masterlistPath string) map[string][]Node {
+	systems := make(map[string][]Node)
+	lines := readLines(masterlistPath)
+	currentSystem := ""
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "# SYSTEM:") {
+			system := strings.TrimSpace(strings.TrimPrefix(line, "# SYSTEM:"))
+			currentSystem = system
+			if _, ok := systems[currentSystem]; !ok {
+				systems[currentSystem] = []Node{}
 			}
-			dir := filepath.Dir(line)
-			if !contains(items, dir) {
-				items = append(items, Node{
-					Display: filepath.Base(dir),
-					Path:    dir,
-					IsDir:   true,
-				})
-			}
+			continue
+		}
+		if currentSystem != "" {
+			systems[currentSystem] = append(systems[currentSystem], Node{
+				Display: filepath.Base(line),
+				Path:    line,
+				IsDir:   false,
+			})
 		}
 	}
-	return items
-}
-
-func listDir(path string) []Node {
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return nil
-	}
-	var nodes []Node
-	for _, e := range entries {
-		nodes = append(nodes, Node{
-			Display: e.Name(),
-			Path:    filepath.Join(path, e.Name()),
-			IsDir:   e.IsDir(),
-		})
-	}
-	return nodes
+	return systems
 }
 
 func toListItems(nodes []Node) []list.Item {
@@ -257,15 +258,6 @@ func toListItems(nodes []Node) []list.Item {
 		out = append(out, n)
 	}
 	return out
-}
-
-func contains(nodes []Node, path string) bool {
-	for _, n := range nodes {
-		if n.Path == path {
-			return true
-		}
-	}
-	return false
 }
 
 func readLines(file string) []string {
@@ -284,10 +276,9 @@ func readLines(file string) []string {
 
 // ===== Entry Points =====
 
-
 func RunMenu() {
-	root := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
-	p := tea.NewProgram(newMenuModel(root), tea.WithAltScreen())
+	masterlist := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelist_Master.txt"
+	p := tea.NewProgram(newMenuModel(masterlist), tea.WithAltScreen())
 	if err := p.Start(); err != nil {
 		fmt.Println("Error running menu:", err)
 		os.Exit(1)
