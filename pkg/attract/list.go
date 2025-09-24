@@ -138,7 +138,6 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			_ = WriteLinesIfChanged(gamelistPath, stage2)
 
 			// Stage 3
-			s3Start := time.Now()
 			stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
 			SetList(GamelistFilename(system.Id), stage3)
 
