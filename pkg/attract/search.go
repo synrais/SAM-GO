@@ -14,8 +14,16 @@ func SearchAndPlay(inputCh <-chan string) {
 	fmt.Println("[SEARCH] 🔍 Entered search mode (Attract paused).")
 	fmt.Println("[SEARCH] Type to filter, ENTER to launch, ESC to exit.")
 
-	// grab all games from GameIndex
-	index := FlattenCache("index")
+	// grab all games from GameIndex (in-RAM, no headers)
+	var index []string
+	for _, sys := range CacheKeys("index") {
+		for _, line := range GetCache("index", sys) {
+			if strings.HasPrefix(line, "#") {
+				continue // skip system markers
+			}
+			index = append(index, line)
+		}
+	}
 	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(index))
 
 	var sb strings.Builder
