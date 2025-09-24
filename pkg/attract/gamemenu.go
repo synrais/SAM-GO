@@ -123,7 +123,7 @@ func GameMenu8() error {
 	return nil
 }
 
-// MENU 9: reload menu, open console, and run SAM_MENU.sh via /tmp/script
+// MENU 9: reset to MiSTer menu, open console with F9, and run SAM_MENU.sh
 func GameMenu9() error {
 	// Step 1: reload menu core
 	cmdPath := "/dev/MiSTer_cmd"
@@ -138,10 +138,10 @@ func GameMenu9() error {
 	f.Close()
 	fmt.Println("[MENU9] Reloaded MiSTer menu core")
 
-	// Step 2: give the menu time to come back
+	// Step 2: wait a bit for menu to load
 	time.Sleep(2 * time.Second)
 
-	// Step 3: create /tmp/script that will run SAM_MENU.sh
+	// Step 3: write launcher to /tmp/script
 	launcher := `#!/bin/bash
 export LC_ALL=en_US.UTF-8
 export HOME=/root
@@ -152,22 +152,20 @@ cd /media/fat/Scripts
 	if err := os.WriteFile("/tmp/script", []byte(launcher), 0750); err != nil {
 		return fmt.Errorf("failed to write /tmp/script: %w", err)
 	}
-	fmt.Println("[MENU9] Wrote launcher /tmp/script")
+	fmt.Println("[MENU9] Launcher /tmp/script created")
 
-	// Step 4: press F9 to flip MiSTer into console mode (tty2)
+	// Step 4: press F9 to switch to console (tty2) and let MiSTer auto-run /tmp/script
 	kb, err := input.NewVirtualKeyboard()
 	if err != nil {
 		return fmt.Errorf("failed to create virtual keyboard: %w", err)
 	}
 	defer kb.Close()
 
-	fmt.Println("[MENU9] Sending F9 to open console...")
+	fmt.Println("[MENU9] Sending F9 to open console and run SAM_MENU.sh...")
 	if err := kb.Console(); err != nil {
 		return fmt.Errorf("failed to press F9: %w", err)
 	}
 
-	fmt.Println("[MENU9] Console should now run SAM_MENU.sh via /tmp/script.")
+	fmt.Println("[MENU9] Console should now be visible and SAM_MENU.sh running.")
 	return nil
 }
-
-
