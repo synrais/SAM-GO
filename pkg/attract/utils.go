@@ -128,7 +128,7 @@ var usedPools = make(map[string]map[string]bool)
 func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 	fmt.Println("[DEBUG][PickRandomGame] called")
 
-	keys := ListKeys()
+	keys := CacheKeys("lists")
 	fmt.Println("[DEBUG][PickRandomGame] all list keys:", keys)
 
 	if len(keys) == 0 {
@@ -153,7 +153,7 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 	listKey := systemKeys[r.Intn(len(systemKeys))]
 	fmt.Println("[DEBUG][PickRandomGame] chosen listKey:", listKey)
 
-	lines := GetList(listKey)
+	lines := GetCache("lists", listKey)
 	fmt.Println("[DEBUG][PickRandomGame] entries in list:", len(lines))
 	if len(lines) == 0 {
 		return ""
@@ -193,10 +193,10 @@ func PickRandomGame(cfg *config.UserConfig, r *rand.Rand) string {
 	used[choice] = true
 
 	// update history
-	hist := GetList("History.txt")
+	hist := GetCache("lists", "History.txt")
 	fmt.Println("[DEBUG][PickRandomGame] history len before:", len(hist))
 	hist = append(hist, choice)
-	SetList("History.txt", hist)
+	SetCache("lists", "History.txt", hist)
 	currentIndex = len(hist) - 1
 	fmt.Println("[DEBUG][PickRandomGame] history len after:", len(hist), "currentIndex:", currentIndex)
 
@@ -221,7 +221,7 @@ var currentIndex int = -1
 func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 	fmt.Println("[DEBUG][Next] called, currentIndex:", currentIndex)
 
-	hist := GetList("History.txt")
+	hist := GetCache("lists", "History.txt")
 	fmt.Println("[DEBUG][Next] history length:", len(hist))
 
 	// Case 1: move forward in history
@@ -251,7 +251,7 @@ func Next(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
 }
 
 func Back(cfg *config.UserConfig, r *rand.Rand) (string, bool) {
-	hist := GetList("History.txt")
+	hist := GetCache("lists", "History.txt")
 
 	if currentIndex > 0 {
 		currentIndex--
