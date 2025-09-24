@@ -123,7 +123,7 @@ func GameMenu8() error {
 	return nil
 }
 
-// MENU 9: reset to MiSTer menu, open console with F9, and run SAM_MENU.sh
+// MENU 9: reset to MiSTer menu, open console with F9, then run SAM_MENU.sh
 func GameMenu9() error {
 	// Step 1: reload menu core
 	cmdPath := "/dev/MiSTer_cmd"
@@ -136,12 +136,28 @@ func GameMenu9() error {
 		return fmt.Errorf("failed to write to %s: %w", cmdPath, err)
 	}
 	f.Close()
+
 	fmt.Println("[MENU9] Reloaded MiSTer menu core")
 
-	// Step 2: wait a bit for menu to load
+	// Step 2: wait a bit for menu to actually load
 	time.Sleep(2 * time.Second)
 
-	// Step 3: write launcher to /tmp/script
+	// Step 3: use virtual keyboard to press F9
+	kb, err := input.NewVirtualKeyboard()
+	if err != nil {
+		return fmt.Errorf("failed to create virtual keyboard: %w", err)
+	}
+	defer kb.Close()
+
+	fmt.Println("[MENU9] Sending F9 to open console...")
+	if err := kb.Console(); err != nil {
+		return fmt.Errorf("failed to press F9: %w", err)
+	}
+
+	// Step 4: wait a moment for console to settle
+	time.Sleep(1 * time.Second)
+
+	// Step 5: write /tmp/script launcher so console runs SAM_MENU.sh
 	launcher := `#!/bin/bash
 export LC_ALL=en_US.UTF-8
 export HOME=/root
@@ -152,20 +168,8 @@ cd /media/fat/Scripts
 	if err := os.WriteFile("/tmp/script", []byte(launcher), 0750); err != nil {
 		return fmt.Errorf("failed to write /tmp/script: %w", err)
 	}
-	fmt.Println("[MENU9] Launcher /tmp/script created")
 
-	// Step 4: press F9 to switch to console (tty2) and let MiSTer auto-run /tmp/script
-	kb, err := input.NewVirtualKeyboard()
-	if err != nil {
-		return fmt.Errorf("failed to create virtual keyboard: %w", err)
-	}
-	defer kb.Close()
+	fmt.Println("[MENU9] Console visible and /tmp/script written -> SAM_MENU.sh should run now.")
 
-	fmt.Println("[MENU9] Sending F9 to open console and run SAM_MENU.sh...")
-	if err := kb.Console(); err != nil {
-		return fmt.Errorf("failed to press F9: %w", err)
-	}
-
-	fmt.Println("[MENU9] Console should now be visible and SAM_MENU.sh running.")
 	return nil
 }
