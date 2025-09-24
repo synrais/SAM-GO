@@ -12,6 +12,17 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// ===== Menus 1–8 (placeholders) =====
+
+func GameMenu1() error { fmt.Println("[DEBUG] GameMenu1 called"); return nil }
+func GameMenu2() error { fmt.Println("[DEBUG] GameMenu2 called"); return nil }
+func GameMenu3() error { fmt.Println("[DEBUG] GameMenu3 called"); return nil }
+func GameMenu4() error { fmt.Println("[DEBUG] GameMenu4 called"); return nil }
+func GameMenu5() error { fmt.Println("[DEBUG] GameMenu5 called"); return nil }
+func GameMenu6() error { fmt.Println("[DEBUG] GameMenu6 called"); return nil }
+func GameMenu7() error { fmt.Println("[DEBUG] GameMenu7 called"); return nil }
+func GameMenu8() error { fmt.Println("[DEBUG] GameMenu8 called"); return nil }
+
 // ===== File/Dir Struct =====
 
 type Node struct {
@@ -41,7 +52,6 @@ var (
 	// Header Styles
 	blueBgStyle = lipgloss.NewStyle().Background(lipgloss.Color("33")).Foreground(lipgloss.Color("255")).Bold(true)
 )
-
 
 // ===== Menu Model =====
 
