@@ -220,25 +220,33 @@ func (m menuModel) goBack() menuModel {
 
 // ===== Helpers =====
 
-// 🚀 This version avoids FlattenCache — grab per-system lists directly
 func buildSystemsFromCache() map[string][]Node {
-	systems := make(map[string][]Node)
+    systems := make(map[string][]Node)
+    lines := FlattenCache("master") // one big slice, already in RAM
+    currentSystem := ""
 
-	masterCache := GetCacheMap("master") // systemID → []string
-	for sys, entries := range masterCache {
-		nodes := make([]Node, 0, len(entries))
-		for _, path := range entries {
-			nodes = append(nodes, Node{
-				Display: filepath.Base(path),
-				Path:    path,
-				IsDir:   false,
-			})
-		}
-		systems[sys] = nodes
-		fmt.Printf("[DEBUG] System %s → %d games\n", sys, len(nodes))
-	}
-
-	return systems
+    for _, line := range lines {
+        if line == "" {
+            continue
+        }
+        if strings.HasPrefix(line, "# SYSTEM:") {
+            system := strings.TrimSpace(line[len("# SYSTEM:"):])
+            currentSystem = system
+            if _, ok := systems[currentSystem]; !ok {
+                systems[currentSystem] = []Node{}
+            }
+            continue
+        }
+        if currentSystem != "" {
+            game := filepath.Base(line)
+            systems[currentSystem] = append(systems[currentSystem], Node{
+                Display: game,
+                Path:    line,
+                IsDir:   false,
+            })
+        }
+    }
+    return systems
 }
 
 func toListItems(nodes []Node) []list.Item {
