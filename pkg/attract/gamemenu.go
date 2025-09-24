@@ -94,14 +94,34 @@ func RunMenu() {
 		return
 	}
 
-	// force TERM so tcell works on MiSTer
+	// force TERM so tcell knows what to load
 	os.Setenv("TERM", "linux")
+
+	// 🔑 zaparoo pattern: open tty2 directly
+	tty, err := tcell.NewDevTtyFromDev("/dev/tty2")
+	if err != nil {
+		fmt.Printf("[MENU] Failed to open tty2: %v\n", err)
+		return
+	}
+	defer tty.Close()
+
+	screen, err := tcell.NewTerminfoScreenFromTty(tty)
+	if err != nil {
+		fmt.Printf("[MENU] Failed to create screen: %v\n", err)
+		return
+	}
+	if err := screen.Init(); err != nil {
+		fmt.Printf("[MENU] Failed to init screen: %v\n", err)
+		return
+	}
+	defer screen.Fini()
 
 	app := tview.NewApplication()
 	list := tview.NewList().
 		ShowSecondaryText(false).
 		SetHighlightFullLine(true)
 
+	// Fill with master list
 	for i, g := range allMaster {
 		base := filepath.Base(g)
 		name := strings.TrimSuffix(base, filepath.Ext(base))
@@ -120,7 +140,8 @@ func RunMenu() {
 		app.Stop()
 	})
 
-	if err := app.SetRoot(list, true).EnableMouse(false).Run(); err != nil {
+	// 🔑 zaparoo pattern: bind screen into tview app
+	if err := app.SetScreen(screen).SetRoot(list, true).Run(); err != nil {
 		fmt.Printf("[MENU] Failed to start TUI: %v\n", err)
 	}
 }
