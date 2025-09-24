@@ -22,6 +22,7 @@ var (
 )
 
 func main() {
+	// keep memory low on MiSTer
 	debug.SetMemoryLimit(128 * 1024 * 1024) // 128MB soft limit
 	flag.Parse()
 
@@ -58,7 +59,7 @@ func main() {
 		}
 
 	case *menuMode:
-		// Menu mode
+		// Interactive menu mode (now reads in-process caches)
 		if err := attract.LaunchMenu(cfg); err != nil {
 			fmt.Fprintln(os.Stderr, "[MAIN] Menu error:", err)
 			os.Exit(1)
