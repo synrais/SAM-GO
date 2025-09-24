@@ -2,211 +2,124 @@ package attract
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"sync"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// -----------------------------
-// Core in-RAM cache
-// -----------------------------
+// SearchAndPlay enters search mode and launches matching games.
+func SearchAndPlay(inputCh <-chan string) {
+	fmt.Println("[SEARCH] 🔍 Entered search mode (Attract paused).")
+	fmt.Println("[SEARCH] Type to filter, ENTER to launch, ESC to exit.")
 
-var (
-	mu     sync.RWMutex
-	lists  = make(map[string][]string) // gamelists per system
-	master = make(map[string][]string) // master list per system
-	index  = make(map[string][]string) // index per system
-)
+	// grab all games from GameIndex
+	index := FlattenIndex()
+	fmt.Printf("[SEARCH] GameIndex loaded: %d entries\n", len(index))
 
-// -----------------------------
-// Reload / Reset (global)
-// -----------------------------
+	var sb strings.Builder
+	var candidates []string
+	idx := -1
 
-// ReloadAll clears and reloads all files (lists, master, index) from a directory into RAM.
-func ReloadAll(dir string) error {
-	mu.Lock()
-	defer mu.Unlock()
+	// get input map
+	inputMap := SearchInputMap(&sb, &candidates, &idx, index, inputCh)
 
-	// Reset everything
-	lists = make(map[string][]string)
-	master = make(map[string][]string)
-	index = make(map[string][]string)
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return fmt.Errorf("reload cache: %w", err)
+	for ev := range inputCh {
+		evLower := strings.ToLower(ev)
+		if action, ok := inputMap[evLower]; ok {
+			action()
+			if evLower == "esc" {
+				// exit search mode cleanly
+				return
+			}
+		} else {
+			// handle single-character inputs like a–z, 0–9, punctuation
+			if len(ev) == 1 {
+				sb.WriteString(ev)
+				fmt.Printf("[SEARCH] Current query: %q\n", sb.String())
+			}
+		}
 	}
-	for _, e := range entries {
-		if e.IsDir() {
+}
+
+// --- Matching ---
+
+func findMatches(qn, qext string, index []string) []string {
+	var prefix, substring, fuzzy []string
+
+	for _, path := range index {
+		name, ext := utils.NormalizeEntry(path)
+
+		if qext != "" && qext != ext {
 			continue
 		}
 
-		path := filepath.Join(dir, e.Name())
-		lines, err := utils.ReadLines(path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[WARN] failed to read %s: %v\n", path, err)
-			continue
-		}
-
-		switch e.Name() {
-		case "MasterList":
-			master["__all__"] = append([]string(nil), lines...)
-		case "GameIndex":
-			index["__all__"] = append([]string(nil), lines...)
-		default:
-			lists[e.Name()] = append([]string(nil), lines...)
+		if strings.HasPrefix(name, qn) {
+			prefix = append(prefix, path)
+		} else if strings.Contains(name, qn) {
+			substring = append(substring, path)
+		} else {
+			if levenshtein(qn, name) <= 3 {
+				fuzzy = append(fuzzy, path)
+			}
 		}
 	}
 
-	return nil
-}
+	// sort each group
+	sort.Slice(prefix, func(i, j int) bool { return prefix[i] < prefix[j] })
+	sort.Slice(substring, func(i, j int) bool { return substring[i] < substring[j] })
+	sort.Slice(fuzzy, func(i, j int) bool { return fuzzy[i] < fuzzy[j] })
 
-// ResetAll clears all caches completely.
-func ResetAll() {
-	mu.Lock()
-	defer mu.Unlock()
-	lists = make(map[string][]string)
-	master = make(map[string][]string)
-	index = make(map[string][]string)
-}
+	out := append(prefix, substring...)
+	out = append(out, fuzzy...)
 
-// -----------------------------
-// Lists cache
-// -----------------------------
-
-func GetList(name string) []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	return append([]string(nil), lists[name]...)
-}
-
-func SetList(name string, lines []string) {
-	mu.Lock()
-	defer mu.Unlock()
-	lists[name] = append([]string(nil), lines...)
-}
-
-func RemoveList(name string) {
-	mu.Lock()
-	defer mu.Unlock()
-	delete(lists, name)
-}
-
-func AmendList(name string, lines []string) {
-	mu.Lock()
-	defer mu.Unlock()
-	lists[name] = append([]string(nil), lines...)
-}
-
-func ListKeys() []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	keys := make([]string, 0, len(lists))
-	for k := range lists {
-		keys = append(keys, k)
+	if len(out) > 200 {
+		out = out[:200]
 	}
-	return keys
+	fmt.Printf("[SEARCH] Matches found: %d\n", len(out))
+	return out
 }
 
-// -----------------------------
-// MasterList cache
-// -----------------------------
+// --- Helpers ---
 
-func GetMasterSystem(systemID string) []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	return append([]string(nil), master[systemID]...)
+func launchGame(path string) {
+	name, ext := utils.NormalizeEntry(path)
+	fmt.Printf("[SEARCH] %s %s <%s>\n",
+		time.Now().Format("15:04:05"),
+		strings.TrimSuffix(name, ext),
+		path,
+	)
+	Run([]string{path})
 }
 
-func SetMasterSystem(systemID string, paths []string) {
-	mu.Lock()
-	defer mu.Unlock()
-	master[systemID] = append([]string(nil), paths...)
-}
-
-func RemoveMasterSystem(systemID string) {
-	mu.Lock()
-	defer mu.Unlock()
-	delete(master, systemID)
-}
-
-func AmendMasterSystem(systemID string, paths []string) {
-	mu.Lock()
-	defer mu.Unlock()
-	master[systemID] = append([]string(nil), paths...)
-}
-
-func MasterKeys() []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	keys := make([]string, 0, len(master))
-	for k := range master {
-		keys = append(keys, k)
+func levenshtein(a, b string) int {
+	la, lb := len(a), len(b)
+	d := make([][]int, la+1)
+	for i := range d {
+		d[i] = make([]int, lb+1)
 	}
-	return keys
-}
-
-// FlattenMaster returns the full master list as one slice of lines.
-func FlattenMaster() []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	all := []string{}
-	for sys, lines := range master {
-		all = append(all, "# SYSTEM: "+sys)
-		all = append(all, lines...)
+	for i := 0; i <= la; i++ {
+		d[i][0] = i
 	}
-	return all
-}
-
-// -----------------------------
-// GameIndex cache
-// -----------------------------
-
-func GetIndexSystem(systemID string) []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	return append([]string(nil), index[systemID]...)
-}
-
-func SetIndexSystem(systemID string, paths []string) {
-	mu.Lock()
-	defer mu.Unlock()
-	index[systemID] = append([]string(nil), paths...)
-}
-
-func RemoveIndexSystem(systemID string) {
-	mu.Lock()
-	defer mu.Unlock()
-	delete(index, systemID)
-}
-
-func AmendIndexSystem(systemID string, paths []string) {
-	mu.Lock()
-	defer mu.Unlock()
-	index[systemID] = append([]string(nil), paths...)
-}
-
-func IndexKeys() []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	keys := make([]string, 0, len(index))
-	for k := range index {
-		keys = append(keys, k)
+	for j := 0; j <= lb; j++ {
+		d[0][j] = j
 	}
-	return keys
-}
-
-// FlattenIndex returns the full index as one slice of lines.
-func FlattenIndex() []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	all := []string{}
-	for sys, lines := range index {
-		for _, l := range lines {
-			all = append(all, fmt.Sprintf("%s|%s", sys, l))
+	for i := 1; i <= la; i++ {
+		for j := 1; j <= lb; j++ {
+			cost := 0
+			if a[i-1] != b[j-1] {
+				cost = 1
+			}
+			d[i][j] = min(d[i-1][j]+1, min(d[i][j-1]+1, d[i-1][j-1]+cost))
 		}
 	}
-	return all
+	return d[la][lb]
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
