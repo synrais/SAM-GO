@@ -2,10 +2,10 @@ package attract
 
 import (
 	"fmt"
-	"path/filepath"
-	"time"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
@@ -13,18 +13,12 @@ import (
 )
 
 // CreateGamelists builds all gamelists, masterlist, and game index.
-//
-// Args:
-//   cfg         - user config
-//   gamelistDir - folder for lists
-//   systemPaths - results of games discovery
-//   quiet       - suppress output if true
 func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []games.PathResult, quiet bool) int {
 	start := time.Now()
 
-	// Ensure gamelistDir exists before any file I/O
+	// Ensure gamelistDir exists
 	if err := os.MkdirAll(gamelistDir, 0o755); err != nil {
-		return 0 // bail if directory can’t be created
+		return 0
 	}
 
 	// load saved folder timestamps
@@ -41,23 +35,21 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 		fmt.Println("[DEBUG] global reset → clearing in-RAM lists + GameIndex + MasterList")
 	}
 	ResetAll()
-	ResetMasterList()
 
-	// preload MasterList + GameIndex from disk if present
+	// preload MasterList
 	preStart := time.Now()
 	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "MasterList")); err == nil {
-		SetMasterList(lines)
+		SetMasterSystem("preload", lines)
 		if !quiet {
 			fmt.Printf("[DEBUG] preload MasterList → survivors=%d (%.2fs)\n",
-				len(GetMasterList()), time.Since(preStart).Seconds())
+				len(lines), time.Since(preStart).Seconds())
 		}
 	}
 
+	// preload GameIndex
 	idxStart := time.Now()
 	if lines, err := utils.ReadLines(filepath.Join(gamelistDir, "GameIndex")); err == nil {
-		for _, l := range lines {
-			AppendGameIndex(l)
-		}
+		SetIndexSystem("preload", lines)
 		if !quiet {
 			fmt.Printf("[DEBUG] preload GameIndex → survivors=%d (%.2fs)\n",
 				len(lines), time.Since(idxStart).Seconds())
@@ -119,13 +111,11 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 
 			// cleanup old entries
 			cleanStart := time.Now()
-			beforeMaster := len(GetMasterList())
-			RemoveSystemFromMasterList(system.Id)
-			beforeIndex := len(GetGameIndex())
-			ResetAll() // also clears GameIndex
+			RemoveMasterSystem(system.Id)
+			RemoveIndexSystem(system.Id)
 			if !quiet {
-				fmt.Printf("[DEBUG] %s cleanup → Master:%d→%d GameIndex:%d→0 (%.2fs)\n",
-					system.Id, beforeMaster, len(GetMasterList()), beforeIndex, time.Since(cleanStart).Seconds())
+				fmt.Printf("[DEBUG] %s cleanup complete (%.2fs)\n",
+					system.Id, time.Since(cleanStart).Seconds())
 			}
 
 			// Stage 1
@@ -135,7 +125,7 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 				fmt.Printf("[DEBUG] %s Stage1 → survivors=%d (removed=file=%d) (%.2fs)\n",
 					system.Id, len(stage1), c1["File"], time.Since(s1Start).Seconds())
 			}
-			AppendToMasterList(system.Id, stage1)
+			AmendMasterSystem(system.Id, stage1)
 
 			// Stage 2
 			s2Start := time.Now()
@@ -144,22 +134,12 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 				fmt.Printf("[DEBUG] %s Stage2 → survivors=%d (removed=file=%d) (%.2fs)\n",
 					system.Id, len(stage2), c2["File"], time.Since(s2Start).Seconds())
 			}
-			AppendGameIndexLines(system.Id, stage2)
+			AmendIndexSystem(system.Id, stage2)
 			_ = WriteLinesIfChanged(gamelistPath, stage2)
-			if !quiet {
-				fmt.Printf("[DEBUG] %s gamelist write → survivors=%d (%s) (%.2fs)\n",
-					system.Id, len(stage2), gamelistPath, time.Since(s2Start).Seconds())
-			}
 
 			// Stage 3
 			s3Start := time.Now()
 			stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
-			if !quiet {
-				fmt.Printf("[DEBUG] %s Stage3 → survivors=%d (removed:white=%d black=%d static=%d folder=%d file=%d) (%.2fs)\n",
-					system.Id, len(stage3),
-					c3["White"], c3["Black"], c3["Static"], c3["Folder"], c3["File"],
-					time.Since(s3Start).Seconds())
-			}
 			SetList(GamelistFilename(system.Id), stage3)
 
 			counts := mergeCounts(c1, c2, c3)
@@ -178,38 +158,19 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 			}
 
 			if FileExists(gamelistPath) {
-				preloadStart := time.Now()
 				if len(GetList(GamelistFilename(system.Id))) == 0 {
 					if lines, err := utils.ReadLines(gamelistPath); err == nil {
 						SetList(GamelistFilename(system.Id), lines)
-						if !quiet {
-							fmt.Printf("[DEBUG] %s preload gamelist → survivors=%d (from disk) (%.2fs)\n",
-								system.Id, len(lines), time.Since(preloadStart).Seconds())
-						}
 					}
 				}
 
-				s2Start := time.Now()
-				stage2, c2 := Stage2Filters(GetList(GamelistFilename(system.Id)))
-				if !quiet {
-					fmt.Printf("[DEBUG] %s reuse Stage2 → survivors=%d (removed=file=%d) (%.2fs)\n",
-						system.Id, len(stage2), c2["File"], time.Since(s2Start).Seconds())
-				}
-
-				s3Start := time.Now()
-				stage3, c3, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
-				if !quiet {
-					fmt.Printf("[DEBUG] %s reuse Stage3 → survivors=%d (removed:white=%d black=%d static=%d folder=%d file=%d) (%.2fs)\n",
-						system.Id, len(stage3),
-						c3["White"], c3["Black"], c3["Static"], c3["Folder"], c3["File"],
-						time.Since(s3Start).Seconds())
-				}
+				stage2, _ := Stage2Filters(GetList(GamelistFilename(system.Id)))
+				stage3, _, _ := Stage3Filters(gamelistDir, system.Id, stage2, cfg)
 				SetList(GamelistFilename(system.Id), stage3)
 
-				counts := mergeCounts(map[string]int{}, c2, c3)
 				totalGames += len(stage3)
 				if !quiet {
-					printListStatus(system.Id, "reused", len(stage2), len(stage3), counts)
+					printListStatus(system.Id, "reused", len(stage2), len(stage3), nil)
 				}
 			}
 			reuseCount++
@@ -218,9 +179,6 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 					newTimestamps = append(newTimestamps, ts)
 				}
 			}
-		}
-		if !quiet {
-			fmt.Printf("[DEBUG] %s done (%.2fs)\n", system.Id, time.Since(sysStart).Seconds())
 		}
 	}
 
@@ -241,46 +199,29 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	for _, k := range allKeys {
 		systemID := strings.TrimSuffix(k, "_gamelist.txt")
 		if !ContainsInsensitive(allowed, systemID) {
-			DeleteKey(k)
+			RemoveList(k)
 		}
-	}
-	if !quiet {
-		fmt.Printf("[DEBUG] Allowed gamelists after filtering: %v\n", allowed)
 	}
 
 	// global write
 	writeStart := time.Now()
-	if freshCount > 0 || GetMasterList() == nil || GetGameIndex() == nil {
-		if !quiet {
-			fmt.Printf("[DEBUG] global write MasterList → survivors=%d\n", len(GetMasterList()))
-		}
-		_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "MasterList"), GetMasterList())
-
-		gi := GetGameIndex()
-		if !quiet {
-			fmt.Printf("[DEBUG] global write GameIndex → survivors=%d\n", len(gi))
-		}
-		_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "GameIndex"), gi)
-
-		if !quiet {
-			fmt.Printf("[DEBUG] global write timestamps → survivors=%d\n", len(newTimestamps))
-		}
+	if freshCount > 0 || len(FlattenMaster()) == 0 || len(FlattenIndex()) == 0 {
+		_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "MasterList"), FlattenMaster())
+		_ = WriteLinesIfChanged(filepath.Join(gamelistDir, "GameIndex"), FlattenIndex())
 		_ = saveTimestamps(gamelistDir, newTimestamps)
 		if !quiet {
 			fmt.Printf("[DEBUG] global write complete (%.2fs)\n", time.Since(writeStart).Seconds())
 		}
-	} else if !quiet {
-		fmt.Printf("[DEBUG] global write skipped → nothing written (%.2fs)\n", time.Since(writeStart).Seconds())
 	}
 
 	if !quiet {
-		fmt.Printf("[List] MasterList contains %d titles\n", CountGames(GetMasterList()))
-		fmt.Printf("[List] GameIndex contains %d titles\n", len(GetGameIndex()))
+		fmt.Printf("[List] MasterList contains %d titles\n", len(FlattenMaster()))
+		fmt.Printf("[List] GameIndex contains %d titles\n", len(FlattenIndex()))
 		fmt.Printf("[List] Done in %.1fs (%d fresh, %d reused systems)\n",
 			time.Since(start).Seconds(), freshCount, reuseCount)
 	}
 
-	if len(GetGameIndex()) == 0 {
+	if len(FlattenIndex()) == 0 {
 		fmt.Println("[Attract] List build failed: no games indexed")
 	}
 	return totalGames
