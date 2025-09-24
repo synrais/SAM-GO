@@ -1,6 +1,7 @@
 package attract
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -12,9 +13,125 @@ import (
 	"github.com/synrais/SAM-GO/pkg/input"
 )
 
-// ===== Helper Functions =====
+// ===== Shared Utility =====
 
-// getTTY reads the currently active tty from Linux sysfs
+// waitKey reads a line (blocking)
+func waitKey() string {
+	reader := bufio.NewReader(os.Stdin)
+	text, _ := reader.ReadString('\n')
+	return strings.TrimSpace(text)
+}
+
+// ===== Menus 1–8 (prototype style) =====
+
+// MENU 1: one-shot message
+func GameMenu1() error {
+	fmt.Println("=== TEST MENU 1 ===")
+	fmt.Println("Press Enter to exit.")
+	waitKey()
+	return nil
+}
+
+// MENU 2: static list
+func GameMenu2() error {
+	fmt.Println("=== TEST MENU 2 ===")
+	fmt.Println("1) Option A\n2) Option B\nq) Quit")
+	choice := waitKey()
+	fmt.Println("You picked:", choice)
+	return nil
+}
+
+// MENU 3: system/game browser (hardcoded)
+func GameMenu3() error {
+	systems := []string{"NES", "SNES", "Genesis"}
+	games := map[string][]string{
+		"NES":     {"Mario", "Zelda"},
+		"SNES":    {"SMW", "DKC"},
+		"Genesis": {"Sonic", "Streets of Rage"},
+	}
+	fmt.Println("Pick a system:", systems)
+	sys := waitKey()
+	if g, ok := games[sys]; ok {
+		fmt.Println("Games:", g)
+	} else {
+		fmt.Println("Unknown system:", sys)
+	}
+	waitKey()
+	return nil
+}
+
+// MENU 4: fake settings form
+func GameMenu4() error {
+	fmt.Println("=== SETTINGS ===")
+	fmt.Print("Enter Name: ")
+	name := waitKey()
+	fmt.Print("Enable feature (y/n): ")
+	enable := waitKey()
+	fmt.Println("Saved", name, enable)
+	return nil
+}
+
+// MENU 5: scrolling log
+func GameMenu5() error {
+	fmt.Println("=== LOG ===")
+	for i := 1; i <= 20; i++ {
+		fmt.Printf("Line %d: Demo\n", i)
+	}
+	waitKey()
+	return nil
+}
+
+// MENU 6: table
+func GameMenu6() error {
+	fmt.Println("ID | Name   | Status")
+	fmt.Println("1  | Mario  | OK")
+	fmt.Println("2  | Zelda  | Missing")
+	fmt.Println("3  | Sonic  | OK")
+	waitKey()
+	return nil
+}
+
+// MENU 7: pages
+func GameMenu7() error {
+	for {
+		fmt.Println("=== PAGE MAIN === (n=next, q=quit)")
+		k := waitKey()
+		if k == "n" {
+			fmt.Println("=== PAGE NEXT === (b=back, q=quit)")
+			k2 := waitKey()
+			if k2 == "b" {
+				continue
+			} else if k2 == "q" {
+				break
+			}
+		} else if k == "q" {
+			break
+		}
+	}
+	return nil
+}
+
+// MENU 8: read gamelists from filesystem
+func GameMenu8() error {
+	root := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return fmt.Errorf("error reading %s: %w", root, err)
+	}
+
+	fmt.Println("Systems:")
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), "_gamelist.txt") {
+			sys := strings.TrimSuffix(e.Name(), "_gamelist.txt")
+			fmt.Println("-", sys)
+		}
+	}
+	waitKey()
+	return nil
+}
+
+// ===== Helper Functions for Menu 9 =====
+
 func getTTY() (string, error) {
 	sys := "/sys/devices/virtual/tty/tty0/active"
 	if _, err := os.Stat(sys); err != nil {
@@ -29,7 +146,6 @@ func getTTY() (string, error) {
 	return strings.TrimSpace(string(tty)), nil
 }
 
-// echoFile writes a string directly into a file
 func echoFile(path, s string) error {
 	f, err := os.OpenFile(path, os.O_WRONLY, 0)
 	if err != nil {
@@ -43,13 +159,11 @@ func echoFile(path, s string) error {
 	return nil
 }
 
-// writeTty writes a string directly to a tty device
 func writeTty(id, s string) error {
 	tty := "/dev/tty" + id
 	return echoFile(tty, s)
 }
 
-// cleanConsole hides the cursor and disables blinking
 func cleanConsole(vt string) error {
 	if err := writeTty(vt, "\033[?25l"); err != nil {
 		return err
@@ -60,7 +174,6 @@ func cleanConsole(vt string) error {
 	return writeTty(vt, "\033[?17;0;0c")
 }
 
-// restoreConsole restores cursor and blinking
 func restoreConsole(vt string) error {
 	if err := writeTty(vt, "\033[?25h"); err != nil {
 		return err
@@ -68,17 +181,14 @@ func restoreConsole(vt string) error {
 	return echoFile("/sys/class/graphics/fbcon/cursor_blink", "1")
 }
 
-// openConsole tries to switch MiSTer into console mode by pressing F9 repeatedly
 func openConsole() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// switch to an unused tty first
 	if err := exec.CommandContext(ctx, "chvt", "3").Run(); err != nil {
 		return fmt.Errorf("failed to run chvt: %w", err)
 	}
 
-	// create virtual keyboard
 	kb, err := input.NewVirtualKeyboard()
 	if err != nil {
 		return fmt.Errorf("failed to create virtual keyboard: %w", err)
@@ -91,7 +201,6 @@ func openConsole() error {
 			return errors.New("openConsole: could not switch to tty1")
 		}
 
-		// press F9 (Console)
 		if err := kb.Console(); err != nil {
 			return fmt.Errorf("failed to press F9: %w", err)
 		}
@@ -114,7 +223,6 @@ func openConsole() error {
 // ===== Upgraded Menu 9 =====
 
 func GameMenu9() error {
-	// Step 1: reload menu core
 	cmdPath := "/dev/MiSTer_cmd"
 	f, err := os.OpenFile(cmdPath, os.O_WRONLY, 0)
 	if err != nil {
@@ -127,7 +235,6 @@ func GameMenu9() error {
 	f.Close()
 	fmt.Println("[MENU9] Reloaded MiSTer menu core")
 
-	// Step 2: build launcher script
 	scriptPath := "/tmp/script"
 	launcher := `#!/bin/bash
 export LC_ALL=en_US.UTF-8
@@ -146,20 +253,16 @@ cd /media/fat/Scripts
 	}
 	fmt.Println("[MENU9] Launcher written to /tmp/script")
 
-	// Step 3: wait briefly for menu reload
 	time.Sleep(2 * time.Second)
 
-	// Step 4: switch to tty2 (reserved for scripts)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := exec.CommandContext(ctx, "chvt", "2").Run(); err != nil {
 		return fmt.Errorf("failed to switch to tty2: %w", err)
 	}
 
-	// Step 5: clean the console
 	_ = cleanConsole("2")
 
-	// Step 6: use agetty to attach the launcher to tty2
 	cmd := exec.CommandContext(
 		context.Background(),
 		"/sbin/agetty",
