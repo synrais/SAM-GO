@@ -1,6 +1,7 @@
 package attract
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -8,9 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/gdamore/tcell/v2"
-	"github.com/rivo/tview"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/input"
@@ -59,8 +57,8 @@ func GameMenu9() error {
 	}
 	fmt.Println("[DEBUG] F9 pressed")
 
-	fmt.Println("[DEBUG] Sleeping 3s for terminal…")
-	time.Sleep(3 * time.Second)
+	fmt.Println("[DEBUG] Sleeping 2s after F9…")
+	time.Sleep(2 * time.Second)
 
 	// Step 4: switch to tty2
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -71,79 +69,123 @@ func GameMenu9() error {
 	}
 	fmt.Println("[DEBUG] Successfully switched to tty2")
 
-	// Step 5: hand off to RunMenu
-	fmt.Println("[DEBUG] Launching RunMenu() on tty2")
+	// Step 5: redirect stdio to tty2 and run internal menu
+	fmt.Println("[DEBUG] Opening /dev/tty2…")
+	tty, err := os.OpenFile("/dev/tty2", os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("[DEBUG] failed to open /dev/tty2: %w", err)
+	}
+
+	os.Stdout = tty
+	os.Stderr = tty
+	os.Stdin = tty
+
+	fmt.Println("[DEBUG] Handing control to RunMenu() on tty2")
 	RunMenu()
 	return nil
 }
 
-// ===== Direct in-RAM Menu (tview) =====
+// ===== Simple text-based menu =====
+
+type Game struct {
+	Display string
+	Path    string
+}
 
 func RunMenu() {
-	allMaster := FlattenCache("master")
-	if len(allMaster) == 0 {
-		fmt.Println("[MENU] No games available in master list (RAM empty?)")
-		return
+	fmt.Println("[DEBUG] Entered RunMenu()")
+
+	root := "/media/fat/Scripts/.MiSTer_SAM/SAM_Gamelists"
+
+	for {
+		// --- System menu ---
+		systems := listSystems(root)
+		if len(systems) == 0 {
+			fmt.Printf("No gamelists found in %s\n", root)
+			return
+		}
+
+		fmt.Println("==== Systems ====")
+		for i, sys := range systems {
+			fmt.Printf("%2d) %s\n", i+1, sys)
+		}
+		fmt.Print("Choose a system (0 to quit): ")
+
+		var choice int
+		fmt.Scanln(&choice)
+		if choice == 0 {
+			return
+		}
+		if choice < 1 || choice > len(systems) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+		system := systems[choice-1]
+
+		// --- Game menu ---
+		games := listGames(root, system)
+		if len(games) == 0 {
+			fmt.Printf("No games found for %s\n", system)
+			continue
+		}
+
+		for {
+			fmt.Printf("==== %s Games ====\n", system)
+			for i, g := range games {
+				fmt.Printf("%4d) %s\n", i+1, g.Display)
+			}
+			fmt.Print("Choose a game (0 to go back): ")
+
+			var gChoice int
+			fmt.Scanln(&gChoice)
+			if gChoice == 0 {
+				break
+			}
+			if gChoice < 1 || gChoice > len(games) {
+				fmt.Println("Invalid choice")
+				continue
+			}
+
+			fullpath := games[gChoice-1].Path
+			fmt.Printf("[MENU] Launching: %s\n", fullpath)
+			Run([]string{fullpath})
+		}
 	}
+}
 
-	// force TERM so tcell knows what to load
-	os.Setenv("TERM", "linux")
+func listSystems(root string) []string {
+	var systems []string
+	entries, _ := filepath.Glob(filepath.Join(root, "*_gamelist.txt"))
+	for _, e := range entries {
+		base := filepath.Base(e)
+		systems = append(systems, strings.TrimSuffix(base, "_gamelist.txt"))
+	}
+	return systems
+}
 
-	// open tty2 directly
-	tty, err := tcell.NewDevTtyFromDev("/dev/tty2")
+func listGames(root, system string) []Game {
+	file := filepath.Join(root, system+"_gamelist.txt")
+	f, err := os.Open(file)
 	if err != nil {
-		fmt.Printf("[MENU] Failed to open tty2: %v\n", err)
-		return
+		return nil
 	}
-	defer tty.Close()
+	defer f.Close()
 
-	screen, err := tcell.NewTerminfoScreenFromTty(tty)
-	if err != nil {
-		fmt.Printf("[MENU] Failed to create screen: %v\n", err)
-		return
-	}
-	if err := screen.Init(); err != nil {
-		fmt.Printf("[MENU] Failed to init screen: %v\n", err)
-		return
-	}
-	defer screen.Fini()
-
-	app := tview.NewApplication()
-	list := tview.NewList().
-		ShowSecondaryText(false).
-		SetHighlightFullLine(true)
-
-	// Fill with master list
-	for _, g := range allMaster {
-		base := filepath.Base(g)
-		name := strings.TrimSuffix(base, filepath.Ext(base))
+	var games []Game
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		name := filepath.Base(line)
+		name = strings.TrimSuffix(name, filepath.Ext(name))
 		if len(name) > 70 {
 			name = name[:67] + "..."
 		}
-		gamePath := g
-		list.AddItem(name, "", 0, func() {
-			app.Stop()
-			fmt.Printf("[MENU] Launching: %s\n", gamePath)
-			Run([]string{gamePath})
-		})
+		games = append(games, Game{Display: name, Path: line})
 	}
-
-	list.SetDoneFunc(func() {
-		app.Stop()
-	})
-
-	// exit on ESC
-	list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-		if ev.Key() == tcell.KeyEscape {
-			app.Stop()
-			return nil
-		}
-		return ev
-	})
-
-	if err := app.SetScreen(screen).SetRoot(list, true).Run(); err != nil {
-		fmt.Printf("[MENU] Failed to start TUI: %v\n", err)
-	}
+	return games
 }
 
 // Entry point for `SAM -menu`
