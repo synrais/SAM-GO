@@ -86,51 +86,53 @@ func GameMenu9() error {
 // ===== Direct in-RAM Menu (tview) =====
 
 func RunMenu() {
-	fmt.Println("[DEBUG] Entered RunMenu()")
+    fmt.Println("[DEBUG] Entered RunMenu()")
 
-	allMaster := FlattenCache("master")
-	if len(allMaster) == 0 {
-		fmt.Println("[MENU] No games available in master list (RAM empty?)")
-		return
-	}
+    allMaster := FlattenCache("master")
+    if len(allMaster) == 0 {
+        fmt.Println("[MENU] No games available in master list (RAM empty?)")
+        return
+    }
 
-	// Ensure TERM is set so tview/tcell can initialize
-	if os.Getenv("TERM") == "" {
-		os.Setenv("TERM", "linux")
-	}
+    // Open tty2 explicitly
+    tty, err := tcell.NewDevTtyFromDev("/dev/tty2")
+    if err != nil {
+        fmt.Printf("[MENU] Failed to open tty2: %v\n", err)
+        return
+    }
 
-	app := tview.NewApplication()
+    screen, err := tcell.NewTerminfoScreenFromTty(tty)
+    if err != nil {
+        fmt.Printf("[MENU] Failed to init tcell screen: %v\n", err)
+        return
+    }
+    if err := screen.Init(); err != nil {
+        fmt.Printf("[MENU] Failed to init screen: %v\n", err)
+        return
+    }
 
-	list := tview.NewList().
-		ShowSecondaryText(false).
-		SetHighlightFullLine(true)
+    app := tview.NewApplication().SetScreen(screen)
 
-	for i, g := range allMaster {
-		base := filepath.Base(g)
-		name := strings.TrimSuffix(base, filepath.Ext(base))
-		if len(name) > 70 {
-			name = name[:67] + "..."
-		}
-		index := i
-		list.AddItem(name, "", 0, func() {
-			chosenGame := allMaster[index]
-			app.Stop() // exit tview loop before launching
-			fmt.Printf("[MENU] Launching: %s\n", chosenGame)
-			Run([]string{chosenGame})
-			// Relaunch the menu after the game exits
-			RunMenu()
-		})
-	}
+    list := tview.NewList()
+    for i, g := range allMaster {
+        base := filepath.Base(g)
+        name := strings.TrimSuffix(base, filepath.Ext(base))
+        if len(name) > 70 {
+            name = name[:67] + "..."
+        }
+        idx := i
+        list.AddItem(name, "", 0, func() {
+            chosenGame := allMaster[idx]
+            app.Stop()
+            fmt.Printf("[MENU] Launching: %s\n", chosenGame)
+            Run([]string{chosenGame})
+        })
+    }
 
-	list.SetBorder(true).SetTitle(" SAM Game Browser (MasterList) ")
-
-	list.SetDoneFunc(func() {
-		app.Stop()
-	})
-
-	if err := app.SetRoot(list, true).Run(); err != nil {
-		panic(err)
-	}
+    list.SetBorder(true).SetTitle("Master List")
+    if err := app.SetRoot(list, true).Run(); err != nil {
+        fmt.Printf("[MENU] Error running app: %v\n", err)
+    }
 }
 
 // Entry point for `SAM -menu`
