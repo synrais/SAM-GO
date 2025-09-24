@@ -17,6 +17,17 @@ import (
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
+// mergeCounts merges multiple count maps into one.
+func mergeCounts(ms ...map[string]int) map[string]int {
+	out := map[string]int{}
+	for _, m := range ms {
+		for k, v := range m {
+			out[k] += v
+		}
+	}
+	return out
+}
+
 //
 // -----------------------------
 // Helpers for splitting/normalizing
