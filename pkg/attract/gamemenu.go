@@ -3,6 +3,7 @@ package attract
 import (
 	"bufio"
 	"fmt"
+	"time"
 	"os"
 	"strings"
 
@@ -121,16 +122,6 @@ func GameMenu8() error {
 	waitKey()
 	return nil
 }
-
-package attract
-
-import (
-	"fmt"
-	"os"
-	"time"
-
-	"github.com/synrais/SAM-GO/pkg/input"
-)
 
 // MENU 9: reset to MiSTer menu, then open console with F9
 func GameMenu9() error {
