@@ -223,5 +223,13 @@ func CreateGamelists(cfg *config.UserConfig, gamelistDir string, systemPaths []g
 	if len(FlattenCache("index")) == 0 {
 		fmt.Println("[Attract] List build failed: no games indexed")
 	}
+
+	// 🔥 Start IPC server (so -menu can talk to live caches)
+	if err := StartIPCServer(); err != nil {
+		fmt.Fprintf(os.Stderr, "[Attract] Failed to start IPC server: %v\n", err)
+	} else if !quiet {
+		fmt.Println("[Attract] IPC server started on /tmp/sam.sock")
+	}
+
 	return totalGames
 }
