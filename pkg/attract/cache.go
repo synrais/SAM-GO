@@ -15,26 +15,17 @@ import (
 // -----------------------------
 
 var (
-	mu      sync.RWMutex
-	lists   = make(map[string][]string) // working copy (mutates as games are consumed)
-	masters = make(map[string][]string) // pristine originals (never touched)
-
-	gameIndex []GameEntry // full search index, built by list.go or reloaded from disk
+	mu       sync.RWMutex
+	lists    = make(map[string][]string) // working copy (mutates as games are consumed)
+	masters  = make(map[string][]string) // pristine originals (never touched)
+	gameIndex []string                   // full search index, lines like "name|path"
 )
-
-// GameEntry is one normalized entry in the GameIndex.
-type GameEntry struct {
-	SystemID string // system this game belongs to (nes, snes, arcade…)
-	Name     string // normalized name
-	Ext      string // extension (smd, nes, zip…)
-	Path     string // full original file path
-}
 
 // -----------------------------
 // List cache (gamelists, masterlist, history)
 // -----------------------------
 
-// ReloadAll clears and reloads all .txt files and GameIndex from a directory into RAM.
+// ReloadAll clears and reloads all list files and GameIndex from a directory into RAM.
 // Both working and master copies are initialized, and GameIndex is rebuilt too.
 func ReloadAll(dir string) error {
 	mu.Lock()
@@ -43,7 +34,7 @@ func ReloadAll(dir string) error {
 	// Reset everything
 	lists = make(map[string][]string)
 	masters = make(map[string][]string)
-	gameIndex = []GameEntry{} // 🔥 index reset unified
+	gameIndex = []string{}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -62,24 +53,11 @@ func ReloadAll(dir string) error {
 				fmt.Fprintf(os.Stderr, "[WARN] failed to read %s: %v\n", path, err)
 				continue
 			}
-			for _, l := range lines {
-				parts := strings.SplitN(l, "|", 4)
-				if len(parts) == 4 {
-					gameIndex = append(gameIndex, GameEntry{
-						SystemID: parts[0],
-						Name:     parts[1],
-						Ext:      parts[2],
-						Path:     parts[3],
-					})
-				}
-			}
+			gameIndex = append(gameIndex, lines...)
 			continue
 		}
 
-		// Normal .txt list files
-		if !strings.HasSuffix(e.Name(), ".txt") {
-			continue
-		}
+		// Normal list files
 		path := filepath.Join(dir, e.Name())
 		lines, err := utils.ReadLines(path)
 		if err != nil {
@@ -144,28 +122,28 @@ func ResetAll() {
 	}
 
 	// 🔥 also reset index
-	gameIndex = []GameEntry{}
+	gameIndex = []string{}
 }
 
 // -----------------------------
 // GameIndex cache
 // -----------------------------
 
-// AppendGameIndex adds one entry into the in-RAM index.
-func AppendGameIndex(entry GameEntry) {
+// AppendGameIndex adds one line ("name|path") into the in-RAM index.
+func AppendGameIndex(line string) {
 	mu.Lock()
 	defer mu.Unlock()
-	gameIndex = append(gameIndex, entry)
+	gameIndex = append(gameIndex, line)
 }
 
 // GetGameIndex returns a snapshot of the current index.
-func GetGameIndex() []GameEntry {
+func GetGameIndex() []string {
 	mu.RLock()
 	defer mu.RUnlock()
-	return append([]GameEntry(nil), gameIndex...)
+	return append([]string(nil), gameIndex...)
 }
 
-// 🔥 ReloadGameIndexFromDisk repopulates index if it's empty (for reused runs).
+// ReloadGameIndexFromDisk repopulates index if it's empty (for reused runs).
 func ReloadGameIndexFromDisk(path string) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -177,15 +155,5 @@ func ReloadGameIndexFromDisk(path string) {
 		fmt.Fprintf(os.Stderr, "[WARN] failed to read %s: %v\n", path, err)
 		return
 	}
-	for _, l := range lines {
-		parts := strings.SplitN(l, "|", 4)
-		if len(parts) == 4 {
-			gameIndex = append(gameIndex, GameEntry{
-				SystemID: parts[0],
-				Name:     parts[1],
-				Ext:      parts[2],
-				Path:     parts[3],
-			})
-		}
-	}
+	gameIndex = append(gameIndex, lines...)
 }
