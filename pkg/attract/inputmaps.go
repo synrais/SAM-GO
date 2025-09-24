@@ -2,9 +2,9 @@ package attract
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
-	"math/rand"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 )
@@ -57,11 +57,10 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, inputCh <-chan string
 		"7": func() { if err := GameMenu7(); err != nil { fmt.Println("[Menu7 ERR]", err) } },
 		"8": func() { if err := GameMenu8(); err != nil { fmt.Println("[Menu8 ERR]", err) } },
 		"9": func() {
-    		if err := GameMenu9(); err != nil {
-        		fmt.Println("Error:", err)
-    		}
+			if err := GameMenu9(); err != nil {
+				fmt.Println("Error:", err)
+			}
 		},
-
 
 		// ----------------------------
 		// Controller Buttons
@@ -108,7 +107,7 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, inputCh <-chan string
 }
 
 // --- Search Mode Input Map (grouped by device type) ---
-func SearchInputMap(sb *strings.Builder, candidates *[]GameEntry, idx *int, index []GameEntry, inputCh <-chan string) map[string]InputAction {
+func SearchInputMap(sb *strings.Builder, candidates *[]string, idx *int, index []string, inputCh <-chan string) map[string]InputAction {
 	return map[string]InputAction{
 
 		// ----------------------------
