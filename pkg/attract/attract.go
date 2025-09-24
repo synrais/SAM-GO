@@ -33,13 +33,6 @@ func PrepareAttractLists(cfg *config.UserConfig, showStream bool) {
 		go bgmPlayer.StartLoop()
 	}
 
-	// ✅ Start IPC server here (not in CreateGamelists)
-	if err := StartIPCServer(); err != nil {
-		fmt.Fprintf(os.Stderr, "[Attract] Failed to start IPC server: %v\n", err)
-	} else {
-		fmt.Println("[Attract] IPC server started on /tmp/sam.sock")
-	}
-
 	// Build system gamelists
 	systemPaths := games.GetSystemPaths(cfg, games.AllSystems())
 	if CreateGamelists(cfg, config.GamelistDir(), systemPaths, false) == 0 {
