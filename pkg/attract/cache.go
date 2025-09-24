@@ -24,7 +24,6 @@ var (
 	index  = make(map[string][]string) // index per system
 )
 
-// cacheSelector picks which map to use based on type string.
 func cacheSelector(cacheType string) map[string][]string {
 	switch cacheType {
 	case "lists":
@@ -39,15 +38,21 @@ func cacheSelector(cacheType string) map[string][]string {
 }
 
 // -----------------------------
-// Reload / Reset (global)
+// Reset / Load helpers
 // -----------------------------
 
-// ReloadAll clears and reloads all files (lists, master, index) from a directory into RAM.
+func ResetAll() {
+	mu.Lock()
+	defer mu.Unlock()
+	lists = make(map[string][]string)
+	master = make(map[string][]string)
+	index = make(map[string][]string)
+}
+
 func ReloadAll(dir string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Reset everything
 	lists = make(map[string][]string)
 	master = make(map[string][]string)
 	index = make(map[string][]string)
@@ -60,7 +65,6 @@ func ReloadAll(dir string) error {
 		if e.IsDir() {
 			continue
 		}
-
 		path := filepath.Join(dir, e.Name())
 		lines, err := utils.ReadLines(path)
 		if err != nil {
@@ -74,21 +78,10 @@ func ReloadAll(dir string) error {
 		case "GameIndex":
 			index["__all__"] = append([]string(nil), lines...)
 		default:
-			// treat everything else as a system gamelist
 			lists[e.Name()] = append([]string(nil), lines...)
 		}
 	}
-
 	return nil
-}
-
-// ResetAll clears all caches completely.
-func ResetAll() {
-	mu.Lock()
-	defer mu.Unlock()
-	lists = make(map[string][]string)
-	master = make(map[string][]string)
-	index = make(map[string][]string)
 }
 
 // -----------------------------
@@ -115,26 +108,6 @@ func SetCache(cacheType, key string, vals []string) {
 	cache[key] = append([]string(nil), vals...)
 }
 
-func RemoveCache(cacheType, key string) {
-	mu.Lock()
-	defer mu.Unlock()
-	cache := cacheSelector(cacheType)
-	if cache == nil {
-		return
-	}
-	delete(cache, key)
-}
-
-func AmendCache(cacheType, key string, vals []string) {
-	mu.Lock()
-	defer mu.Unlock()
-	cache := cacheSelector(cacheType)
-	if cache == nil {
-		return
-	}
-	cache[key] = append([]string(nil), vals...)
-}
-
 func CacheKeys(cacheType string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -149,11 +122,6 @@ func CacheKeys(cacheType string) []string {
 	return keys
 }
 
-// -----------------------------
-// Flatten helpers
-// -----------------------------
-
-// FlattenCache returns the full contents of master or index with system headers.
 func FlattenCache(cacheType string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -170,7 +138,6 @@ func FlattenCache(cacheType string) []string {
 	return all
 }
 
-// FlattenSystem returns only the lines for a given system in lists/master/index.
 func FlattenSystem(cacheType, systemID string) []string {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -187,9 +154,8 @@ func FlattenSystem(cacheType, systemID string) []string {
 
 const socketPath = "/tmp/sam.sock"
 
-// StartIPCServer launches a background goroutine to serve cache queries over a Unix socket.
 func StartIPCServer() error {
-	_ = os.Remove(socketPath) // cleanup old socket
+	_ = os.Remove(socketPath)
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", socketPath, err)
@@ -228,9 +194,20 @@ func handleConn(conn net.Conn) {
 			for _, g := range GetCache("lists", arg) {
 				fmt.Fprintln(conn, g)
 			}
-		case "RUN":
-			// Important: Run launches the game from the main SAM process.
-			Run([]string{arg})
+		case "LIST_MASTER":
+			for _, g := range FlattenSystem("master", arg) {
+				fmt.Fprintln(conn, g)
+			}
+		case "LIST_INDEX":
+			for _, g := range FlattenSystem("index", arg) {
+				fmt.Fprintln(conn, g)
+			}
+		case "RUN_GAME":
+			if arg == "" {
+				fmt.Fprintln(conn, "ERR missing game path")
+				continue
+			}
+			go Run([]string{arg})
 			fmt.Fprintln(conn, "OK")
 		default:
 			fmt.Fprintln(conn, "ERR unknown command")
@@ -238,22 +215,20 @@ func handleConn(conn net.Conn) {
 	}
 }
 
-// IPCRequest is a helper for menu clients to send commands to the main SAM process.
 func IPCRequest(msg string) (string, error) {
-    conn, err := net.Dial("unix", "/tmp/sam.sock")
-    if err != nil {
-        return "", err
-    }
-    defer conn.Close()
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
 
-    if _, err := conn.Write([]byte(msg + "\n")); err != nil {
-        return "", err
-    }
+	if _, err := conn.Write([]byte(msg + "\n")); err != nil {
+		return "", err
+	}
 
-    // read everything
-    buf, err := io.ReadAll(conn)
-    if err != nil {
-        return "", err
-    }
-    return string(buf), nil
+	buf, err := io.ReadAll(conn)
+	if err != nil {
+		return "", err
+	}
+	return string(buf), nil
 }
