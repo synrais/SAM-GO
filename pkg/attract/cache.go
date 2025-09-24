@@ -2,11 +2,8 @@ package attract
 
 import (
 	"fmt"
-	"io"
-	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/synrais/SAM-GO/pkg/utils"
@@ -23,7 +20,6 @@ var (
 	index  = make(map[string][]string) // index per system
 )
 
-// cacheSelector picks which map to use based on type string.
 func cacheSelector(cacheType string) map[string][]string {
 	switch cacheType {
 	case "lists":
@@ -180,83 +176,4 @@ func FlattenSystem(cacheType, systemID string) []string {
 		return nil
 	}
 	return append([]string(nil), cache[systemID]...)
-}
-
-// -----------------------------
-// IPC (Unix socket for menu access)
-// -----------------------------
-
-const socketPath = "/tmp/sam.sock"
-
-// StartIPCServer launches a background goroutine to serve cache queries over a Unix socket.
-func StartIPCServer() error {
-	_ = os.Remove(socketPath) // cleanup old socket
-	ln, err := net.Listen("unix", socketPath)
-	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", socketPath, err)
-	}
-
-	go func() {
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				continue
-			}
-			go handleConn(conn)
-		}
-	}()
-	return nil
-}
-
-func handleConn(conn net.Conn) {
-    defer conn.Close()
-
-    scanner := bufio.NewScanner(conn)
-    if !scanner.Scan() { // only read one command
-        return
-    }
-    line := scanner.Text()
-    parts := strings.SplitN(line, " ", 2)
-    cmd := parts[0]
-    arg := ""
-    if len(parts) > 1 {
-        arg = parts[1]
-    }
-
-    switch cmd {
-    case "LIST_SYSTEMS":
-        reply := strings.Join(CacheKeys("lists"), "\n")
-        fmt.Fprint(conn, reply)
-    case "LIST_MASTER":
-        reply := strings.Join(GetCache("master", arg), "\n")
-        fmt.Fprint(conn, reply)
-    case "LIST_INDEX":
-        reply := strings.Join(GetCache("index", arg), "\n")
-        fmt.Fprint(conn, reply)
-    case "RUN":
-        Run([]string{arg})
-        fmt.Fprint(conn, "OK")
-    default:
-        fmt.Fprint(conn, "ERR unknown command")
-    }
-}
-
-// IPCRequest is a helper for menu clients to send commands to the main SAM process.
-func IPCRequest(msg string) (string, error) {
-	conn, err := net.Dial("unix", socketPath)
-	if err != nil {
-		return "", err
-	}
-	defer conn.Close()
-
-	if _, err := conn.Write([]byte(msg + "\n")); err != nil {
-		return "", err
-	}
-
-	// read everything
-	buf, err := io.ReadAll(conn)
-	if err != nil {
-		return "", err
-	}
-	return string(buf), nil
 }
