@@ -41,8 +41,8 @@ func GameMenu9() error {
 	fmt.Println("[DEBUG] Reload command written successfully")
 
 	// Step 2: wait for menu reload
-	fmt.Println("[DEBUG] Sleeping 2s to let menu reload…")
-	time.Sleep(2 * time.Second)
+	fmt.Println("[DEBUG] Sleeping 3s to let menu reload…")
+	time.Sleep(3 * time.Second)
 
 	// Step 3: press F9 (open terminal)
 	fmt.Println("[DEBUG] Creating virtual keyboard…")
@@ -58,7 +58,10 @@ func GameMenu9() error {
 		return fmt.Errorf("[DEBUG] failed to press F9: %w", err)
 	}
 	fmt.Println("[DEBUG] F9 pressed")
-
+	
+	fmt.Println("[DEBUG] Sleeping 3s to let menu reload…")
+	time.Sleep(3 * time.Second)
+	
 	// Step 4: switch to tty2
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
