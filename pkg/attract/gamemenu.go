@@ -124,44 +124,57 @@ func GameMenu8() error {
 	return nil
 }
 
-// MENU 9: Reset to menu, spam F9, then run SAM_MENU.sh
+// MENU 9: reset to MiSTer menu, open console with F9, then run SAM_MENU.sh
 func GameMenu9() error {
-    // Reset to MiSTer menu core
-    if err := os.WriteFile("/dev/MiSTer_cmd", []byte("load_core /media/fat/menu.rbf\n"), 0644); err != nil {
-        return fmt.Errorf("failed to reset to menu core: %w", err)
-    }
-    fmt.Println("[MENU9] Reset to MiSTer menu core.")
+	// Step 1: reload menu core
+	cmdPath := "/dev/MiSTer_cmd"
+	f, err := os.OpenFile(cmdPath, os.O_WRONLY, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open %s: %w", cmdPath, err)
+	}
+	if _, err := f.WriteString("load_core /media/fat/menu.rbf\n"); err != nil {
+		f.Close()
+		return fmt.Errorf("failed to write to %s: %w", cmdPath, err)
+	}
+	f.Close()
 
-    // Virtual keyboard
-    kb, err := input.NewVirtualKeyboard()
-    if err != nil {
-        return fmt.Errorf("failed to create virtual keyboard: %w", err)
-    }
-    defer kb.Close()
+	fmt.Println("[MENU9] Reloaded MiSTer menu core")
 
-    // Spam F9 a few times to ensure console opens
-    fmt.Println("[MENU9] Spamming F9 to drop into console...")
-    for i := 0; i < 3; i++ {
-        kb.Console()
-        time.Sleep(200 * time.Millisecond)
-    }
+	// Step 2: wait a bit for menu to actually load
+	time.Sleep(2 * time.Second)
 
-    // Run the SAM menu script
-    scriptPath := "/media/fat/Scripts/SAM_MENU.sh"
-    if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-        return fmt.Errorf("script not found: %s", scriptPath)
-    }
+	// Step 3: use virtual keyboard to press F9
+	kb, err := input.NewVirtualKeyboard()
+	if err != nil {
+		return fmt.Errorf("failed to create virtual keyboard: %w", err)
+	}
+	defer kb.Close()
 
-    cmd := exec.Command("bash", scriptPath)
-    cmd.Stdout = os.Stdout
-    cmd.Stderr = os.Stderr
-    cmd.Stdin = os.Stdin
+	fmt.Println("[MENU9] Sending F9 to open console...")
+	if err := kb.Console(); err != nil {
+		return fmt.Errorf("failed to press F9: %w", err)
+	}
 
-    if err := cmd.Run(); err != nil {
-        return fmt.Errorf("failed to run script: %w", err)
-    }
+	// Give MiSTer time to drop into the terminal
+	time.Sleep(1 * time.Second)
 
-    fmt.Println("[MENU9] SAM_MENU.sh finished.")
-    return nil
+	// Step 4: run SAM_MENU.sh
+	scriptPath := "/media/fat/Scripts/SAM_MENU.sh"
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		return fmt.Errorf("script not found: %s", scriptPath)
+	}
+
+	cmd := exec.Command("bash", scriptPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	fmt.Println("[MENU9] Running SAM_MENU.sh...")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to run %s: %w", scriptPath, err)
+	}
+
+	fmt.Println("[MENU9] SAM_MENU.sh finished.")
+	return nil
 }
 
