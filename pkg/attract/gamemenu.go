@@ -122,19 +122,47 @@ func GameMenu8() error {
 	return nil
 }
 
-// MENU 9: fullscreen msg
+package attract
+
+import (
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/synrais/SAM-GO/pkg/input"
+)
+
+// MENU 9: reset to MiSTer menu, then open console with F9
 func GameMenu9() error {
+	// Step 1: reload menu core
+	cmdPath := "/dev/MiSTer_cmd"
+	f, err := os.OpenFile(cmdPath, os.O_WRONLY, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open %s: %w", cmdPath, err)
+	}
+	if _, err := f.WriteString("load_core /media/fat/menu.rbf\n"); err != nil {
+		f.Close()
+		return fmt.Errorf("failed to write to %s: %w", cmdPath, err)
+	}
+	f.Close()
+
+	fmt.Println("[MENU9] Reloaded MiSTer menu core")
+
+	// Step 2: wait a bit for menu to actually load
+	time.Sleep(2 * time.Second)
+
+	// Step 3: use virtual keyboard to press F9
 	kb, err := input.NewVirtualKeyboard()
 	if err != nil {
 		return fmt.Errorf("failed to create virtual keyboard: %w", err)
 	}
 	defer kb.Close()
 
-	fmt.Println("[MENU9] Sending F9 to MiSTer to open console...")
+	fmt.Println("[MENU9] Sending F9 to open console...")
 	if err := kb.Console(); err != nil {
 		return fmt.Errorf("failed to press F9: %w", err)
 	}
 
-	fmt.Println("[MENU9] Console should now be visible. Type manually there.")
+	fmt.Println("[MENU9] Console should now be visible.")
 	return nil
 }
