@@ -46,6 +46,19 @@ func AttractInputMap(cfg *config.UserConfig, r *rand.Rand, inputCh <-chan string
 		},
 
 		// ----------------------------
+		// Test Menus (Hotkeys 1–9)
+		// ----------------------------
+		"1": func() { GameMenu1() },
+		"2": func() { GameMenu2() },
+		"3": func() { GameMenu3() },
+		"4": func() { GameMenu4() },
+		"5": func() { GameMenu5() },
+		"6": func() { GameMenu6() },
+		"7": func() { GameMenu7() },
+		"8": func() { GameMenu8() },
+		"9": func() { GameMenu9() },
+
+		// ----------------------------
 		// Controller Buttons
 		// ----------------------------
 		"button1": func() {
