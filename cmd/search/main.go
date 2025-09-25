@@ -233,7 +233,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 
 			if launchGame {
 				// 🔑 Only path — let LaunchGenericFile resolve everything else
-				err = mister.LaunchGenericFile(cfg, game.Path)
+				err = Run([]string{game.Path})
 				if err != nil {
 					log.Fatal(err)
 				}
