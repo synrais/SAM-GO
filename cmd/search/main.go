@@ -157,7 +157,6 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 	}
 
 	if button == 0 {
-		// Options menu
 		err = mainOptionsWindow(cfg, stdscr)
 		if err != nil {
 			return err
@@ -165,7 +164,6 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 		return searchWindow(cfg, stdscr, text, launchGame)
 
 	} else if button == 1 {
-		// Search button
 		if len(text) == 0 {
 			return searchWindow(cfg, stdscr, "", launchGame)
 		}
@@ -186,14 +184,15 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 			return searchWindow(cfg, stdscr, text, launchGame)
 		}
 
-		// Prepare display list
 		var names []string
 		var items []gamesdb.SearchResult
 		for _, result := range results {
 			systemName := result.SystemId
-			if sys, err := games.GetSystem(result.SystemId); err == nil {
-				systemName = sys.Name
+			system, err := games.GetSystem(result.SystemId)
+			if err == nil {
+				systemName = system.Name
 			}
+
 			display := fmt.Sprintf("[%s] %s", systemName, result.Name)
 			if !utils.Contains(names, display) {
 				names = append(names, display)
@@ -231,7 +230,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 			game := items[selected]
 
 			if launchGame {
-				// 🔹 Use LaunchGenericFile instead of LaunchGame
+				// 🔑 Only path — let LaunchGenericFile resolve everything else
 				err = mister.LaunchGenericFile(cfg, game.Path)
 				if err != nil {
 					log.Fatal(err)
@@ -247,7 +246,6 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 		return searchWindow(cfg, stdscr, text, launchGame)
 
 	} else {
-		// Exit button
 		return nil
 	}
 }
