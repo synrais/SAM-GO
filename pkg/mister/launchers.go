@@ -131,6 +131,21 @@ func LaunchShortCore(path string) error {
 	return launchFile(tmpFile)
 }
 
+// LaunchGameFromPath is a convenience wrapper that takes only a file path.
+// It detects the right system and calls LaunchGame with a proper config.
+func LaunchGameFromPath(path string) error {
+    cfg := &config.UserConfig{}
+
+    // Detect system from path
+    system, err := games.BestSystemMatch(cfg, path)
+    if err != nil {
+        return fmt.Errorf("could not detect system for %s: %w", path, err)
+    }
+
+    // Call the normal launcher
+    return LaunchGame(cfg, system, path)
+}
+
 func LaunchGame(cfg *config.UserConfig, system games.System, path string) error {
 	// First check if sidelaunchers wants to handle this system specially
 	if handled, err := SideLaunchers(cfg, system, path); handled {
