@@ -24,6 +24,11 @@ func registerSideLauncher(id string, fn func(*config.UserConfig, games.System, s
 	sideLauncherRegistry[id] = fn
 }
 
+func init() {
+    registerSideLauncher("AmigaVision", LaunchAmigaVision)
+    registerSideLauncher("AmigaCD32", LaunchCD32)
+}
+
 // SideLaunchers checks if system.Id has a sidelauncher
 func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bool, error) {
 	fn, ok := sideLauncherRegistry[strings.ToLower(system.Id)]
