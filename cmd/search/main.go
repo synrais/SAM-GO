@@ -260,8 +260,8 @@ func main() {
 
 	cfg, err := config.LoadUserConfig(appName, &config.UserConfig{})
 	if err != nil {
-		fmt.Println("[WARN] Could not load config, using defaults:", err)
-		cfg = &config.UserConfig{}
+		fmt.Println("Error loading config file:", err)
+		os.Exit(1)
 	}
 
 	stdscr, err := curses.Setup()
