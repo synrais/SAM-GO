@@ -160,10 +160,11 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		return fmt.Errorf("failed to save patched AmigaVision.cfg: %w", err)
 	}
 
-	// Handle final cfg on FAT (always patched)
+	// Handle final cfg on FAT
 	if _, err := os.Stat(misterCfg); os.IsNotExist(err) {
+		// First time → copy patched one directly
 		if err := exec.Command("/bin/cp", tmpCfg, misterCfg).Run(); err != nil {
-			return fmt.Errorf("failed to install patched cfg: %w", err)
+			return fmt.Errorf("failed to copy patched cfg: %w", err)
 		}
 	} else {
 		_ = exec.Command("umount", misterCfg).Run()
@@ -173,20 +174,35 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		}
 	}
 
-	// 4. Prepare tmp shared + ags_boot
+	// 4. Prepare shared + ags_boot
 	sharedDir := filepath.Join(pseudoRoot, "shared")
 	tmpShared := filepath.Join(tmpDir, "shared")
 
-	// If user’s shared exists, overlay it into tmp
-	if _, err := os.Stat(sharedDir); err == nil {
-		if out, err := exec.Command("/bin/cp", "-a", sharedDir+"/.", tmpShared).CombinedOutput(); err != nil {
-			fmt.Printf("[WARN] copy shared failed: %v (output: %s)\n", err, string(out))
-		}
-	} else {
-		fmt.Printf("[AmigaVision] Using embedded shared at %s\n", tmpShared)
+	_ = os.RemoveAll(tmpShared)
+	if err := os.MkdirAll(tmpShared, 0755); err != nil {
+		return fmt.Errorf("failed to create tmp shared: %w", err)
 	}
 
-	// Write ags_boot file
+	if _, err := os.Stat(sharedDir); err == nil {
+		// User has shared → copy to tmp
+		if out, err := exec.Command("/bin/cp", "-a", sharedDir+"/.", tmpShared).CombinedOutput(); err != nil {
+			fmt.Printf("[WARN] copy user shared failed: %v (output: %s)\n", err, string(out))
+		}
+	} else {
+		// No user shared → seed both user system path and tmp with embedded
+		embeddedShared := filepath.Join(tmpDir, "shared")
+		if err := os.MkdirAll(sharedDir, 0755); err != nil {
+			return fmt.Errorf("failed to create shared mount point: %w", err)
+		}
+		if out, err := exec.Command("/bin/cp", "-a", embeddedShared+"/.", sharedDir).CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to seed shared into system path: %v (output: %s)", err, string(out))
+		}
+		if out, err := exec.Command("/bin/cp", "-a", embeddedShared+"/.", tmpShared).CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to seed shared into tmp: %v (output: %s)", err, string(out))
+		}
+	}
+
+	// Write ags_boot file into tmp shared
 	bootFile := filepath.Join(tmpShared, "ags_boot")
 	cleanName := utils.RemoveFileExt(filepath.Base(path))
 	if err := os.WriteFile(bootFile, []byte(cleanName+"\n\n"), 0644); err != nil {
