@@ -12,7 +12,8 @@ import (
 	"github.com/wizzomafizzo/mrext/pkg/mister"
 
 	gc "github.com/rthornton128/goncurses"
-
+	
+	"github.com/wizzomafizzo/mrext/pkg/attract"
 	"github.com/wizzomafizzo/mrext/pkg/config"
 	"github.com/wizzomafizzo/mrext/pkg/curses"
 	"github.com/wizzomafizzo/mrext/pkg/games"
