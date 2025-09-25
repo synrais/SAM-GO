@@ -131,21 +131,6 @@ func LaunchShortCore(path string) error {
 	return launchFile(tmpFile)
 }
 
-// LaunchGameFromPath is a convenience wrapper that takes only a file path.
-// It detects the right system and calls LaunchGame with a proper config.
-func LaunchGameFromPath(path string) error {
-    cfg := &config.UserConfig{}
-
-    // Detect system from path
-    system, err := games.BestSystemMatch(cfg, path)
-    if err != nil {
-        return fmt.Errorf("could not detect system for %s: %w", path, err)
-    }
-
-    // Call the normal launcher
-    return LaunchGame(cfg, system, path)
-}
-
 func LaunchGame(cfg *config.UserConfig, system games.System, path string) error {
 	// First check if sidelaunchers wants to handle this system specially
 	if handled, err := SideLaunchers(cfg, system, path); handled {
@@ -352,47 +337,47 @@ func LaunchMenu() error {
 
 // LaunchGenericFile Given a generic file path, launch it using the correct method, if possible.
 func LaunchGenericFile(cfg *config.UserConfig, path string) error {
-	var err error
-	isGame := false
-	ext := s.ToLower(filepath.Ext(path))
-	switch ext {
-	case ".mra":
-		err = launchFile(path)
-		if err != nil {
-			return err
-		}
-	case ".mgl":
-		err = launchFile(path)
-		if err != nil {
-			return err
-		}
-		isGame = true
-	case ".rbf":
-		err = launchFile(path)
-		if err != nil {
-			return err
-		}
-	default:
-		system, err := games.BestSystemMatch(cfg, path)
-		if err != nil {
-			return fmt.Errorf("unknown file type: %s", ext)
-		}
+    // Try to detect system early
+    system, _ := games.BestSystemMatch(cfg, path)
 
-		err = launchTempMgl(cfg, &system, path)
-		if err != nil {
-			return err
-		}
-		isGame = true
-	}
+    // 🔹 Check if a sidelauncher exists for this system
+    if system.Id != "" {
+        if handled, err := SideLaunchers(cfg, system, path); handled {
+            return err
+        }
+    }
 
-	if ActiveGameEnabled() && isGame {
-		err := SetActiveGame(path)
-		if err != nil {
-			return err
-		}
-	}
+    var err error
+    isGame := false
+    ext := s.ToLower(filepath.Ext(path))
 
-	return nil
+    switch ext {
+    case ".mra":
+        err = launchFile(path)
+    case ".mgl":
+        err = launchFile(path)
+        isGame = true
+    case ".rbf":
+        err = launchFile(path)
+    default:
+        if system.Id == "" {
+            return fmt.Errorf("unknown file type: %s", ext)
+        }
+        err = launchTempMgl(cfg, &system, path)
+        isGame = true
+    }
+    if err != nil {
+        return err
+    }
+
+    // Track active game if applicable
+    if ActiveGameEnabled() && isGame {
+        if err := SetActiveGame(path); err != nil {
+            return err
+        }
+    }
+
+    return nil
 }
 
 // TryPickRandomGame recursively searches through given folder for a valid game
