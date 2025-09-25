@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -7,10 +6,9 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	gc "github.com/rthornton128/goncurses"
-	
+
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/curses"
 	"github.com/synrais/SAM-GO/pkg/games"
@@ -162,8 +160,8 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 		if err != nil {
 			return err
 		}
-		return searchWindow(cfg, stdscr, text, launchGame)
 
+		return searchWindow(cfg, stdscr, text, launchGame)
 	} else if button == 1 {
 		if len(text) == 0 {
 			return searchWindow(cfg, stdscr, "", launchGame)
@@ -206,6 +204,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 		_ = gc.Update()
 
 		var titleLabel, launchLabel string
+
 		if launchGame {
 			titleLabel = "Launch Game"
 			launchLabel = "Launch"
@@ -213,7 +212,6 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 			titleLabel = "Pick Game"
 			launchLabel = "Select"
 		}
-
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         titleLabel,
 			Buttons:       []string{"PgUp", "PgDn", launchLabel, "Cancel"},
@@ -231,17 +229,17 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 			game := items[selected]
 
 			if launchGame {
-				// 🔑 Only path — let LaunchGenericFile resolve everything else
-				err = mister.LaunchGenericFile(cfg, game.Path)
+				system, err := games.GetSystem(game.SystemId)
 				if err != nil {
 					log.Fatal(err)
 				}
-				
-				// Give sideloader time to finish mounts and MiSTer to start core
-    			fmt.Println("[DEBUG] Sleeping 10s to keep search alive...")
-    			time.Sleep(10 * time.Second)
-				return nil
-				
+
+				err = mister.LaunchGame(cfg, *system, game.Path)
+				if err != nil {
+					log.Fatal(err)
+				} else {
+					return nil
+				}
 			} else {
 				gc.End()
 				fmt.Fprintln(os.Stderr, game.Path)
@@ -250,7 +248,6 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 		}
 
 		return searchWindow(cfg, stdscr, text, launchGame)
-
 	} else {
 		return nil
 	}
@@ -261,11 +258,10 @@ func main() {
 	flag.Parse()
 	var launchGame bool = !*printPtr
 
-	// Try to load config, but fall back to defaults if missing
 	cfg, err := config.LoadUserConfig(appName, &config.UserConfig{})
 	if err != nil {
-		fmt.Println("[WARN] Could not load config, using defaults:", err)
-		cfg = &config.UserConfig{}
+		fmt.Println("Error loading config file:", err)
+		os.Exit(1)
 	}
 
 	stdscr, err := curses.Setup()
