@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"lipgloss"
-	"key"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -70,112 +68,5 @@ func GameMenu9() error {
 	os.Stderr = tty
 	os.Stdin = tty
 
-	RunMenu()
 	return nil
-}
-
-//
-// ===== File/Dir Struct =====
-//
-
-type Node struct {
-	Display string
-	Path    string
-	IsDir   bool
-}
-
-func (n Node) Title() string {
-	if n.IsDir {
-		return "📂 " + n.Display
-	}
-	return "🎮 " + n.Display
-}
-
-func (n Node) Description() string { return "" } // clean, no paths
-func (n Node) FilterValue() string { return n.Display }
-
-//
-// ===== Styles =====
-//
-
-var (
-	selectedItem = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("230")).
-			Background(lipgloss.Color("62")).
-			Bold(true).
-			PaddingLeft(1)
-
-	normalItem = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252")).
-			PaddingLeft(1)
-
-	titleBarStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("230")).
-			Background(lipgloss.Color("57")).
-			Padding(1, 2)
-
-	breadcrumbStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("180")).
-			Background(lipgloss.Color("57")).
-			Padding(0, 2, 1, 2)
-
-	frameStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("105")).
-			Padding(1, 2)
-
-	statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("228")).
-			Background(lipgloss.Color("60")).
-			Padding(0, 2)
-
-	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("249")).
-			Background(lipgloss.Color("55")).
-			Padding(1, 2)
-)
-
-type keyMap struct {
-	up, down, enter, back, quit, filter key.Binding
-}
-
-func newKeyMap() keyMap {
-	return keyMap{
-		up: key.NewBinding(
-			key.WithKeys("up", "k"),
-			key.WithHelp("↑/k", "move up"),
-		),
-		down: key.NewBinding(
-			key.WithKeys("down", "j"),
-			key.WithHelp("↓/j", "move down"),
-		),
-		enter: key.NewBinding(
-			key.WithKeys("enter", "right", "l"),
-			key.WithHelp("enter", "open / launch"),
-		),
-		back: key.NewBinding(
-			key.WithKeys("esc", "left", "h", "backspace"),
-			key.WithHelp("esc", "go back"),
-		),
-		quit: key.NewBinding(
-			key.WithKeys("ctrl+c", "q"),
-			key.WithHelp("ctrl+c", "quit"),
-		),
-		filter: key.NewBinding(
-			key.WithKeys("/"),
-			key.WithHelp("/", "filter"),
-		),
-	}
-}
-
-func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.up, k.down, k.enter, k.back, k.quit}
-}
-
-func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{k.up, k.down, k.enter},
-		{k.back, k.filter, k.quit},
-	}
 }
