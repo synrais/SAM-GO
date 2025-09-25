@@ -20,23 +20,12 @@ var KeyboardScanCodes string
 //go:embed SAM.ini
 var DefaultSAMIni []byte
 
-//go:embed Blank_AmigaCD32.cfg
-var BlankAmigaCD32Cfg []byte
-
-//go:embed mplayer.zip
-var MPlayerZip []byte
-
-// 🔹 Add these:
- 
-//go:embed AmigaVision.rom
-var AmigaVisionRom []byte
-
-//go:embed AmigaCD32.hdf
-var AmigaCD32Hdf []byte
+//go:embed sidelaunchers/AmigaVision.zip
+var AmigaVisionZip []byte
 
 // --- Helpers ---
 
-// ExtractZipBytes extracts an embedded zip (like MPlayerZip) into destDir.
+// ExtractZipBytes extracts an embedded zip (like AmigaVisionZip) into destDir.
 // It also forces +x (execute) permission on extracted files to ensure binaries run.
 func ExtractZipBytes(data []byte, destDir string) error {
 	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
@@ -79,7 +68,7 @@ func ExtractZipBytes(data []byte, destDir string) error {
 		dst.Close()
 		rc.Close()
 
-		// Force +x on extracted files to avoid permission denied
+		// Force +x on extracted files (safety for any binaries/scripts inside)
 		if err := os.Chmod(fpath, f.Mode()|0111); err != nil {
 			return err
 		}
