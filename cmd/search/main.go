@@ -11,7 +11,6 @@ import (
 
 	gc "github.com/rthornton128/goncurses"
 	
-	"github.com/synrais/SAM-GO/pkg/attract"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/curses"
 	"github.com/synrais/SAM-GO/pkg/games"
