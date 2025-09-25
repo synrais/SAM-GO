@@ -11,9 +11,9 @@ import (
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/synrais/SAM-GO/mrext/pkg/config"
-	"github.com/synrais/SAM-GO/mrext/pkg/games"
-	"github.com/synrais/SAM-GO/mrext/pkg/utils"
+	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/games"
+	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 const (
