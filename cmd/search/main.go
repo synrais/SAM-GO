@@ -236,7 +236,12 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 				if err != nil {
 					log.Fatal(err)
 				}
+				
+				// Give sideloader time to finish mounts and MiSTer to start core
+    			fmt.Println("[DEBUG] Sleeping 10s to keep search alive...")
+    			time.Sleep(10 * time.Second)
 				return nil
+				
 			} else {
 				gc.End()
 				fmt.Fprintln(os.Stderr, game.Path)
