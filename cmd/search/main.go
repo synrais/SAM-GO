@@ -261,10 +261,11 @@ func main() {
 	flag.Parse()
 	var launchGame bool = !*printPtr
 
+	// Try to load config, but fall back to defaults if missing
 	cfg, err := config.LoadUserConfig(appName, &config.UserConfig{})
 	if err != nil {
-		fmt.Println("Error loading config file:", err)
-		os.Exit(1)
+		fmt.Println("[WARN] Could not load config, using defaults:", err)
+		cfg = &config.UserConfig{}
 	}
 
 	stdscr, err := curses.Setup()
