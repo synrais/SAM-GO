@@ -132,7 +132,7 @@ func LaunchShortCore(path string) error {
 }
 
 func LaunchGame(cfg *config.UserConfig, system games.System, path string) error {
-	// First check if sidelaunchers wants to handle this system specially
+	// check if sidelaunchers wants to handle this system specially
 	if handled, err := SideLaunchers(cfg, system, path); handled {
 		return err
 	}
@@ -337,10 +337,10 @@ func LaunchMenu() error {
 
 // LaunchGenericFile Given a generic file path, launch it using the correct method, if possible.
 func LaunchGenericFile(cfg *config.UserConfig, path string) error {
-    // Try to detect system early
+	
     system, _ := games.BestSystemMatch(cfg, path)
 
-    // 🔹 Check if a sidelauncher exists for this system
+    // check if sidelaunchers wants to handle this system specially
     if system.Id != "" {
         if handled, err := SideLaunchers(cfg, system, path); handled {
             return err
