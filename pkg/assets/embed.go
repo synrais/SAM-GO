@@ -28,9 +28,9 @@ var AmigaCD32Zip []byte
 
 // --- Helpers ---
 
-// ExtractZipBytes extracts an embedded zip (like AmigaVisionZip) into destDir.
-// It also forces +x (execute) permission on extracted files to ensure binaries run.
-func ExtractZipBytes(data []byte, destDir string) error {
+// ExtractZip extracts an embedded zip (like AmigaVisionZip) into destDir.
+// It forces +x (execute) permission on extracted files to ensure binaries run.
+func ExtractZip(data []byte, destDir string) error {
 	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return err
@@ -51,30 +51,50 @@ func ExtractZipBytes(data []byte, destDir string) error {
 			return err
 		}
 
-		rc, err := f.Open()
-		if err != nil {
-			return err
-		}
-
-		dst, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.Mode())
-		if err != nil {
-			rc.Close()
-			return err
-		}
-
-		if _, err := io.Copy(dst, rc); err != nil {
-			dst.Close()
-			rc.Close()
-			return err
-		}
-
-		dst.Close()
-		rc.Close()
-
-		// Force +x on extracted files (safety for any binaries/scripts inside)
-		if err := os.Chmod(fpath, f.Mode()|0111); err != nil {
+		if err := extractAndWrite(f, fpath); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// ExtractZipFile extracts a single file from an embedded zip into destPath.
+func ExtractZipFile(data []byte, fileName, destPath string) error {
+	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return err
+	}
+
+	for _, f := range r.File {
+		if f.Name == fileName {
+			// Ensure parent directory exists
+			if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+				return err
+			}
+			return extractAndWrite(f, destPath)
+		}
+	}
+	return os.ErrNotExist
+}
+
+// Internal helper for file extraction
+func extractAndWrite(f *zip.File, destPath string) error {
+	rc, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+
+	dst, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.Mode())
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, rc); err != nil {
+		return err
+	}
+
+	// Force +x on extracted files (safety for any binaries/scripts inside)
+	return os.Chmod(destPath, f.Mode()|0111)
 }
