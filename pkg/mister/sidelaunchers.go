@@ -25,8 +25,8 @@ func registerSideLauncher(id string, fn func(*config.UserConfig, games.System, s
 }
 
 func init() {
-    registerSideLauncher("AmigaVision", LaunchAmigaVision)
-    registerSideLauncher("AmigaCD32", LaunchCD32)
+	registerSideLauncher("AmigaVision", LaunchAmigaVision)
+	registerSideLauncher("AmigaCD32", LaunchCD32)
 }
 
 // SideLaunchers checks if system.Id has a sidelauncher
@@ -41,6 +41,7 @@ func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bo
 
 	return true, fn(cfg, system, path)
 }
+
 // --------------------------------------------------
 // AmigaVision
 // --------------------------------------------------
@@ -84,7 +85,7 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		if err := os.MkdirAll(tmpDir, 0755); err != nil {
 			return fmt.Errorf("failed to create tmp dir: %w", err)
 		}
-		if err := assets.ExtractZipBytes(assets.AmigaVisionZip, tmpDir); err != nil {
+		if err := assets.ExtractZip(assets.AmigaVisionZip, tmpDir); err != nil {
 			return fmt.Errorf("failed to extract AmigaVision assets: %w", err)
 		}
 		fmt.Printf("[AmigaVision] Extracted embedded assets to %s\n", tmpDir)
@@ -263,7 +264,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	seedAsset := func(assetName, destDir string) (string, error) {
 		destPath := filepath.Join(destDir, assetName)
 		if _, err := os.Stat(destPath); os.IsNotExist(err) {
-			if err := assets.ExtractFileFromZip(assets.AmigaCD32Zip, assetName, destPath); err != nil {
+			if err := assets.ExtractZipFile(assets.AmigaCD32Zip, assetName, destPath); err != nil {
 				return "", fmt.Errorf("failed to seed %s: %w", assetName, err)
 			}
 			fmt.Printf("[AmigaCD32] Seeded %s → %s\n", assetName, destPath)
@@ -280,7 +281,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		}
 	}
 	tmpCfg := filepath.Join(tmpDir, "AmigaCD32.cfg")
-	if err := assets.ExtractFileFromZip(assets.AmigaCD32Zip, "AmigaCD32.cfg", tmpCfg); err != nil {
+	if err := assets.ExtractZipFile(assets.AmigaCD32Zip, "AmigaCD32.cfg", tmpCfg); err != nil {
 		return fmt.Errorf("failed to extract AmigaCD32.cfg: %w", err)
 	}
 
@@ -294,7 +295,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	// 3. Ensure FAT cfg exists
 	misterCfg := "/media/fat/config/AmigaCD32.cfg"
 	if _, err := os.Stat(misterCfg); os.IsNotExist(err) {
-		if err := assets.ExtractFileFromZip(assets.AmigaCD32Zip, "AmigaCD32.cfg", misterCfg); err != nil {
+		if err := assets.ExtractZipFile(assets.AmigaCD32Zip, "AmigaCD32.cfg", misterCfg); err != nil {
 			return fmt.Errorf("failed to seed AmigaCD32.cfg to FAT: %w", err)
 		}
 	}
