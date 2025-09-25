@@ -5,7 +5,7 @@ import (
 	s "strings"
 
 	gc "github.com/rthornton128/goncurses"
-	"github.com/synrais/SAM-GO/mrext/pkg/utils"
+	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 type ListPickerOpts struct {
