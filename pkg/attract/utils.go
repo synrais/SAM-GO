@@ -352,9 +352,9 @@ func Run(args []string) error {
 	fmt.Println("[DEBUG][Run] called with args:", args)
 	fmt.Println("[DEBUG][Run] runPath:", runPath)
 
+	// ⚡ We don’t need BestSystemMatch anymore for LaunchGenericFile
+	// But we still update LastPlayed + NowPlaying so the metadata is correct.
 	system, _ := games.BestSystemMatch(&config.UserConfig{}, runPath)
-	fmt.Println("[DEBUG][Run] BestSystemMatch ->", system.Id, "(", system.Name, ")")
-
 	setLastPlayed(system, runPath)
 	fmt.Println("[DEBUG][Run] LastPlayedPath set to:", LastPlayedPath)
 
@@ -367,12 +367,14 @@ func Run(args []string) error {
 	_, name := getLastPlayed()
 	fmt.Printf("[RUN] Now Playing %s: %s\n", system.Name, name)
 
-	err := mister.LaunchGame(&config.UserConfig{}, system, runPath)
+	// 🔹 Switch to LaunchGenericFile
+	err := mister.LaunchGenericFile(&config.UserConfig{}, runPath)
 	if err != nil {
-		fmt.Printf("[RUN] LaunchGame failed for %s: %v\n", runPath, err)
+		fmt.Printf("[RUN] LaunchGenericFile failed for %s: %v\n", runPath, err)
 	} else {
-		fmt.Println("[DEBUG][Run] LaunchGame succeeded for", runPath)
+		fmt.Println("[DEBUG][Run] LaunchGenericFile succeeded for", runPath)
 	}
 
 	return err
 }
+
