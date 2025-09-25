@@ -13,12 +13,12 @@ import (
 
 	gc "github.com/rthornton128/goncurses"
 	
-	"github.com/wizzomafizzo/mrext/pkg/attract"
-	"github.com/wizzomafizzo/mrext/pkg/config"
-	"github.com/wizzomafizzo/mrext/pkg/curses"
-	"github.com/wizzomafizzo/mrext/pkg/games"
-	"github.com/wizzomafizzo/mrext/pkg/gamesdb"
-	"github.com/wizzomafizzo/mrext/pkg/utils"
+	"github.com/synrais/SAM-GO/pkg/attract"
+	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/curses"
+	"github.com/synrais/SAM-GO/pkg/games"
+	"github.com/synrais/SAM-GO/pkg/gamesdb"
+	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
 // TODO: list display window showing 2 values per row (left and right aligned)
