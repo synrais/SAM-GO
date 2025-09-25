@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wizzomafizzo/mrext/pkg/mister"
-
 	gc "github.com/rthornton128/goncurses"
 	
 	"github.com/synrais/SAM-GO/pkg/attract"
@@ -18,6 +16,7 @@ import (
 	"github.com/synrais/SAM-GO/pkg/curses"
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/gamesdb"
+	"github.com/synrais/SAM-GO/mrext/pkg/mister"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
