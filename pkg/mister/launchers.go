@@ -132,12 +132,7 @@ func LaunchShortCore(path string) error {
 }
 
 func LaunchGame(cfg *config.UserConfig, system games.System, path string) error {
-	// DEBUG LOGGER
-	f, _ := os.OpenFile("/tmp/sam_launch.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	defer f.Close()
-	fmt.Fprintf(f, "[LaunchGame] system.Id=%s, path=%s\n", system.Id, path)
-
-	// 🔹 First check if sidelaunchers wants to handle this system specially
+	// First check if sidelaunchers wants to handle this system specially
 	if handled, err := SideLaunchers(cfg, system, path); handled {
 		return err
 	}
