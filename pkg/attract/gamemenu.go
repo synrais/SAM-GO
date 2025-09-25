@@ -6,12 +6,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/input"
 )
@@ -100,13 +103,85 @@ func (n Node) FilterValue() string { return n.Display }
 
 var (
 	selectedItem = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("0")).
-			Background(lipgloss.Color("33")).
-			Bold(true)
+			Foreground(lipgloss.Color("230")).
+			Background(lipgloss.Color("62")).
+			Bold(true).
+			PaddingLeft(1)
 
 	normalItem = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252"))
+			Foreground(lipgloss.Color("252")).
+			PaddingLeft(1)
+
+	titleBarStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("230")).
+			Background(lipgloss.Color("57")).
+			Padding(1, 2)
+
+	breadcrumbStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("180")).
+			Background(lipgloss.Color("57")).
+			Padding(0, 2, 1, 2)
+
+	frameStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("105")).
+			Padding(1, 2)
+
+	statusStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("228")).
+			Background(lipgloss.Color("60")).
+			Padding(0, 2)
+
+	helpStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("249")).
+			Background(lipgloss.Color("55")).
+			Padding(1, 2)
 )
+
+type keyMap struct {
+	up, down, enter, back, quit, filter key.Binding
+}
+
+func newKeyMap() keyMap {
+	return keyMap{
+		up: key.NewBinding(
+			key.WithKeys("up", "k"),
+			key.WithHelp("↑/k", "move up"),
+		),
+		down: key.NewBinding(
+			key.WithKeys("down", "j"),
+			key.WithHelp("↓/j", "move down"),
+		),
+		enter: key.NewBinding(
+			key.WithKeys("enter", "right", "l"),
+			key.WithHelp("enter", "open / launch"),
+		),
+		back: key.NewBinding(
+			key.WithKeys("esc", "left", "h", "backspace"),
+			key.WithHelp("esc", "go back"),
+		),
+		quit: key.NewBinding(
+			key.WithKeys("ctrl+c", "q"),
+			key.WithHelp("ctrl+c", "quit"),
+		),
+		filter: key.NewBinding(
+			key.WithKeys("/"),
+			key.WithHelp("/", "filter"),
+		),
+	}
+}
+
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.up, k.down, k.enter, k.back, k.quit}
+}
+
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.up, k.down, k.enter},
+		{k.back, k.filter, k.quit},
+	}
+}
 
 //
 // ===== Menu Model =====
@@ -116,21 +191,19 @@ type menuModel struct {
 	list    list.Model
 	stack   []string
 	systems map[string][]Node
-	cursor  int
+	keys    keyMap
+	help    help.Model
+	width   int
+	height  int
+	ready   bool
+	status  string
 }
 
 func newMenuModel() menuModel {
 	systems := buildSystemsFromCache()
 
 	// root list = all systems
-	var systemNodes []Node
-	for sys := range systems {
-		systemNodes = append(systemNodes, Node{
-			Display: sys,
-			Path:    sys,
-			IsDir:   true,
-		})
-	}
+	systemNodes := buildRootNodes(systems)
 
 	delegate := list.NewDefaultDelegate()
 	delegate.Styles.SelectedTitle = selectedItem
@@ -142,11 +215,37 @@ func newMenuModel() menuModel {
 	l := list.New(toListItems(systemNodes), delegate, 0, 0)
 	l.Title = "📜 SAM Masterlist Browser"
 	l.SetShowStatusBar(false)
-	l.SetFilteringEnabled(false)
+	l.SetFilteringEnabled(true)
 	l.SetShowHelp(false)
 	l.SetShowPagination(false)
 
-	return menuModel{list: l, stack: []string{}, systems: systems, cursor: 0}
+	styles := list.DefaultStyles()
+	styles.Title = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("229")).
+		Background(lipgloss.Color("57")).
+		Padding(0, 1)
+	styles.PaginationStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("213")).
+		PaddingLeft(1)
+	styles.HelpStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("189"))
+	styles.NoItems = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("213")).
+		Italic(true)
+	styles.FilterPrompt = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("229")).
+		Bold(true)
+	styles.FilterCursor = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("229")).
+		Bold(true)
+	l.Styles = styles
+
+	keymap := newKeyMap()
+	helpModel := help.New()
+	helpModel.ShortSeparator = " • "
+
+	return menuModel{list: l, stack: []string{}, systems: systems, keys: keymap, help: helpModel, status: "Select a system to browse its games."}
 }
 
 func (m menuModel) Init() tea.Cmd { return nil }
@@ -154,7 +253,10 @@ func (m menuModel) Init() tea.Cmd { return nil }
 func (m menuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.list.SetSize(msg.Width, msg.Height)
+		m.width = msg.Width
+		m.height = msg.Height
+		m.ready = true
+		m.list.SetSize(max(msg.Width-6, 20), max(msg.Height-10, 5))
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -163,18 +265,30 @@ func (m menuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok {
 				return m, nil
 			}
+			if sel.Path == ".." {
+				return m.goBack(), nil
+			}
 			if sel.IsDir {
 				if games, ok := m.systems[sel.Path]; ok {
 					children := append([]Node{{Display: ".. Back", Path: "..", IsDir: true}}, games...)
 					m.list.SetItems(toListItems(children))
 					m.list.Title = sel.Display
 					m.stack = append(m.stack, sel.Path)
+					m.status = fmt.Sprintf("%d games available", len(children)-1)
 				}
 			} else {
 				fmt.Printf("[MENU] Launching: %s\n", sel.Path)
 				Run([]string{sel.Path})
 			}
-		case "q", "esc":
+		case "q", "ctrl+c":
+			if len(m.stack) == 0 {
+				return m, tea.Quit
+			}
+			return m.goBack(), nil
+		case "esc", "backspace", "left", "h":
+			if len(m.stack) == 0 {
+				return m, nil
+			}
 			return m.goBack(), nil
 		}
 	}
@@ -184,29 +298,57 @@ func (m menuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m menuModel) View() string {
-	return m.list.View() // fullscreen, no border box
+	if !m.ready {
+		return "Loading browser…"
+	}
+
+	header := titleBarStyle.Render("SAM ✦ Game Browser")
+	breadcrumb := breadcrumbStyle.Render(m.breadcrumb())
+	body := frameStyle.
+		Width(max(m.width-4, 20)).
+		Height(max(m.height-8, 10)).
+		Render(m.list.View())
+	footer := lipgloss.JoinVertical(lipgloss.Left,
+		statusStyle.Render(m.status),
+		helpStyle.Render(m.help.View(m.keys)),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, header, breadcrumb, body, footer)
 }
 
 func (m menuModel) goBack() menuModel {
 	if len(m.stack) == 0 {
-		var systemNodes []Node
-		for sys := range m.systems {
-			systemNodes = append(systemNodes, Node{
-				Display: sys,
-				Path:    sys,
-				IsDir:   true,
-			})
-		}
+		systemNodes := buildRootNodes(m.systems)
 		m.list.SetItems(toListItems(systemNodes))
-		m.list.Title = "📜 SAM Masterlist Browser"
+		m.list.Title = "Systems"
+		m.status = "Select a system to browse its games."
 		return m
 	}
-	m.stack = m.stack[:len(m.stack)-1]
+
+	parentStack := m.stack[:len(m.stack)-1]
+	if len(parentStack) == 0 {
+		m.stack = parentStack
+		systemNodes := buildRootNodes(m.systems)
+		m.list.SetItems(toListItems(systemNodes))
+		m.list.Title = "Systems"
+		m.status = "Select a system to browse its games."
+		return m
+	}
+
+	m.stack = parentStack
 	system := m.stack[len(m.stack)-1]
 	children := append([]Node{{Display: ".. Back", Path: "..", IsDir: true}}, m.systems[system]...)
 	m.list.SetItems(toListItems(children))
 	m.list.Title = system
+	m.status = fmt.Sprintf("%d games available", len(children)-1)
 	return m
+}
+
+func (m menuModel) breadcrumb() string {
+	if len(m.stack) == 0 {
+		return "Systems"
+	}
+	return strings.Join(m.stack, " › ")
 }
 
 //
@@ -239,7 +381,31 @@ func buildSystemsFromCache() map[string][]Node {
 			})
 		}
 	}
+
+	for system, games := range systems {
+		sort.Slice(games, func(i, j int) bool {
+			return strings.ToLower(games[i].Display) < strings.ToLower(games[j].Display)
+		})
+		systems[system] = games
+	}
+
 	return systems
+}
+
+func buildRootNodes(systems map[string][]Node) []Node {
+	var names []string
+	for sys := range systems {
+		names = append(names, sys)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		return strings.ToLower(names[i]) < strings.ToLower(names[j])
+	})
+
+	nodes := make([]Node, 0, len(names))
+	for _, name := range names {
+		nodes = append(nodes, Node{Display: name, Path: name, IsDir: true})
+	}
+	return nodes
 }
 
 func toListItems(nodes []Node) []list.Item {
@@ -248,6 +414,13 @@ func toListItems(nodes []Node) []list.Item {
 		out[i] = n
 	}
 	return out
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 //
