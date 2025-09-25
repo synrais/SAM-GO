@@ -41,75 +41,185 @@ func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bo
 // AmigaVision
 // --------------------------------------------------
 
-func init() {
-	registerSideLauncher("AmigaVision", LaunchAmigaVision)
-	registerSideLauncher("AmigaCD32", LaunchCD32)
-}
-
 func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string) error {
+	fmt.Println("[SIDELAUNCHER] AmigaVision launch starting…")
+
 	// Only handle .ags files
 	if !strings.EqualFold(filepath.Ext(path), ".ags") {
 		return nil
 	}
 
-	// --- Local helpers (scoped only to AmigaVision) ---
-	findAmigaShared := func() string {
-		paths := games.GetSystemPaths(cfg, []games.System{system})
-		for _, p := range paths {
-			candidate := filepath.Join(p.Path, "shared")
-			if st, err := os.Stat(candidate); err == nil && st.IsDir() {
-				return candidate
-			}
+	// --- Helpers ---
+	cleanPath := func(p string) string {
+		return "../" + strings.TrimPrefix(p, "/media/")
+	}
+
+	const (
+		offsetRomPath  = 0x0C   // AmigaVision.rom
+		offsetHdfPath  = 0x418  // AmigaVision.hdf
+		offsetSavePath = 0x81A  // AmigaVision-Saves.hdf
+		fieldLength    = 256
+	)
+
+	patchAt := func(data []byte, offset int, replacement string) error {
+		if len(replacement) > fieldLength {
+			return fmt.Errorf("replacement too long for field at 0x%X", offset)
 		}
-		return ""
+		copy(data[offset:], []byte(replacement))
+		for i := offset + len(replacement); i < offset+fieldLength; i++ {
+			data[i] = 0x00
+		}
+		fmt.Printf("[AmigaVision] Patched offset 0x%X -> %s\n", offset, replacement)
+		return nil
 	}
 
-	unmount := func(path string) {
-		_ = exec.Command("umount", path).Run()
-	}
-
-	bindMount := func(src, dst string) error {
-		_ = os.MkdirAll(dst, 0755)
-		cmd := exec.Command("mount", "--bind", src, dst)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("bind mount failed: %v (output: %s)", err, string(out))
+	copyIfMissing := func(src, dst string) error {
+		if _, err := os.Stat(dst); os.IsNotExist(err) {
+			if out, err := exec.Command("/bin/cp", "-a", src, dst).CombinedOutput(); err != nil {
+				return fmt.Errorf("failed to copy %s to %s: %v (output: %s)", src, dst, err, string(out))
+			}
 		}
 		return nil
 	}
-	// --------------------------------------------------
+	// ----------------
 
-	// Locate the Amiga shared folder
-	amigaShared := findAmigaShared()
-	if amigaShared == "" {
-		return fmt.Errorf("games/%s/shared folder not found", system.Id)
+	// 1. Prepare tmp work dir
+	tmpDir := "/tmp/.SAM_tmp/AmigaVision"
+	_ = os.RemoveAll(tmpDir)
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		return fmt.Errorf("failed to create tmp dir: %w", err)
 	}
 
-	// Prepare tmp shared dir
-	tmpShared := "/tmp/.SAM_tmp/Amiga_shared"
-	_ = os.RemoveAll(tmpShared)
-	_ = os.MkdirAll(tmpShared, 0755)
-
-	// Copy existing shared into tmp
-	if out, err := exec.Command("/bin/cp", "-a", amigaShared+"/.", tmpShared).CombinedOutput(); err != nil {
-		fmt.Printf("[WARN] copy shared failed: %v (output: %s)\n", err, string(out))
+	// 2. Locate system folder(s)
+	sysPaths := games.GetSystemPaths(cfg, []games.System{system})
+	if len(sysPaths) == 0 {
+		return fmt.Errorf("[AmigaVision] No valid system paths found for %s", system.Name)
 	}
 
-	// Write ags_boot file with the clean name
-	cleanName := utils.RemoveFileExt(filepath.Base(path))
-	bootFile := filepath.Join(tmpShared, "ags_boot")
-	content := cleanName + "\n\n"
-	if err := os.WriteFile(bootFile, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write ags_boot: %v", err)
+	var pseudoRoot string
+	for _, sp := range sysPaths {
+		if _, err := os.Stat(filepath.Join(sp.Path, "AmigaVision.hdf")); err == nil {
+			pseudoRoot = sp.Path
+			break
+		}
+		if _, err := os.Stat(filepath.Join(sp.Path, "AmigaVision.rom")); err == nil {
+			pseudoRoot = sp.Path
+			break
+		}
+		if _, err := os.Stat(filepath.Join(sp.Path, "MegaAGS.hdf")); err == nil {
+			pseudoRoot = sp.Path
+			break
+		}
+	}
+	if pseudoRoot == "" {
+		pseudoRoot = sysPaths[0].Path
+	}
+	fmt.Printf("[AmigaVision] Using pseudoRoot = %s\n", pseudoRoot)
+
+	// 3. Ensure shared folder
+	sharedDir := filepath.Join(pseudoRoot, "shared")
+	if _, err := os.Stat(sharedDir); os.IsNotExist(err) {
+		embeddedShared := "/pkg/assets/sidelaunchers/Amiga.zip/shared"
+		if err := copyIfMissing(embeddedShared, sharedDir); err != nil {
+			return err
+		}
 	}
 
-	// Bind mount tmp over real shared
-	unmount(amigaShared)
-	if err := bindMount(tmpShared, amigaShared); err != nil {
+	// 4. Ensure ROM
+	romPath := filepath.Join(pseudoRoot, "AmigaVision.rom")
+	if _, err := os.Stat(romPath); os.IsNotExist(err) {
+		embeddedROM := "/pkg/assets/sidelaunchers/Amiga.zip/AmigaVision.rom"
+		if err := copyIfMissing(embeddedROM, romPath); err != nil {
+			return err
+		}
+	}
+
+	// 5. Create patched AmigaVision.cfg
+	misterCfg := "/media/fat/config/AmigaVision.cfg"
+	tmpCfg := filepath.Join(tmpDir, "AmigaVision.cfg")
+
+	data := make([]byte, len(assets.BlankAmigaVisionCfg))
+	copy(data, assets.BlankAmigaVisionCfg)
+
+	// Patch ROM (always)
+	if err := patchAt(data, offsetRomPath, cleanPath(romPath)); err != nil {
 		return err
 	}
 
-	// Launch the Amiga core with this system
-	return LaunchCore(cfg, system)
+	// Patch HDF (prefer AmigaVision, else MegaAGS)
+	hdfPath := filepath.Join(pseudoRoot, "AmigaVision.hdf")
+	if _, err := os.Stat(hdfPath); err == nil {
+		_ = patchAt(data, offsetHdfPath, cleanPath(hdfPath))
+	} else {
+		megaHdfPath := filepath.Join(pseudoRoot, "MegaAGS.hdf")
+		if _, err := os.Stat(megaHdfPath); err == nil {
+			_ = patchAt(data, offsetHdfPath, cleanPath(megaHdfPath))
+		}
+	}
+
+	// Patch Saves (prefer AmigaVision, else MegaAGS, optional)
+	savePath := filepath.Join(pseudoRoot, "AmigaVision-Saves.hdf")
+	if _, err := os.Stat(savePath); err == nil {
+		_ = patchAt(data, offsetSavePath, cleanPath(savePath))
+	} else {
+		megaSavePath := filepath.Join(pseudoRoot, "MegaAGS-Saves.hdf")
+		if _, err := os.Stat(megaSavePath); err == nil {
+			_ = patchAt(data, offsetSavePath, cleanPath(megaSavePath))
+		}
+	}
+
+	// Save patched tmp cfg
+	if err := os.WriteFile(tmpCfg, data, 0644); err != nil {
+		return fmt.Errorf("failed to save patched AmigaVision.cfg: %w", err)
+	}
+
+	// Handle final AmigaVision.cfg on FAT
+	if _, err := os.Stat(misterCfg); os.IsNotExist(err) {
+		if err := exec.Command("/bin/cp", tmpCfg, misterCfg).Run(); err != nil {
+			return fmt.Errorf("failed to copy patched cfg: %w", err)
+		}
+	} else {
+		_ = exec.Command("umount", misterCfg).Run()
+		cmd := exec.Command("mount", "--bind", tmpCfg, misterCfg)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to bind-mount cfg: %v (output: %s)", err, string(out))
+		}
+	}
+
+	// 6. Prepare tmp shared + ags_boot
+	tmpShared := "/tmp/.SAM_tmp/Amiga_shared"
+	_ = os.RemoveAll(tmpShared)
+	_ = os.MkdirAll(tmpShared, 0755)
+	if out, err := exec.Command("/bin/cp", "-a", sharedDir+"/.", tmpShared).CombinedOutput(); err != nil {
+		fmt.Printf("[WARN] copy shared failed: %v (output: %s)\n", err, string(out))
+	}
+	bootFile := filepath.Join(tmpShared, "ags_boot")
+	cleanName := utils.RemoveFileExt(filepath.Base(path))
+	if err := os.WriteFile(bootFile, []byte(cleanName+"\n\n"), 0644); err != nil {
+		return fmt.Errorf("failed to write ags_boot: %v", err)
+	}
+	_ = exec.Command("umount", sharedDir).Run()
+	if out, err := exec.Command("mount", "--bind", tmpShared, sharedDir).CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to bind-mount shared: %v (output: %s)", err, string(out))
+	}
+
+	// 7. Build minimal MGL
+	mgl := `<mistergamedescription>
+	<rbf>_computer/minimig</rbf>
+	<setname same_dir="1">AmigaVision</setname>
+</mistergamedescription>`
+	tmpMgl := config.LastLaunchFile
+	if err := os.WriteFile(tmpMgl, []byte(mgl), 0644); err != nil {
+		return fmt.Errorf("failed to write MGL: %w", err)
+	}
+
+	// 8. Launch
+	if err := launchFile(tmpMgl); err != nil {
+		return fmt.Errorf("failed to launch AmigaVision MGL: %w", err)
+	}
+
+	fmt.Println("[SIDELAUNCHER] AmigaVision launched successfully!")
+	return nil
 }
 
 // --------------------------------------------------
