@@ -122,7 +122,7 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 
 	data, err := os.ReadFile(filepath.Join(tmpDir, "AmigaVision.cfg"))
 	if err != nil {
-		return fmt.Errorf("failed to load embedded AmigaVision.cfg: %w", err)
+		return fmt.Errorf("failed to load AmigaVision.cfg template: %w", err)
 	}
 
 	// --- Patch ROM (prefer user’s, else embedded from tmp) ---
@@ -156,45 +156,34 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		}
 	}
 
-	// Save patched cfg into tmp
 	if err := os.WriteFile(tmpCfg, data, 0644); err != nil {
 		return fmt.Errorf("failed to save patched AmigaVision.cfg: %w", err)
 	}
 
-	// Handle final cfg on FAT (seed if missing, then always bind)
+	// Handle final cfg on FAT (always patched)
 	if _, err := os.Stat(misterCfg); os.IsNotExist(err) {
-		fmt.Printf("[AmigaVision] No existing cfg, copying patched cfg to %s\n", misterCfg)
 		if err := exec.Command("/bin/cp", tmpCfg, misterCfg).Run(); err != nil {
-			return fmt.Errorf("failed to copy patched cfg: %w", err)
+			return fmt.Errorf("failed to install patched cfg: %w", err)
 		}
 	} else {
 		_ = exec.Command("umount", misterCfg).Run()
-	}
-
-	cmd := exec.Command("mount", "--bind", tmpCfg, misterCfg)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to bind-mount cfg: %v (output: %s)", err, string(out))
+		cmd := exec.Command("mount", "--bind", tmpCfg, misterCfg)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to bind-mount cfg: %v (output: %s)", err, string(out))
+		}
 	}
 
 	// 4. Prepare tmp shared + ags_boot
 	sharedDir := filepath.Join(pseudoRoot, "shared")
 	tmpShared := filepath.Join(tmpDir, "shared")
 
-	_ = os.RemoveAll(tmpShared)
-	if err := os.MkdirAll(tmpShared, 0755); err != nil {
-		return fmt.Errorf("failed to create tmp shared: %w", err)
-	}
-
-	// Copy either user’s shared or embedded one
+	// If user’s shared exists, overlay it into tmp
 	if _, err := os.Stat(sharedDir); err == nil {
 		if out, err := exec.Command("/bin/cp", "-a", sharedDir+"/.", tmpShared).CombinedOutput(); err != nil {
 			fmt.Printf("[WARN] copy shared failed: %v (output: %s)\n", err, string(out))
 		}
 	} else {
-		embeddedShared := filepath.Join(tmpDir, "shared")
-		if out, err := exec.Command("/bin/cp", "-a", embeddedShared+"/.", tmpShared).CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to seed shared from embedded: %v (output: %s)", err, string(out))
-		}
+		fmt.Printf("[AmigaVision] Using embedded shared at %s\n", tmpShared)
 	}
 
 	// Write ags_boot file
