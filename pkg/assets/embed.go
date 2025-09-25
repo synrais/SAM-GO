@@ -23,6 +23,9 @@ var DefaultSAMIni []byte
 //go:embed sidelaunchers/AmigaVision.zip
 var AmigaVisionZip []byte
 
+//go:embed sidelaunchers/AmigaCD32.zip
+var AmigaCD32Zip []byte
+
 // --- Helpers ---
 
 // ExtractZipBytes extracts an embedded zip (like AmigaVisionZip) into destDir.
