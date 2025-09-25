@@ -302,15 +302,15 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	misterCfg := "/media/fat/config/AmigaCD32.cfg"
 	if _, err := os.Stat(misterCfg); os.IsNotExist(err) {
 		fmt.Printf("[AmigaCD32] No existing cfg at %s, writing blank one\n", misterCfg)
-		if err := os.WriteFile(misterCfg, assets.BlankAmigaCD32Cfg, 0644); err != nil {
+		if err := os.WriteFile(misterCfg, []byte{}, 0644); err != nil { // 🔹 placeholder
 			return fmt.Errorf("failed to write initial AmigaCD32.cfg: %w", err)
 		}
 	}
 
-	// 4. Create tmp cfg from embedded template
+	// 4. Create tmp cfg from a blank placeholder
 	tmpCfg := filepath.Join(tmpDir, "AmigaCD32.cfg")
-	data := make([]byte, len(assets.BlankAmigaCD32Cfg))
-	copy(data, assets.BlankAmigaCD32Cfg)
+	data := make([]byte, 4096) // 🔹 placeholder size
+	// ----------------------
 
 	// --- Game path ---
 	absGame, err := filepath.Abs(path)
@@ -322,29 +322,19 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		return err
 	}
 
-	// --- ROM: prefer existing AmigaVision.rom, otherwise write embedded ---
+	// --- ROM: prefer existing AmigaVision.rom ---
 	romPath := filepath.Join(pseudoRoot, "AmigaVision.rom")
 	if _, err := os.Stat(romPath); err == nil {
 		fmt.Printf("[AmigaCD32] Using existing AmigaVision ROM: %s\n", romPath)
-	} else {
-		fmt.Printf("[AmigaCD32] No AmigaVision ROM found, writing embedded ROM to %s\n", romPath)
-		if err := os.WriteFile(romPath, assets.AmigaVisionRom, 0644); err != nil {
-			return fmt.Errorf("failed to write embedded ROM: %w", err)
-		}
 	}
 	if err := patchAt(data, offsetRomPath, cleanPath(romPath)); err != nil {
 		return err
 	}
 
-	// --- HDF: prefer existing AmigaCD32.hdf, otherwise write embedded ---
+	// --- HDF: prefer existing AmigaCD32.hdf ---
 	hdfPath := filepath.Join(pseudoRoot, "AmigaCD32.hdf")
 	if _, err := os.Stat(hdfPath); err == nil {
 		fmt.Printf("[AmigaCD32] Using existing AmigaCD32 HDF: %s\n", hdfPath)
-	} else {
-		fmt.Printf("[AmigaCD32] No AmigaCD32 HDF found, writing embedded HDF to %s\n", hdfPath)
-		if err := os.WriteFile(hdfPath, assets.AmigaCD32Hdf, 0644); err != nil {
-			return fmt.Errorf("failed to write embedded HDF: %w", err)
-		}
 	}
 	if err := patchAt(data, offsetHdfPath, cleanPath(hdfPath)); err != nil {
 		return err
