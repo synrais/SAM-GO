@@ -41,7 +41,6 @@ func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bo
 
 	return true, fn(cfg, system, path)
 }
-
 // --------------------------------------------------
 // AmigaVision
 // --------------------------------------------------
@@ -128,13 +127,16 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		return fmt.Errorf("failed to load AmigaVision.cfg from tmp: %w", err)
 	}
 
-	// --- Patch ROM (prefer user’s, else embedded from tmp) ---
+	// --- Patch ROM (prefer user’s, else copy embedded to disk) ---
 	romPath := filepath.Join(pseudoRoot, "AmigaVision.rom")
 	if _, err := os.Stat(romPath); os.IsNotExist(err) {
-		romPath = filepath.Join(tmpDir, "AmigaVision.rom")
-		fmt.Printf("[AmigaVision] No ROM found, using embedded: %s\n", romPath)
+		srcRom := filepath.Join(tmpDir, "AmigaVision.rom")
+		if err := exec.Command("/bin/cp", srcRom, romPath).Run(); err != nil {
+			return fmt.Errorf("failed to seed AmigaVision.rom to disk: %w", err)
+		}
+		fmt.Printf("[AmigaVision] Seeded ROM to %s\n", romPath)
 	} else {
-		fmt.Printf("[AmigaVision] Using user ROM: %s\n", romPath)
+		fmt.Printf("[AmigaVision] Using existing ROM: %s\n", romPath)
 	}
 	if err := patchAt(data, offsetRomPath, cleanPath(romPath)); err != nil {
 		return err
