@@ -72,23 +72,18 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		fmt.Printf("[AmigaVision] Patched offset 0x%X -> %s\n", offset, replacement)
 		return nil
 	}
-
-	copyIfMissing := func(src, dst string) error {
-		if _, err := os.Stat(dst); os.IsNotExist(err) {
-			if out, err := exec.Command("/bin/cp", "-a", src, dst).CombinedOutput(); err != nil {
-				return fmt.Errorf("failed to copy %s to %s: %v (output: %s)", src, dst, err, string(out))
-			}
-		}
-		return nil
-	}
 	// ----------------
 
-	// 1. Prepare tmp work dir
+	// 1. Prepare tmp work dir + extract embedded AmigaVision.zip
 	tmpDir := "/tmp/.SAM_tmp/AmigaVision"
 	_ = os.RemoveAll(tmpDir)
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
 		return fmt.Errorf("failed to create tmp dir: %w", err)
 	}
+	if err := assets.ExtractZipBytes(assets.AmigaVisionZip, tmpDir); err != nil {
+		return fmt.Errorf("failed to extract AmigaVision assets: %w", err)
+	}
+	fmt.Printf("[AmigaVision] Extracted embedded assets to %s\n", tmpDir)
 
 	// 2. Locate system folder(s)
 	sysPaths := games.GetSystemPaths(cfg, []games.System{system})
@@ -116,37 +111,25 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 	}
 	fmt.Printf("[AmigaVision] Using pseudoRoot = %s\n", pseudoRoot)
 
-	// 3. Ensure shared folder
-	sharedDir := filepath.Join(pseudoRoot, "shared")
-	if _, err := os.Stat(sharedDir); os.IsNotExist(err) {
-		embeddedShared := "/pkg/assets/sidelaunchers/Amiga.zip/shared"
-		if err := copyIfMissing(embeddedShared, sharedDir); err != nil {
-			return err
-		}
-	}
-
-	// 4. Ensure ROM
-	romPath := filepath.Join(pseudoRoot, "AmigaVision.rom")
-	if _, err := os.Stat(romPath); os.IsNotExist(err) {
-		embeddedROM := "/pkg/assets/sidelaunchers/Amiga.zip/AmigaVision.rom"
-		if err := copyIfMissing(embeddedROM, romPath); err != nil {
-			return err
-		}
-	}
-
-	// 5. Create patched AmigaVision.cfg
+	// 3. Create patched AmigaVision.cfg in tmp
 	misterCfg := "/media/fat/config/AmigaVision.cfg"
 	tmpCfg := filepath.Join(tmpDir, "AmigaVision.cfg")
 
-	data := make([]byte, len(assets.BlankAmigaVisionCfg))
-	copy(data, assets.BlankAmigaVisionCfg)
+	data, err := os.ReadFile(filepath.Join(tmpDir, "Blank_AmigaVision.cfg"))
+	if err != nil {
+		return fmt.Errorf("failed to load Blank_AmigaVision.cfg: %w", err)
+	}
 
-	// Patch ROM (always)
+	// --- Patch ROM (prefer user’s, else embedded from tmp) ---
+	romPath := filepath.Join(pseudoRoot, "AmigaVision.rom")
+	if _, err := os.Stat(romPath); os.IsNotExist(err) {
+		romPath = filepath.Join(tmpDir, "AmigaVision.rom")
+	}
 	if err := patchAt(data, offsetRomPath, cleanPath(romPath)); err != nil {
 		return err
 	}
 
-	// Patch HDF (prefer AmigaVision, else MegaAGS)
+	// --- Patch HDF (prefer AmigaVision, else MegaAGS) ---
 	hdfPath := filepath.Join(pseudoRoot, "AmigaVision.hdf")
 	if _, err := os.Stat(hdfPath); err == nil {
 		_ = patchAt(data, offsetHdfPath, cleanPath(hdfPath))
@@ -157,7 +140,7 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		}
 	}
 
-	// Patch Saves (prefer AmigaVision, else MegaAGS, optional)
+	// --- Patch Saves (prefer AmigaVision, else MegaAGS, optional) ---
 	savePath := filepath.Join(pseudoRoot, "AmigaVision-Saves.hdf")
 	if _, err := os.Stat(savePath); err == nil {
 		_ = patchAt(data, offsetSavePath, cleanPath(savePath))
@@ -168,12 +151,11 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		}
 	}
 
-	// Save patched tmp cfg
 	if err := os.WriteFile(tmpCfg, data, 0644); err != nil {
 		return fmt.Errorf("failed to save patched AmigaVision.cfg: %w", err)
 	}
 
-	// Handle final AmigaVision.cfg on FAT
+	// Handle final cfg on FAT
 	if _, err := os.Stat(misterCfg); os.IsNotExist(err) {
 		if err := exec.Command("/bin/cp", tmpCfg, misterCfg).Run(); err != nil {
 			return fmt.Errorf("failed to copy patched cfg: %w", err)
@@ -186,24 +168,41 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		}
 	}
 
-	// 6. Prepare tmp shared + ags_boot
-	tmpShared := "/tmp/.SAM_tmp/Amiga_shared"
+	// 4. Prepare tmp shared + ags_boot
+	sharedDir := filepath.Join(pseudoRoot, "shared")
+	tmpShared := filepath.Join(tmpDir, "shared_tmp")
+
 	_ = os.RemoveAll(tmpShared)
-	_ = os.MkdirAll(tmpShared, 0755)
-	if out, err := exec.Command("/bin/cp", "-a", sharedDir+"/.", tmpShared).CombinedOutput(); err != nil {
-		fmt.Printf("[WARN] copy shared failed: %v (output: %s)\n", err, string(out))
+	if err := os.MkdirAll(tmpShared, 0755); err != nil {
+		return fmt.Errorf("failed to create tmp shared: %w", err)
 	}
+
+	// Copy either user’s shared or embedded one
+	if _, err := os.Stat(sharedDir); err == nil {
+		if out, err := exec.Command("/bin/cp", "-a", sharedDir+"/.", tmpShared).CombinedOutput(); err != nil {
+			fmt.Printf("[WARN] copy shared failed: %v (output: %s)\n", err, string(out))
+		}
+	} else {
+		embeddedShared := filepath.Join(tmpDir, "shared")
+		if out, err := exec.Command("/bin/cp", "-a", embeddedShared+"/.", tmpShared).CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to seed shared from embedded: %v (output: %s)", err, string(out))
+		}
+	}
+
+	// Write ags_boot file
 	bootFile := filepath.Join(tmpShared, "ags_boot")
 	cleanName := utils.RemoveFileExt(filepath.Base(path))
 	if err := os.WriteFile(bootFile, []byte(cleanName+"\n\n"), 0644); err != nil {
 		return fmt.Errorf("failed to write ags_boot: %v", err)
 	}
+
+	// Bind-mount tmp shared over system shared
 	_ = exec.Command("umount", sharedDir).Run()
 	if out, err := exec.Command("mount", "--bind", tmpShared, sharedDir).CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to bind-mount shared: %v (output: %s)", err, string(out))
 	}
 
-	// 7. Build minimal MGL
+	// 5. Build minimal MGL
 	mgl := `<mistergamedescription>
 	<rbf>_computer/minimig</rbf>
 	<setname same_dir="1">AmigaVision</setname>
@@ -213,7 +212,7 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		return fmt.Errorf("failed to write MGL: %w", err)
 	}
 
-	// 8. Launch
+	// 6. Launch
 	if err := launchFile(tmpMgl); err != nil {
 		return fmt.Errorf("failed to launch AmigaVision MGL: %w", err)
 	}
