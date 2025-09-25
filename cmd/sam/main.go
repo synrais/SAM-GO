@@ -58,13 +58,6 @@ func main() {
 			os.Exit(1)
 		}
 
-	case *menuMode:
-		// Interactive menu mode (now reads in-process caches)
-		if err := attract.LaunchMenu(cfg); err != nil {
-			fmt.Fprintln(os.Stderr, "[MAIN] Menu error:", err)
-			os.Exit(1)
-		}
-
 	default:
 		// Attract mode (with optional -s stream debug)
 		attract.PrepareAttractLists(cfg, *streamDebug)
