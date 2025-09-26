@@ -1375,7 +1375,7 @@ var Systems = map[string]System{
 		Slots: []Slot{
 			{
 				Label: "Floppy A:",
-				Exts:  []string{".img", ".ima", ".vfd"},
+				Exts:  []string{".img", ".ima", ".vfd", ".mgl"},
 				Mgl: &MglParams{
 					Delay:  1,
 					Method: "s",
