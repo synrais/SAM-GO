@@ -145,7 +145,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			if is.Step == 1 {
 				text = "Finding games folders..."
 			} else if is.Step == is.Total {
-				text = "Writing games.db to disk..."
+				text = "Writing games database..."
 			}
 
 			status.Step = is.Step
@@ -160,8 +160,10 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 				tree := buildTree(results)
 				status.Tree = tree
 
-				// --- NEW STATUS MESSAGE ---
+				// --- SHOW THIS MESSAGE BEFORE COMPLETE ---
 				status.DisplayText = "Creating menu database..."
+				status.Step = status.Total // fill progress bar
+				gc.Nap(500)                // short pause to let UI refresh
 
 				// Save Gob -> menu.db
 				menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
