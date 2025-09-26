@@ -282,8 +282,9 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 					return err
 				}
 			} else {
-				// Launch actual game
-				return mister.LaunchGame(cfg, *system, choice.Game.Path)
+				// Launch actual game, but stay in the same menu
+				_ = mister.LaunchGame(cfg, *system, choice.Game.Path)
+				// don’t return → loop continues at same folder
 			}
 		}
 	}
