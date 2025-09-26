@@ -22,6 +22,10 @@ const (
 	indexedSystemsKey = "meta:indexedSystems"
 )
 
+// ---------------------------------------------------
+// Helpers
+// ---------------------------------------------------
+
 // Return the key for a name in the names index.
 func NameKey(systemId string, name string) string {
 	return systemId + ":" + name
@@ -72,7 +76,10 @@ func OpenForWrite() (*bolt.DB, error) {
 	return openNames()
 }
 
-// Read indexed systems
+// ---------------------------------------------------
+// Indexed Systems
+// ---------------------------------------------------
+
 func readIndexedSystems(db *bolt.DB) ([]string, error) {
 	var systems []string
 	err := db.View(func(tx *bolt.Tx) error {
@@ -86,7 +93,6 @@ func readIndexedSystems(db *bolt.DB) ([]string, error) {
 	return systems, err
 }
 
-// Write list of indexed systems
 func writeIndexedSystems(db *bolt.DB, systems []string) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(BucketNames))
@@ -105,13 +111,16 @@ func writeIndexedSystems(db *bolt.DB, systems []string) error {
 	})
 }
 
-// FileInfo represents a single ROM path + system for indexing
+// ---------------------------------------------------
+// File Indexing
+// ---------------------------------------------------
+
 type FileInfo struct {
 	SystemId string
 	Path     string
 }
 
-// Update the names index with the given files (deduped by SystemId+Name).
+// Update the names index with all files in one big batch
 func updateNames(db *bolt.DB, files []FileInfo) error {
 	return db.Batch(func(tx *bolt.Tx) error {
 		bns := tx.Bucket([]byte(BucketNames))
@@ -135,14 +144,25 @@ func UpdateNames(db *bolt.DB, files []FileInfo) error {
 	if err := updateNames(db, files); err != nil {
 		return err
 	}
+
+	// Track indexed systems
 	systemIds := make([]string, 0, len(files))
 	for _, f := range files {
 		if !utils.Contains(systemIds, f.SystemId) {
 			systemIds = append(systemIds, f.SystemId)
 		}
 	}
-	return writeIndexedSystems(db, systemIds)
+	if err := writeIndexedSystems(db, systemIds); err != nil {
+		return err
+	}
+
+	// ✅ Force flush once at the end
+	return db.Sync()
 }
+
+// ---------------------------------------------------
+// Search
+// ---------------------------------------------------
 
 type SearchResult struct {
 	SystemId string
@@ -150,11 +170,7 @@ type SearchResult struct {
 	Path     string
 }
 
-// -------------------------
-// Search functions
-// -------------------------
-
-// Iterate all indexed names and return matches to test func against query.
+// Generic search over all indexed names.
 func searchNamesGeneric(
 	systems []games.System,
 	query string,
@@ -226,7 +242,7 @@ func SearchNamesWords(systems []games.System, query string) ([]SearchResult, err
 	})
 }
 
-// Regex search (compile once)
+// Regex search
 func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, error) {
 	r, err := regexp.Compile(query)
 	if err != nil {
@@ -237,9 +253,9 @@ func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, er
 	})
 }
 
-// -------------------------
-// Indexing with progress
-// -------------------------
+// ---------------------------------------------------
+// Indexing with progress (scanning phase)
+// ---------------------------------------------------
 
 type IndexStatus struct {
 	Total    int
@@ -248,8 +264,7 @@ type IndexStatus struct {
 	Files    int
 }
 
-// NewNamesIndex scans all systems concurrently, returning all FileInfo while
-// calling update() once per system for progress display.
+// NewNamesIndex scans all systems concurrently and reports progress.
 func NewNamesIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
@@ -280,7 +295,6 @@ func NewNamesIndex(
 				}
 			}
 
-			// Merge results + update status
 			mu.Lock()
 			out = append(out, sysFiles...)
 			step++
@@ -300,11 +314,10 @@ func NewNamesIndex(
 	return out, nil
 }
 
-// -------------------------
-// Indexed Systems
-// -------------------------
+// ---------------------------------------------------
+// Public system index queries
+// ---------------------------------------------------
 
-// Return true if a specific system is indexed in the gamesdb
 func SystemIndexed(system games.System) bool {
 	if !DbExists() {
 		return false
@@ -322,7 +335,6 @@ func SystemIndexed(system games.System) bool {
 	return utils.Contains(systems, system.Id)
 }
 
-// Return all systems indexed in the gamesdb
 func IndexedSystems() ([]string, error) {
 	if !DbExists() {
 		return nil, fmt.Errorf("gamesdb does not exist")
