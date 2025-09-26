@@ -42,7 +42,7 @@ func tryAttach() bool {
 func startSocketServer() {
 	// Clean up any stale socket
 	if _, err := os.Stat(socketPath); err == nil {
-		os.Remove(socketPath)
+		_ = os.Remove(socketPath)
 	}
 	l, err := net.Listen("unix", socketPath)
 	if err != nil {
@@ -64,10 +64,10 @@ func startSocketServer() {
 				msg := strings.TrimSpace(string(buf[:n]))
 				switch msg {
 				case "focus":
-					// Just redraw the screen
+					// Redraw the screen when a second instance pings
+					gc.FlushInput()
 					gc.Update()
 				case "quit":
-					// Optional: allow external quit
 					os.Exit(0)
 				}
 			}(conn)
@@ -520,9 +520,12 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 // Main
 // -------------------------
 func main() {
+	// EARLY EXIT: if another instance is running, attach and quit immediately
 	if tryAttach() {
 		return
 	}
+
+	// Otherwise, start IPC server for future attach calls
 	startSocketServer()
 
 	printPtr := flag.Bool("print", false, "Print game path instead of launching")
@@ -544,6 +547,7 @@ func main() {
 	menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
 	var tree map[string]*Node
 
+	// Try loading cached menu.db
 	data, err := os.ReadFile(menuPath)
 	if err == nil {
 		if uerr := json.Unmarshal(data, &tree); uerr != nil {
@@ -551,6 +555,7 @@ func main() {
 		}
 	}
 
+	// If no cache, build it
 	if tree == nil {
 		tree, err = generateIndexWindow(cfg, stdscr)
 		if err != nil {
