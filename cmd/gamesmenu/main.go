@@ -528,58 +528,48 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 // Main
 // -------------------------
 func main() {
-    printPtr := flag.Bool("print", false, "Print game path instead of launching")
-    flag.Parse()
-    launchGame := !*printPtr
+	printPtr := flag.Bool("print", false, "Print game path instead of launching")
+	flag.Parse()
+	launchGame := !*printPtr
 
-    cfg, err := config.LoadUserConfig("gamesmenu", &config.UserConfig{})
-    if err != nil && !os.IsNotExist(err) {
-        fmt.Println("Error loading config:", err)
-        os.Exit(1)
-    }
+	cfg, err := config.LoadUserConfig("gamesmenu", &config.UserConfig{})
+	if err != nil && !os.IsNotExist(err) {
+		fmt.Println("Error loading config:", err)
+		os.Exit(1)
+	}
 
-    stdscr, err := curses.Setup()
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer gc.End()
+	stdscr, err := curses.Setup()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer gc.End()
 
-    menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
-    var tree map[string]*Node
+	var tree map[string]*Node
 
-    // Load Gob if exists
-    f, ferr := os.Open(menuPath)
-    if ferr == nil {
-        defer f.Close()
-        decErr := gob.NewDecoder(f).Decode(&tree)
-        if decErr != nil {
-            fmt.Println("Warning: could not decode menu.db, rebuilding...")
-            tree = nil
-        }
-    }
+	// -----------------------------
+	// Always refresh tree + menu.db
+	// -----------------------------
+	tree, err = generateIndexWindow(cfg, stdscr)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-    // If menu.db missing or corrupt, rebuild
-    if tree == nil {
-        tree, err = generateIndexWindow(cfg, stdscr)
-        if err != nil {
-            log.Fatal(err)
-        }
-    }
+	// -----------------------------
+	// Warm up games.db here
+	// -----------------------------
+	_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
 
-    // -----------------------------
-    // 🔥 Warm up games.db here
-    // -----------------------------
-    _, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
-
-    // Now both menu.db and games.db are hot and ready
-    if launchGame {
-        err = systemMenu(cfg, stdscr, tree)
-        if err != nil {
-            log.Fatal(err)
-        }
-    } else {
-        for sys, node := range tree {
-            fmt.Printf("System: %s (%d entries)\n", sys, len(node.Children))
-        }
-    }
+	// -----------------------------
+	// Ready to go
+	// -----------------------------
+	if launchGame {
+		err = systemMenu(cfg, stdscr, tree)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		for sys, node := range tree {
+			fmt.Printf("System: %s (%d entries)\n", sys, len(node.Children))
+		}
+	}
 }
