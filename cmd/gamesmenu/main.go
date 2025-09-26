@@ -92,6 +92,68 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 }
 
 // -------------------------
+// Tree Builder with spinner
+// -------------------------
+func generateTreeWindow(stdscr *gc.Window, results []gamesdb.SearchResult) (map[string]*Node, error) {
+	stdscr.Erase()
+	stdscr.NoutRefresh()
+	_ = gc.Update()
+
+	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
+	if err != nil {
+		return nil, err
+	}
+	defer win.Delete()
+
+	_, width := win.MaxYX()
+
+	status := struct {
+		Complete bool
+		Error    error
+		Tree     map[string]*Node
+	}{
+		Complete: false,
+	}
+
+	// Build in background
+	go func() {
+		tree := buildTree(results)
+		status.Tree = tree
+		status.Complete = true
+	}()
+
+	spinnerSeq := []string{"|", "/", "-", "\\"}
+	spinnerCount := 0
+
+	for {
+		if status.Complete {
+			break
+		}
+
+		// Clear line + show text
+		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
+		win.MovePrint(1, 2, "Building directory tree...")
+
+		// Spinny
+		spinnerCount++
+		if spinnerCount == len(spinnerSeq) {
+			spinnerCount = 0
+		}
+		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
+
+		win.NoutRefresh()
+		_ = gc.Update()
+		gc.Nap(100)
+	}
+
+	stdscr.Erase()
+	stdscr.NoutRefresh()
+	_ = gc.Update()
+
+	return status.Tree, status.Error
+}
+
+// -------------------------
 // Shared DB Indexer
 // -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
@@ -248,13 +310,9 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 			order = append(order, g)
 		}
 
-		// Default label = "Open"
 		actionLabel := "Open"
-		if len(order) > 0 {
-			// Peek at first item if possible
-			if !order[0].IsFolder {
-				actionLabel = "Launch"
-			}
+		if len(order) > 0 && !order[0].IsFolder {
+			actionLabel = "Launch"
 		}
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
@@ -274,17 +332,12 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 		}
 		if button == 2 {
 			choice := order[selected]
-
-			// Update label dynamically for this selection
 			if choice.IsFolder {
-				// Re-run loop with "Open"
 				if err := browseNode(cfg, stdscr, system, choice); err != nil {
 					return err
 				}
 			} else {
-				// Launch actual game, but stay in the same menu
 				_ = mister.LaunchGame(cfg, *system, choice.Game.Path)
-				// don’t return → loop continues at same folder
 			}
 		}
 	}
@@ -306,7 +359,6 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 		searchButtons = append(searchButtons, "Exit")
 	}
 
-	// ✅ DefaultButton = 0 → highlight "Search"
 	button, text, err := curses.OnScreenKeyboard(stdscr, searchTitle, searchButtons, query, 0)
 	if err != nil {
 		return err
@@ -395,7 +447,6 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 		}
 		return searchWindow(cfg, stdscr, text, launchGame, fromMenu)
 	} else {
-		// Menu or Exit
 		return nil
 	}
 }
@@ -431,20 +482,20 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 			return err
 		}
 
-		if button == 3 { // Search
+		if button == 3 {
 			_ = searchWindow(cfg, stdscr, "", true, true)
 			continue
 		}
-		if button == 4 { // Options
+		if button == 4 {
 			_ = mainOptionsWindow(cfg, stdscr)
 			results, _ := gamesdb.SearchNamesWords(games.AllSystems(), "")
-			systems = buildTree(results)
+			systems, _ = generateTreeWindow(stdscr, results)
 			continue
 		}
-		if button == 5 { // Exit
+		if button == 5 {
 			return nil
 		}
-		if button == 2 { // Open
+		if button == 2 {
 			sysId := sysIds[selected]
 			system, err := games.GetSystem(sysId)
 			if err != nil {
@@ -489,7 +540,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	tree := buildTree(results)
+	tree, err := generateTreeWindow(stdscr, results)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	if launchGame {
 		err = systemMenu(cfg, stdscr, tree)
