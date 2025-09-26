@@ -285,11 +285,11 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 	_ = gc.Update()
 
 	searchTitle := "Search"
-	searchButtons := []string{"Options", "Search"}
+	searchButtons := []string{" Options ", " Search "}
 	if fromMenu {
-		searchButtons = append(searchButtons, "Menu")
+		searchButtons = append(searchButtons, " Menu ")
 	} else {
-		searchButtons = append(searchButtons, "Exit")
+		searchButtons = append(searchButtons, " Exit ")
 	}
 
 	button, text, err := curses.OnScreenKeyboard(stdscr, searchTitle, searchButtons, query)
@@ -351,9 +351,15 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 			titleLabel = "Pick Game"
 			launchLabel = "Select"
 		}
+
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-			Title:         titleLabel,
-			Buttons:       []string{"PgUp", "PgDn", launchLabel, "Cancel"},
+			Title: titleLabel,
+			Buttons: []string{
+				" PgUp   ",
+				" PgDn   ",
+				fmt.Sprintf(" %s ", launchLabel),
+				" Cancel ",
+			},
 			DefaultButton: 2,
 			ActionButton:  2,
 			ShowTotal:     true,
@@ -403,17 +409,17 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         "Systems",
 			Buttons:       []string{
-				"PgUp",
-				"PgDn",
-				"Open",
-				"Search",
-				"Options",
-				"Exit",
+				" PgUp ",
+				" PgDn ",
+				" Open ",
+				" Search ",
+				" Options ",
+				" Exit ",
 			},
 			DefaultButton: 2,
 			ActionButton:  2,
 			ShowTotal:     true,
-			Width:         80, // bump from 70 to give buttons room
+			Width:         70,
 			Height:        20,
 		}, sysIds)
 		if err != nil {
