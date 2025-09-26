@@ -134,6 +134,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	}{Step: 1, Total: 100, DisplayText: "Finding games folders..."}
 
 	go func() {
+		// Phase 1: Build index
 		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
 			systemName := is.SystemId
 			system, err := games.GetSystem(is.SystemId)
@@ -155,17 +156,24 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		})
 
 		if err == nil {
+			// Phase 2: Load from DB
+			status.DisplayText = "Loading game list..."
+			status.Step = status.Total
+			gc.Nap(200) // let UI refresh
+
 			results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
 			if rerr == nil {
+				// Phase 3: Build tree
+				status.DisplayText = "Building menu tree..."
+				gc.Nap(200) // let UI refresh
+
 				tree := buildTree(results)
 				status.Tree = tree
 
-				// --- SHOW THIS MESSAGE BEFORE COMPLETE ---
-				status.DisplayText = "Creating menu database..."
-				status.Step = status.Total // fill progress bar
-				gc.Nap(500)                // short pause to let UI refresh
+				// Phase 4: Save Gob
+				status.DisplayText = "Writing menu database..."
+				gc.Nap(200) // let UI refresh
 
-				// Save Gob -> menu.db
 				menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
 				f, ferr := os.Create(menuPath)
 				if ferr == nil {
