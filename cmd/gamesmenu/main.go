@@ -228,57 +228,64 @@ func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 // Browsing
 // -------------------------
 func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System, node *Node) error {
-	for {
-		var items []string
-		var order []*Node
+    selectedIndex := 0 // remember last position
+    for {
+        var items []string
+        var order []*Node
 
-		// Sort children: folders first, then games
-		var folders, gamesList []*Node
-		for _, child := range node.Children {
-			if child.IsFolder {
-				folders = append(folders, child)
-			} else {
-				gamesList = append(gamesList, child)
-			}
-		}
-		sort.Slice(folders, func(i, j int) bool { return strings.ToLower(folders[i].Name) < strings.ToLower(folders[j].Name) })
-		sort.Slice(gamesList, func(i, j int) bool { return strings.ToLower(gamesList[i].Name) < strings.ToLower(gamesList[j].Name) })
+        // Sort children: folders first, then games
+        var folders, gamesList []*Node
+        for _, child := range node.Children {
+            if child.IsFolder {
+                folders = append(folders, child)
+            } else {
+                gamesList = append(gamesList, child)
+            }
+        }
+        sort.Slice(folders, func(i, j int) bool { return strings.ToLower(folders[i].Name) < strings.ToLower(folders[j].Name) })
+        sort.Slice(gamesList, func(i, j int) bool { return strings.ToLower(gamesList[i].Name) < strings.ToLower(gamesList[j].Name) })
 
-		for _, f := range folders {
-			items = append(items, "[DIR] "+f.Name)
-			order = append(order, f)
-		}
-		for _, g := range gamesList {
-			items = append(items, g.Name)
-			order = append(order, g)
-		}
+        for _, f := range folders {
+            items = append(items, "[DIR] "+f.Name)
+            order = append(order, f)
+        }
+        for _, g := range gamesList {
+            items = append(items, g.Name)
+            order = append(order, g)
+        }
 
-		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-			Title:         node.Name,
-			Buttons:       []string{"PgUp", "PgDn", "Open", "Back"},
-			DefaultButton: 2,
-			ActionButton:  2,
-			ShowTotal:     true,
-			Width:         70,
-			Height:        20,
-		}, items)
-		if err != nil {
-			return err
-		}
-		if button == 3 { // Back
-			return nil
-		}
-		if button == 2 {
-			choice := order[selected]
-			if choice.IsFolder {
-				if err := browseNode(cfg, stdscr, system, choice); err != nil {
-					return err
-				}
-			} else {
-				_ = mister.LaunchGame(cfg, *system, choice.Game.Path)
-			}
-		}
-	}
+        button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+            Title:         node.Name,
+            Buttons:       []string{"PgUp", "PgDn", "Open", "Back"},
+            DefaultButton: 2,
+            ActionButton:  2,
+            ShowTotal:     true,
+            Width:         70,
+            Height:        20,
+            // restore previous selection
+            StartIndex: selectedIndex,
+        }, items)
+        if err != nil {
+            return err
+        }
+
+        selectedIndex = selected // save for next loop
+
+        if button == 3 { // Back
+            return nil
+        }
+        if button == 2 {
+            choice := order[selected]
+            if choice.IsFolder {
+                if err := browseNode(cfg, stdscr, system, choice); err != nil {
+                    return err
+                }
+            } else {
+                _ = mister.LaunchGame(cfg, *system, choice.Game.Path)
+                // do NOT return — stay in this folder
+            }
+        }
+    }
 }
 
 func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*Node) error {
