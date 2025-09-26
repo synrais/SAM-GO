@@ -255,7 +255,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         node.Name,
-			s:       []string{"PgUp", "PgDn", "Open", "Back"},
+			Buttons:       []string{"PgUp", "PgDn", "Open", "Back"},
 			Default: 2,
 			Action:  2,
 			ShowTotal:     true,
