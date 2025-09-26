@@ -402,11 +402,18 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 	for {
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         "Systems",
-			Buttons:       []string{"PgUp", "PgDn", "Open", "Search", "Options", "Exit"},
+			Buttons:       []string{
+				"PgUp   ",
+				"PgDn   ",
+				"Open   ",
+				"Search ",
+				"Options",
+				"Exit   ",
+			},
 			DefaultButton: 2,
 			ActionButton:  2,
 			ShowTotal:     true,
-			Width:         70,
+			Width:         80, // bump from 70 to give buttons room
 			Height:        20,
 		}, sysIds)
 		if err != nil {
@@ -426,7 +433,7 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 		if button == 5 { // Exit
 			return nil
 		}
-		if button == 2 {
+		if button == 2 { // Open
 			sysId := sysIds[selected]
 			system, err := games.GetSystem(sysId)
 			if err != nil {
