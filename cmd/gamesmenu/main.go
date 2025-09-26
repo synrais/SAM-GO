@@ -254,7 +254,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 			DefaultButton: 2,
 			ActionButton:  2,
 			ShowTotal:     true,
-			Width:         70,
+			Width:         80,
 			Height:        20,
 		}, items)
 		if err != nil {
