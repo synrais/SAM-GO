@@ -159,10 +159,10 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		Tree        map[string]*Node
 	}{Step: 1, Total: 100, DisplayText: "Finding games folders..."}
 
-	// Background worker: handles BOTH games.db + menu.db inline
+	// Background worker: force rebuild games.db + menu.db
 	go func() {
 		// -------------------------
-		// Phase 1: Build games.db
+		// Phase 1: Build games.db from scratch
 		// -------------------------
 		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
 			systemName := is.SystemId
@@ -185,7 +185,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 
 		if err == nil {
 			// -------------------------
-			// Phase 2: Load from games.db
+			// Phase 2: Load fresh results from games.db
 			// -------------------------
 			status.DisplayText = "Loading game list..."
 			status.Step = status.Total
@@ -194,7 +194,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
 			if rerr == nil {
 				// -------------------------
-				// Phase 3: Build menu tree
+				// Phase 3: Build new menu tree
 				// -------------------------
 				status.DisplayText = "Building menu tree..."
 				gc.Nap(200)
