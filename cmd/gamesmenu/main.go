@@ -32,6 +32,7 @@ type Node struct {
 
 func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 	systems := make(map[string]*Node)
+
 	for _, result := range results {
 		sysId := result.SystemId
 		sysNode, ok := systems[sysId]
@@ -47,19 +48,40 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 		rel := result.Path
 		var parts []string
 
+		// -------------------------
+		// Case 1: Inside a .zip
+		// -------------------------
 		if idx := strings.Index(rel, ".zip"+string(filepath.Separator)); idx != -1 {
 			inside := rel[idx+len(".zip"+string(filepath.Separator)):]
 			parts = strings.Split(inside, string(filepath.Separator))
+
 		} else {
-			idx := strings.Index(rel, sysId+string(filepath.Separator))
-			if idx != -1 {
-				inside := rel[idx+len(sysId+string(filepath.Separator)):]
-				parts = strings.Split(inside, string(filepath.Separator))
-			} else {
+			// -------------------------
+			// Case 2: Regular file → anchor to system.Folder
+			// -------------------------
+			system, err := games.GetSystem(sysId)
+			if err == nil {
+				for _, sysFolder := range system.Folder {
+					marker := sysFolder + string(filepath.Separator)
+					if idx := strings.Index(strings.ToLower(rel), strings.ToLower(marker)); idx != -1 {
+						inside := rel[idx+len(marker):]
+						parts = strings.Split(inside, string(filepath.Separator))
+						break
+					}
+				}
+			}
+
+			// -------------------------
+			// Case 3: Fallback → just the filename
+			// -------------------------
+			if len(parts) == 0 {
 				parts = []string{filepath.Base(rel)}
 			}
 		}
 
+		// -------------------------
+		// Build tree nodes
+		// -------------------------
 		current := sysNode
 		for i, part := range parts {
 			if part == "" {
@@ -87,6 +109,7 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 			}
 		}
 	}
+
 	return systems
 }
 
