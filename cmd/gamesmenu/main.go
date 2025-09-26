@@ -546,7 +546,6 @@ func main() {
         if decErr == nil {
             menuOk = true
         } else {
-            fmt.Println("Warning: could not decode menu.db, rebuilding...")
             tree = nil
         }
     }
