@@ -170,7 +170,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	cachedTree = nil
 
 	// -------------------------
-	// Phase 1: Scan files
+	// Phase 1: Scan + progress
 	// -------------------------
 	updateStage("Scanning game folders...")
 	files, err := gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
@@ -187,7 +187,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	}
 
 	// -------------------------
-	// Phase 2: Build fresh tree
+	// Phase 2: Build tree
 	// -------------------------
 	updateStage("Building menu tree...")
 	var results []gamesdb.SearchResult
@@ -210,7 +210,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	}
 
 	// -------------------------
-	// Phase 4: Build games.db
+	// Phase 4: Write games.db
 	// -------------------------
 	updateStage("Building games database...")
 	db, dberr := gamesdb.OpenForWrite()
@@ -566,8 +566,7 @@ func main() {
 	cachedTree = tree
 
 	if launchGame {
-		err = systemMenu(cfg, stdscr, cachedTree)
-		if err != nil {
+		if err := systemMenu(cfg, stdscr, cachedTree); err != nil {
 			log.Fatal(err)
 		}
 	} else {
