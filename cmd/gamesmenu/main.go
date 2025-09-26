@@ -31,96 +31,101 @@ type Node struct {
 }
 
 func buildTree(results []gamesdb.SearchResult) map[string]*Node {
-    systems := make(map[string]*Node)
+	systems := make(map[string]*Node)
 
-    for _, result := range results {
-        sysId := result.SystemId
-        sysNode, ok := systems[sysId]
-        if !ok {
-            sysNode = &Node{
-                Name:     sysId,
-                IsFolder: true,
-                Children: make(map[string]*Node),
-            }
-            systems[sysId] = sysNode
-        }
+	for _, result := range results {
+		sysId := result.SystemId
+		sysNode, ok := systems[sysId]
+		if !ok {
+			sysNode = &Node{
+				Name:     sysId,
+				IsFolder: true,
+				Children: make(map[string]*Node),
+			}
+			systems[sysId] = sysNode
+		}
 
-        rel := result.Path
-        var parts []string
+		rel := result.Path
+		var parts []string
 
-        // -------------------------
-        // Case 1: Inside a .zip
-        // -------------------------
-        if idx := strings.Index(rel, ".zip"+string(filepath.Separator)); idx != -1 {
-            inside := rel[idx+len(".zip"+string(filepath.Separator)):]
-            parts = strings.Split(inside, string(filepath.Separator))
+		// Case 1: Inside a .zip
+		if idx := strings.Index(rel, ".zip"+string(filepath.Separator)); idx != -1 {
+			inside := rel[idx+len(".zip"+string(filepath.Separator)):]
+			parts = strings.Split(inside, string(filepath.Separator))
+		} else {
+			// Case 2: Regular file → anchor to system.Folder
+			system, err := games.GetSystem(sysId)
+			if err == nil {
+				for _, sysFolder := range system.Folder {
+					marker := sysFolder + string(filepath.Separator)
+					if idx := strings.Index(strings.ToLower(rel), strings.ToLower(marker)); idx != -1 {
+						inside := rel[idx+len(marker):]
+						folderParts := strings.Split(sysFolder, string(filepath.Separator))
+						if len(folderParts) > 0 && folderParts[0] == "" {
+							folderParts = folderParts[1:]
+						}
+						parts = append(folderParts, strings.Split(inside, string(filepath.Separator))...)
+						break
+					}
+				}
+			}
+			// Case 3: fallback
+			if len(parts) == 0 {
+				parts = []string{filepath.Base(rel)}
+			}
+		}
 
-        } else {
-            // -------------------------
-            // Case 2: Regular file → anchor to system.Folder
-            // -------------------------
-            system, err := games.GetSystem(sysId)
-            if err == nil {
-                for _, sysFolder := range system.Folder {
-                    marker := sysFolder + string(filepath.Separator)
-                    if idx := strings.Index(strings.ToLower(rel), strings.ToLower(marker)); idx != -1 {
-                        inside := rel[idx+len(marker):]
+		// Build nodes
+		current := sysNode
+		for i, part := range parts {
+			if part == "" {
+				continue
+			}
+			if i == len(parts)-1 {
+				res := result
+				current.Children[part] = &Node{
+					Name:     part,
+					IsFolder: false,
+					Game:     &res,
+				}
+			} else {
+				child, ok := current.Children[part]
+				if !ok {
+					child = &Node{
+						Name:     part,
+						IsFolder: true,
+						Children: make(map[string]*Node),
+					}
+					current.Children[part] = child
+				}
+				current = child
+			}
+		}
+	}
+	return systems
+}
 
-                        // include the system folder path itself as the first parts
-                        folderParts := strings.Split(sysFolder, string(filepath.Separator))
-                        if len(folderParts) > 0 && folderParts[0] == "" {
-                            folderParts = folderParts[1:] // drop leading empty if path started with /
-                        }
-
-                        parts = append(folderParts, strings.Split(inside, string(filepath.Separator))...)
-                        break
-                    }
-                }
-            }
-
-            // -------------------------
-            // Case 3: Fallback → just the filename
-            // -------------------------
-            if len(parts) == 0 {
-                parts = []string{filepath.Base(rel)}
-            }
-        }
-
-        // -------------------------
-        // Build tree nodes
-        // -------------------------
-        current := sysNode
-        for i, part := range parts {
-            if part == "" {
-                continue
-            }
-
-            if i == len(parts)-1 {
-                // leaf node = actual game file
-                res := result
-                // always overwrite to avoid losing duplicates with same filename in different folders
-                current.Children[part] = &Node{
-                    Name:     part,
-                    IsFolder: false,
-                    Game:     &res,
-                }
-            } else {
-                // folder node
-                child, ok := current.Children[part]
-                if !ok {
-                    child = &Node{
-                        Name:     part,
-                        IsFolder: true,
-                        Children: make(map[string]*Node),
-                    }
-                    current.Children[part] = child
-                }
-                current = child
-            }
-        }
-    }
-
-    return systems
+// Flatten tree into []fileInfo for gamesdb.UpdateNames
+func collectFiles(tree map[string]*Node) []gamesdb.FileInfo {
+	var out []gamesdb.FileInfo
+	var walk func(sysId string, node *Node)
+	walk = func(sysId string, node *Node) {
+		if !node.IsFolder && node.Game != nil {
+			out = append(out, gamesdb.FileInfo{
+				SystemId: sysId,
+				Path:     node.Game.Path,
+			})
+		}
+		for _, child := range node.Children {
+			walk(sysId, child)
+		}
+	}
+	for sysId, root := range tree {
+		for _, child := range root.Children {
+			walk(sysId, child)
+		}
+	}
+	return out
 }
 
 // -------------------------
@@ -139,7 +144,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 
 	_, width := win.MaxYX()
 
-	// Progress bar helper
 	drawProgressBar := func(current int, total int) {
 		pct := int(float64(current) / float64(total) * 100)
 		progressWidth := width - 4
@@ -153,20 +157,15 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		win.NoutRefresh()
 	}
 
-	// Clear line helper
 	clearText := func() {
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 	}
 
-	// wipe old DB files before rebuilding
 	_ = os.Remove(config.GamesDb)
 	menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
 	_ = os.Remove(menuPath)
-
-	// reset in-memory tree so no stale copy lingers
 	cachedTree = nil
 
-	// simple stage updater
 	updateStage := func(msg string) {
 		clearText()
 		win.MovePrint(1, 2, msg)
@@ -175,73 +174,53 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	}
 
 	// -------------------------
-	// Phase 1: Build games.db from scratch
+	// Phase 1: Scan files → results
 	// -------------------------
-	_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
-		systemName := is.SystemId
-		if system, serr := games.GetSystem(is.SystemId); serr == nil {
-			systemName = system.Name
-		}
-
-		var text string
-		switch {
-		case is.Step == 1:
-			text = "Finding games folders..."
-		case is.Step == is.Total:
-			text = "Finalizing games database..."
-		default:
-			text = fmt.Sprintf("Indexing %s...", systemName)
-		}
-
-		updateStage(text)
+	updateStage("Scanning game folders...")
+	results, err := gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
 		drawProgressBar(is.Step, is.Total)
 	})
 	if err != nil {
 		return nil, err
 	}
+	// results not used directly: we’ll rebuild games.db from menu.db
 
 	// -------------------------
-	// Phase 2: Load fresh results
-	// -------------------------
-	updateStage("Loading game list...")
-	gc.Nap(200)
-
-	results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
-	if rerr != nil {
-		return nil, rerr
-	}
-
-	// -------------------------
-	// Phase 3: Build new menu tree
+	// Phase 2: Build fresh tree
 	// -------------------------
 	updateStage("Building menu tree...")
-	gc.Nap(200)
-
-	tree := buildTree(results)
+	resultsList, _ := gamesdb.SearchNamesWords(games.AllSystems(), "")
+	tree := buildTree(resultsList)
 
 	// -------------------------
-	// Phase 4: Write menu.db
+	// Phase 3: Write menu.db
 	// -------------------------
 	updateStage("Writing menu database...")
-	gc.Nap(200)
-
 	if f, ferr := os.Create(menuPath); ferr == nil {
 		defer f.Close()
 		_ = gob.NewEncoder(f).Encode(tree)
 	}
 
-	// replace in-memory copy
+	// -------------------------
+	// Phase 4: Build games.db from menu.db
+	// -------------------------
+	updateStage("Building games database...")
+	db, dberr := gamesdb.OpenForWrite()
+	if dberr != nil {
+		return nil, dberr
+	}
+	defer db.Close()
+
+	files := collectFiles(tree)
+	if uerr := gamesdb.UpdateNames(db, files); uerr != nil {
+		return nil, uerr
+	}
+
 	cachedTree = tree
-
-	// warm up games.db
-	_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
-
-	// fill progress bar to 100% before leaving
 	drawProgressBar(1, 1)
 	win.NoutRefresh()
 	_ = gc.Update()
 
-	// cleanup + return
 	stdscr.Erase()
 	stdscr.NoutRefresh()
 	_ = gc.Update()
@@ -534,74 +513,63 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 // -----------------------------
 // Main
 // -----------------------------
-var cachedTree map[string]*Node // stays in RAM until program exit
+var cachedTree map[string]*Node
 
 func main() {
-    printPtr := flag.Bool("print", false, "Print game path instead of launching")
-    flag.Parse()
-    launchGame := !*printPtr
+	printPtr := flag.Bool("print", false, "Print game path instead of launching")
+	flag.Parse()
+	launchGame := !*printPtr
 
-    cfg, err := config.LoadUserConfig("gamesmenu", &config.UserConfig{})
-    if err != nil && !os.IsNotExist(err) {
-        fmt.Println("Error loading config:", err)
-        os.Exit(1)
-    }
+	cfg, err := config.LoadUserConfig("gamesmenu", &config.UserConfig{})
+	if err != nil && !os.IsNotExist(err) {
+		fmt.Println("Error loading config:", err)
+		os.Exit(1)
+	}
 
-    stdscr, err := curses.Setup()
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer gc.End()
+	stdscr, err := curses.Setup()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer gc.End()
 
-    // -----------------------------
-    // Load menu tree (or rebuild if missing/corrupt)
-    // -----------------------------
-    menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
-    var tree map[string]*Node
+	menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
+	var tree map[string]*Node
 
-    menuOk := false
-    gamesOk := false
+	menuOk := false
+	gamesOk := false
 
-    // check menu.db
-    if f, ferr := os.Open(menuPath); ferr == nil {
-        defer f.Close()
-        decErr := gob.NewDecoder(f).Decode(&tree)
-        if decErr == nil {
-            menuOk = true
-        } else {
-            tree = nil
-        }
-    }
+	if f, ferr := os.Open(menuPath); ferr == nil {
+		defer f.Close()
+		decErr := gob.NewDecoder(f).Decode(&tree)
+		if decErr == nil {
+			menuOk = true
+		} else {
+			tree = nil
+		}
+	}
 
-    // check games.db
-    if _, gerr := os.Stat(config.GamesDb); gerr == nil {
-        gamesOk = true
-    }
+	if _, gerr := os.Stat(config.GamesDb); gerr == nil {
+		gamesOk = true
+	}
 
-    // if either DB is missing/corrupt → rebuild both
-    if !menuOk || !gamesOk {
-        tree, err = generateIndexWindow(cfg, stdscr)
-        if err != nil {
-            log.Fatal(err)
-        }
-    }
+	if !menuOk || !gamesOk {
+		tree, err = generateIndexWindow(cfg, stdscr)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 
-    cachedTree = tree
-    _, _ = gamesdb.SearchNamesWords(games.AllSystems(), "") // warm up
+	cachedTree = tree
+	_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
 
-    // -----------------------------
-    // Ready to go
-    // -----------------------------
-    if launchGame {
-        err = systemMenu(cfg, stdscr, cachedTree)
-        if err != nil {
-            log.Fatal(err)
-        }
-    } else {
-        for sys, node := range cachedTree {
-            fmt.Printf("System: %s (%d entries)\n", sys, len(node.Children))
-        }
-    }
+	if launchGame {
+		err = systemMenu(cfg, stdscr, cachedTree)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		for sys, node := range cachedTree {
+			fmt.Printf("System: %s (%d entries)\n", sys, len(node.Children))
+		}
+	}
 }
-
-
