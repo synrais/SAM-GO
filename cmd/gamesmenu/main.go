@@ -69,15 +69,14 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 			}
 
 			if i == len(parts)-1 {
-				// leaf node (game)
-				res := result // copy per loop iteration so pointer stays valid
+				// always insert a game node
 				current.Children[part] = &Node{
 					Name:     part,
 					IsFolder: false,
-					Game:     &res,
+					Game:     &result,
 				}
 			} else {
-				// folder node
+				// create or reuse folder node
 				child, ok := current.Children[part]
 				if !ok {
 					child = &Node{
@@ -186,6 +185,11 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		_ = gc.Update()
 		gc.Nap(100)
 	}
+
+	// --- Ensure screen is cleared before returning (fix hanging bar)
+	stdscr.Erase()
+	stdscr.NoutRefresh()
+	_ = gc.Update()
 
 	return status.Error
 }
