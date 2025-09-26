@@ -91,12 +91,19 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
             if i == len(parts)-1 {
                 // leaf node = actual game file
                 res := result
-                if _, ok := current.Children[part]; !ok {
-                    current.Children[part] = &Node{
-                        Name:     part,
-                        IsFolder: false,
-                        Game:     &res,
-                    }
+                key := part
+                _, exists := current.Children[key]
+                counter := 1
+                for exists {
+                    // ensure uniqueness in the map
+                    key = fmt.Sprintf("%s#%d", part, counter)
+                    _, exists = current.Children[key]
+                    counter++
+                }
+                current.Children[key] = &Node{
+                    Name:     part, // display stays clean
+                    IsFolder: false,
+                    Game:     &res,
                 }
             } else {
                 // folder node
