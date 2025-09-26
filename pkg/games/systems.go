@@ -1251,13 +1251,13 @@ var Systems = map[string]System{
 		Category:     CategoryConsole,
 		Manufacturer: ManufacturerCommodore,
 		ReleaseDate:  "1985-07-23",
-		Folder:       []string{"AmigaCD32", "Amiga"},
+		Folder:       []string{"AmigaCD32", "Amiga", "_Console/_CD32 Games"},
 		Alias:        []string{"AmigaCD32"},
 		Rbf:          "_Computer/Minimig",
 		Slots: []Slot{
 			{
 				Label: "CD Image",
-				Exts:  []string{".cue", ".chd"},
+				Exts:  []string{".cue", ".chd", ".mgl"},
 				Mgl: &MglParams{
 					Delay:  1,
 					Method: "s",
@@ -2590,7 +2590,7 @@ var Systems = map[string]System{
 		Id:       "X68000",
 		Name:     "X68000",
 		Category: CategoryComputer,
-		Folder:   []string{"X68000"},
+		Folder:   []string{"X68000", "_Computer/_X68000 Games"},
 		Rbf:      "_Computer/X68000",
 		Slots: []Slot{
 			{
@@ -2613,7 +2613,7 @@ var Systems = map[string]System{
 			},
 			{
 				Label: "SASI Hard Disk",
-				Exts:  []string{".hdf"},
+				Exts:  []string{".hdf", ".mgl"},
 				Mgl: &MglParams{
 					Delay:  1,
 					Method: "s",
