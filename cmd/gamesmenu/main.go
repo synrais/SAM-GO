@@ -488,8 +488,6 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 		}
 		if button == 4 {
 			_ = mainOptionsWindow(cfg, stdscr)
-			results, _ := gamesdb.SearchNamesWords(games.AllSystems(), "")
-			systems, _ = generateTreeWindow(stdscr, results)
 			continue
 		}
 		if button == 5 {
