@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/json"
+	"encoding/gob"
 	"flag"
 	"fmt"
 	"log"
@@ -26,8 +26,6 @@ import (
 // -------------------------
 const socketPath = "/tmp/sam-go.sock"
 
-// tryAttach tries to connect to an existing instance.
-// Returns true if one was found and messaged.
 func tryAttach() bool {
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
@@ -38,11 +36,9 @@ func tryAttach() bool {
 	return true
 }
 
-// startSocketServer runs a goroutine that accepts IPC messages.
 func startSocketServer() {
-	// Clean up any stale socket
 	if _, err := os.Stat(socketPath); err == nil {
-		_ = os.Remove(socketPath)
+		os.Remove(socketPath)
 	}
 	l, err := net.Listen("unix", socketPath)
 	if err != nil {
@@ -64,8 +60,6 @@ func startSocketServer() {
 				msg := strings.TrimSpace(string(buf[:n]))
 				switch msg {
 				case "focus":
-					// Redraw the screen when a second instance pings
-					gc.FlushInput()
 					gc.Update()
 				case "quit":
 					os.Exit(0)
@@ -87,7 +81,6 @@ type Node struct {
 
 func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 	systems := make(map[string]*Node)
-
 	for _, result := range results {
 		sysId := result.SystemId
 		sysNode, ok := systems[sysId]
@@ -143,7 +136,6 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 			}
 		}
 	}
-
 	return systems
 }
 
@@ -212,16 +204,17 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		})
 
 		if err == nil {
-			// Build directory tree right after indexing
 			results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
 			if rerr == nil {
 				tree := buildTree(results)
 				status.Tree = tree
 
-				// Save tree to menu.db (in same dir as games.db)
+				// Save Gob
 				menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
-				if b, jerr := json.MarshalIndent(tree, "", "  "); jerr == nil {
-					_ = os.WriteFile(menuPath, b, 0644)
+				f, ferr := os.Create(menuPath)
+				if ferr == nil {
+					defer f.Close()
+					_ = gob.NewEncoder(f).Encode(tree)
 				}
 			} else {
 				status.Error = rerr
@@ -283,7 +276,7 @@ func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	}
 
 	if button == 0 && selected == 0 {
-		_, err := generateIndexWindow(cfg, stdscr) // discard tree here
+		_, err := generateIndexWindow(cfg, stdscr)
 		if err != nil {
 			return err
 		}
@@ -520,12 +513,9 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 // Main
 // -------------------------
 func main() {
-	// EARLY EXIT: if another instance is running, attach and quit immediately
 	if tryAttach() {
 		return
 	}
-
-	// Otherwise, start IPC server for future attach calls
 	startSocketServer()
 
 	printPtr := flag.Bool("print", false, "Print game path instead of launching")
@@ -547,15 +537,17 @@ func main() {
 	menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
 	var tree map[string]*Node
 
-	// Try loading cached menu.db
-	data, err := os.ReadFile(menuPath)
-	if err == nil {
-		if uerr := json.Unmarshal(data, &tree); uerr != nil {
+	// Load Gob if exists
+	f, ferr := os.Open(menuPath)
+	if ferr == nil {
+		defer f.Close()
+		decErr := gob.NewDecoder(f).Decode(&tree)
+		if decErr != nil {
+			fmt.Println("Warning: could not decode menu.db, rebuilding...")
 			tree = nil
 		}
 	}
 
-	// If no cache, build it
 	if tree == nil {
 		tree, err = generateIndexWindow(cfg, stdscr)
 		if err != nil {
