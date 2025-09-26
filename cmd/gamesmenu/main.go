@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -217,8 +218,8 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 				tree := buildTree(results)
 				status.Tree = tree
 
-				// Save tree to menu.db
-				menuPath := filepath.Join(config.DataDir, "menu.db")
+				// Save tree to menu.db (in same dir as games.db)
+				menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
 				if b, jerr := json.MarshalIndent(tree, "", "  "); jerr == nil {
 					_ = os.WriteFile(menuPath, b, 0644)
 				}
@@ -282,7 +283,7 @@ func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	}
 
 	if button == 0 && selected == 0 {
-		err := generateIndexWindow(cfg, stdscr)
+		_, err := generateIndexWindow(cfg, stdscr) // discard tree here
 		if err != nil {
 			return err
 		}
@@ -540,7 +541,7 @@ func main() {
 	}
 	defer gc.End()
 
-	menuPath := filepath.Join(config.DataDir, "menu.db")
+	menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
 	var tree map[string]*Node
 
 	data, err := os.ReadFile(menuPath)
