@@ -390,7 +390,11 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 			if err == nil {
 				systemName = system.Name
 			}
-			display := fmt.Sprintf("[%s] %s", systemName, result.Name)
+
+			// show real filename including extension
+			filename := filepath.Base(result.Path)
+			display := fmt.Sprintf("[%s] %s", systemName, filename)
+
 			if !utils.Contains(names, display) {
 				names = append(names, display)
 				items = append(items, result)
