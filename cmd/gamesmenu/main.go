@@ -206,6 +206,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 				_ = gob.NewEncoder(f).Encode(tree)
 			}
 
+			// ✅ Remove old games.db before rebuilding
+			_ = os.Remove(config.GamesDb)
+
 			db, dberr := gamesdb.OpenForWrite()
 			if dberr != nil {
 				status.Error = dberr
