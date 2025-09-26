@@ -401,23 +401,27 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 		stdscr.NoutRefresh()
 		_ = gc.Update()
 
-		var titleLabel, launchLabel string
+		var titleLabel string
+		var actionLabel string
 		if launchGame {
 			titleLabel = "Launch Game"
-			launchLabel = "Launch"
+			actionLabel = "Launch"
 		} else {
 			titleLabel = "Pick Game"
-			launchLabel = "Select"
+			actionLabel = "Select"
 		}
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         titleLabel,
-			Buttons:       []string{"PgUp", "PgDn", launchLabel, "Cancel"},
+			Buttons:       []string{"PgUp", "PgDn", "", "Cancel"}, // placeholder at 2
 			DefaultButton: 2,
 			ActionButton:  2,
 			ShowTotal:     true,
 			Width:         70,
 			Height:        18,
+			DynamicActionLabel: func(idx int) string {
+				return actionLabel
+			},
 		}, names)
 		if err != nil {
 			return err
