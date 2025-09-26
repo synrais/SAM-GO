@@ -129,6 +129,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 
 	_, width := win.MaxYX()
 
+	// Progress bar helper
 	drawProgressBar := func(current int, total int) {
 		pct := int(float64(current) / float64(total) * 100)
 		progressWidth := width - 4
@@ -142,10 +143,12 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		win.NoutRefresh()
 	}
 
+	// Clear line helper
 	clearText := func() {
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 	}
 
+	// Status struct for spinner
 	status := struct {
 		Step        int
 		Total       int
@@ -156,12 +159,14 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		Tree        map[string]*Node
 	}{Step: 1, Total: 100, DisplayText: "Finding games folders..."}
 
+	// Background worker: handles BOTH games.db + menu.db inline
 	go func() {
-		// Phase 1: Build index
+		// -------------------------
+		// Phase 1: Build games.db
+		// -------------------------
 		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
 			systemName := is.SystemId
-			system, err := games.GetSystem(is.SystemId)
-			if err == nil {
+			if system, serr := games.GetSystem(is.SystemId); serr == nil {
 				systemName = system.Name
 			}
 
@@ -179,27 +184,32 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		})
 
 		if err == nil {
-			// Phase 2: Load from DB
+			// -------------------------
+			// Phase 2: Load from games.db
+			// -------------------------
 			status.DisplayText = "Loading game list..."
 			status.Step = status.Total
 			gc.Nap(200) // let UI refresh
 
 			results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
 			if rerr == nil {
-				// Phase 3: Build tree
+				// -------------------------
+				// Phase 3: Build menu tree
+				// -------------------------
 				status.DisplayText = "Building menu tree..."
-				gc.Nap(200) // let UI refresh
+				gc.Nap(200)
 
 				tree := buildTree(results)
 				status.Tree = tree
 
-				// Phase 4: Save Gob
+				// -------------------------
+				// Phase 4: Write menu.db
+				// -------------------------
 				status.DisplayText = "Writing menu database..."
-				gc.Nap(200) // let UI refresh
+				gc.Nap(200)
 
 				menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
-				f, ferr := os.Create(menuPath)
-				if ferr == nil {
+				if f, ferr := os.Create(menuPath); ferr == nil {
 					defer f.Close()
 					_ = gob.NewEncoder(f).Encode(tree)
 				}
@@ -213,6 +223,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		status.Complete = true
 	}()
 
+	// -------------------------
+	// Spinner loop
+	// -------------------------
 	spinnerSeq := []string{"|", "/", "-", "\\"}
 	spinnerCount := 0
 
@@ -237,6 +250,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		gc.Nap(100)
 	}
 
+	// -------------------------
+	// Cleanup + return
+	// -------------------------
 	stdscr.Erase()
 	stdscr.NoutRefresh()
 	_ = gc.Update()
