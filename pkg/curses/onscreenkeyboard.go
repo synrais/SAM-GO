@@ -159,7 +159,7 @@ func OnScreenKeyboard(stdscr *gc.Window, title string, buttons []string, default
 				if selectedButton > 0 {
 					selectedButton--
 				} else {
-					selectedButton = 2
+					selectedButton = len(buttons) - 1
 				}
 			}
 		case gc.KEY_RIGHT:
@@ -174,7 +174,7 @@ func OnScreenKeyboard(stdscr *gc.Window, title string, buttons []string, default
 					selectedKey.X = 0
 				}
 			} else if selected == 2 {
-				if selectedButton < 2 {
+				if selectedButton < len(buttons)-1 {
 					selectedButton++
 				} else {
 					selectedButton = 0
