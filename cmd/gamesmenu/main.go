@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,54 +19,6 @@ import (
 	"github.com/synrais/SAM-GO/pkg/mister"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
-
-// -------------------------
-// Single-instance socket
-// -------------------------
-const socketPath = "/tmp/sam-go.sock"
-
-func tryAttach() bool {
-	conn, err := net.Dial("unix", socketPath)
-	if err != nil {
-		return false
-	}
-	defer conn.Close()
-	_, _ = conn.Write([]byte("focus"))
-	return true
-}
-
-func startSocketServer() {
-	if _, err := os.Stat(socketPath); err == nil {
-		os.Remove(socketPath)
-	}
-	l, err := net.Listen("unix", socketPath)
-	if err != nil {
-		fmt.Println("Warning: could not create IPC socket:", err)
-		return
-	}
-
-	go func() {
-		defer l.Close()
-		for {
-			conn, err := l.Accept()
-			if err != nil {
-				continue
-			}
-			go func(c net.Conn) {
-				defer c.Close()
-				buf := make([]byte, 256)
-				n, _ := c.Read(buf)
-				msg := strings.TrimSpace(string(buf[:n]))
-				switch msg {
-				case "focus":
-					gc.Update()
-				case "quit":
-					os.Exit(0)
-				}
-			}(conn)
-		}
-	}()
-}
 
 // -------------------------
 // Tree structure
@@ -340,6 +291,8 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 				}
 			} else {
 				_ = mister.LaunchGame(cfg, *system, choice.Game.Path)
+				gc.End()
+				os.Exit(0)
 			}
 		}
 	}
@@ -438,9 +391,9 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 				err = mister.LaunchGame(cfg, *system, game.Path)
 				if err != nil {
 					return err
-				} else {
-					return nil
 				}
+				gc.End()
+				os.Exit(0)
 			} else {
 				gc.End()
 				fmt.Fprintln(os.Stderr, game.Path)
@@ -513,11 +466,6 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 // Main
 // -------------------------
 func main() {
-	if tryAttach() {
-		return
-	}
-	startSocketServer()
-
 	printPtr := flag.Bool("print", false, "Print game path instead of launching")
 	flag.Parse()
 	launchGame := !*printPtr
