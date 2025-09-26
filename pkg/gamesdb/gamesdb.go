@@ -256,3 +256,45 @@ func IndexedSystems() ([]string, error) {
 	}
 	return systems, nil
 }
+
+// -------------------------
+// Full Indexer with progress
+// -------------------------
+
+type IndexStatus struct {
+	Total    int
+	Step     int
+	SystemId string
+	Files    int
+}
+
+// NewNamesIndex scans all systems, returning all FileInfo while
+// calling the update callback for progress display.
+func NewNamesIndex(
+	cfg *config.UserConfig,
+	systems []games.System,
+	update func(IndexStatus),
+) ([]FileInfo, error) {
+	status := IndexStatus{Total: len(systems), Step: 0}
+	var out []FileInfo
+
+	for _, sys := range systems {
+		status.Step++
+		status.SystemId = sys.Id
+		update(status)
+
+		paths := games.GetSystemPaths(cfg, []games.System{sys})
+		for _, p := range paths {
+			pathFiles, err := games.GetFiles(sys.Id, p.Path)
+			if err != nil {
+				return nil, fmt.Errorf("error getting files for %s: %v", sys.Id, err)
+			}
+			for pf := range pathFiles {
+				out = append(out, FileInfo{SystemId: sys.Id, Path: pathFiles[pf]})
+			}
+		}
+		status.Files = len(out)
+		update(status)
+	}
+	return out, nil
+}
