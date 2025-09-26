@@ -308,7 +308,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		"CD32NoICache.hdf",
 		"CD32NoFastMemNoICache.hdf",
 		"CD32NoFastMem.hdf",
-		"CD32Winboot.hdf"
+		"CD32Winboot.hdf",
 		"CD32.hdf",
 	}
 	for _, h := range hdfNames {
