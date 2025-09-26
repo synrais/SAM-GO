@@ -79,12 +79,15 @@ func DrawActionButtons(win *gc.Window, buttons []string, selected int, _ int) {
 	win.MoveAddChar(height-3, 0, gc.ACS_LTEE)
 	win.MoveAddChar(height-3, width-1, gc.ACS_RTEE)
 
-	// Build all button texts first
+	// Build button texts
 	buttonTexts := make([]string, len(buttons))
 	totalWidth := 0
 	for i, button := range buttons {
 		buttonTexts[i] = "<" + button + ">"
 		totalWidth += len(buttonTexts[i])
+		if i < len(buttons)-1 {
+			totalWidth++ // one space between buttons
+		}
 	}
 
 	// Center the whole button row
@@ -98,7 +101,10 @@ func DrawActionButtons(win *gc.Window, buttons []string, selected int, _ int) {
 		win.MovePrint(height-2, x, text)
 		win.ColorOff(1)
 
-		x += len(text) // advance with *no* extra space
+		x += len(text)
+		if i < len(buttonTexts)-1 {
+			x++ // one space between buttons
+		}
 	}
 
 	win.NoutRefresh()
