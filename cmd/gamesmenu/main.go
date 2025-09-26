@@ -285,7 +285,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 	_ = gc.Update()
 
 	searchTitle := "Search"
-	searchButtons := []string{"Options", "Search"}
+	searchButtons := []string{"Search"}
 	if fromMenu {
 		searchButtons = append(searchButtons, "Menu")
 	} else {
@@ -297,13 +297,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 		return err
 	}
 
-	if button == 0 {
-		err = mainOptionsWindow(cfg, stdscr)
-		if err != nil {
-			return err
-		}
-		return searchWindow(cfg, stdscr, text, launchGame, fromMenu)
-	} else if button == 1 {
+	if button == 0 { // Search
 		if len(text) == 0 {
 			return searchWindow(cfg, stdscr, "", launchGame, fromMenu)
 		}
@@ -351,6 +345,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 			titleLabel = "Pick Game"
 			launchLabel = "Select"
 		}
+
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         titleLabel,
 			Buttons:       []string{"PgUp", "PgDn", launchLabel, "Cancel"},
@@ -385,6 +380,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 		}
 		return searchWindow(cfg, stdscr, text, launchGame, fromMenu)
 	} else {
+		// Menu or Exit
 		return nil
 	}
 }
