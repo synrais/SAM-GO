@@ -86,11 +86,11 @@ func DrawActionButtons(win *gc.Window, buttons []string, selected int, _ int) {
 		buttonTexts[i] = "<" + button + ">"
 		totalWidth += len(buttonTexts[i])
 		if i < len(buttons)-1 {
-			totalWidth++ // one space between buttons
+			totalWidth += 3 // fixed 3-space gap
 		}
 	}
 
-	// Center the whole button row
+	// Center the whole row
 	leftMargin := (width - totalWidth) / 2
 	x := leftMargin
 
@@ -103,12 +103,13 @@ func DrawActionButtons(win *gc.Window, buttons []string, selected int, _ int) {
 
 		x += len(text)
 		if i < len(buttonTexts)-1 {
-			x += 3 // 3 space between buttons
+			x += 3 // fixed 3-space gap
 		}
 	}
 
 	win.NoutRefresh()
 }
+
 
 func InfoBox(stdscr *gc.Window, title string, text string, clear bool, ok bool) error {
 	if clear {
