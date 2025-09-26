@@ -128,11 +128,6 @@ func collectFiles(tree map[string]*Node) []gamesdb.FileInfo {
 // Shared DB Indexer
 // -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]*Node, error) {
-	stdscr.Erase()
-	stdscr.NoutRefresh()
-	_ = gc.Update()
-
-	// Progress window overlay
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
 		return nil, err
@@ -141,117 +136,87 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 
 	_, width := win.MaxYX()
 
-	// Progress bar helper
+	// Progress bar
 	drawProgressBar := func(current int, total int) {
 		if total <= 0 {
 			total = 1
 		}
 		pct := int(float64(current) / float64(total) * 100)
 		progressWidth := width - 4
-		progressPct := int(float64(pct) / float64(100) * float64(progressWidth))
+		progressPct := int(float64(pct) / 100 * float64(progressWidth))
 		if progressPct < 1 {
 			progressPct = 1
 		}
 		for i := 0; i < progressWidth; i++ {
-			ch := ' '
+			var ch gc.Char
 			if i < progressPct {
 				ch = gc.ACS_BLOCK
+			} else {
+				ch = gc.Char(' ')
 			}
 			win.MoveAddChar(2, 2+i, ch)
 		}
 		win.NoutRefresh()
 	}
 
-	// Clear the message line
 	clearText := func() {
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 	}
 
-	// Remove old DB files
+	updateStage := func(msg string) {
+		clearText()
+		win.MovePrint(1, 2, msg)
+		win.NoutRefresh()
+		_ = gc.Update()
+	}
+
+	// Remove old DBs
 	_ = os.Remove(config.GamesDb)
 	menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
 	_ = os.Remove(menuPath)
 	cachedTree = nil
 
-	// Status struct updated from background job
-	status := struct {
-		Step        int
-		Total       int
-		DisplayText string
-		Complete    bool
-		Error       error
-	}{Step: 1, Total: 100, DisplayText: "Finding games folders..."}
+	systems := games.AllSystems()
 
-	// Spinner sequence
+	// spinner sequence
 	spinnerSeq := []string{"|", "/", "-", "\\"}
 	spinnerCount := 0
 
-	// Run indexing in goroutine
-	go func() {
-		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
-			systemName := is.SystemId
-			if sys, serr := games.GetSystem(is.SystemId); serr == nil {
-				systemName = sys.Name
-			}
+	// -------------------------
+	// Phase 1: Build menu.db
+	// -------------------------
+	var allResults []gamesdb.SearchResult
+	for idx, sys := range systems {
+		updateStage(fmt.Sprintf("Indexing %s...", sys.Name))
 
-			text := fmt.Sprintf("Indexing %s...", systemName)
-			if is.Step == 1 {
-				text = "Finding games folders..."
-			} else if is.Step == is.Total {
-				text = "Writing menu database..."
-			}
-
-			status.Step = is.Step
-			status.Total = is.Total
-			status.DisplayText = text
-		})
-
-		status.Error = err
-		status.Complete = true
-	}()
-
-	// UI loop
-	for {
-		if status.Complete || status.Error != nil {
-			break
+		// spinner tick
+		spinnerCount++
+		if spinnerCount == len(spinnerSeq) {
+			spinnerCount = 0
 		}
-
-		clearText()
-		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
 		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
-		win.MovePrint(1, 2, status.DisplayText)
-		drawProgressBar(status.Step, status.Total)
 
-		stdscr.NoutRefresh()
-		win.NoutRefresh()
+		drawProgressBar(idx+1, len(systems)*2)
 		_ = gc.Update()
-		gc.Nap(100)
+
+		results, err := gamesdb.SearchNamesWords([]games.System{sys}, "")
+		if err != nil {
+			return nil, err
+		}
+		allResults = append(allResults, results...)
 	}
 
-	if status.Error != nil {
-		return nil, status.Error
-	}
+	tree := buildTree(allResults)
 
-	// Load results and build tree
-	results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
-	if rerr != nil {
-		return nil, rerr
-	}
-	tree := buildTree(results)
-
-	// Save menu.db
+	updateStage("Writing menu database...")
 	if f, ferr := os.Create(menuPath); ferr == nil {
 		defer f.Close()
 		_ = gob.NewEncoder(f).Encode(tree)
 	}
 
-	// Phase 2: rebuild games.db from menu.db
-	updateMsg := "Building games database..."
-	clearText()
-	win.MovePrint(1, 2, updateMsg)
-	win.NoutRefresh()
-	_ = gc.Update()
-
+	// -------------------------
+	// Phase 2: Build games.db
+	// -------------------------
 	db, dberr := gamesdb.OpenForWrite()
 	if dberr != nil {
 		return nil, dberr
@@ -259,13 +224,39 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	defer db.Close()
 
 	files := collectFiles(tree)
-	if uerr := gamesdb.UpdateNames(db, files); uerr != nil {
-		return nil, uerr
+
+	// group files by system
+	sysGroups := make(map[string][]gamesdb.FileInfo)
+	for _, f := range files {
+		sysGroups[f.SystemId] = append(sysGroups[f.SystemId], f)
 	}
 
-	// Finalize
+	stepOffset := len(systems)
+	totalSteps := len(systems) * 2
+
+	for idx, sys := range systems {
+		updateStage(fmt.Sprintf("Writing %s to games.db...", sys.Name))
+
+		// spinner tick
+		spinnerCount++
+		if spinnerCount == len(spinnerSeq) {
+			spinnerCount = 0
+		}
+		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
+
+		drawProgressBar(stepOffset+idx+1, totalSteps)
+		_ = gc.Update()
+
+		if list, ok := sysGroups[sys.Id]; ok && len(list) > 0 {
+			if uerr := gamesdb.UpdateNames(db, list); uerr != nil {
+				return nil, uerr
+			}
+		}
+	}
+
+	// finalize
 	cachedTree = tree
-	drawProgressBar(1, 1)
+	drawProgressBar(totalSteps, totalSteps)
 	win.NoutRefresh()
 	_ = gc.Update()
 
