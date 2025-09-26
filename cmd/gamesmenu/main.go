@@ -47,14 +47,17 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 		var parts []string
 
 		if idx := strings.Index(rel, ".zip"+string(filepath.Separator)); idx != -1 {
+			// inside .zip
 			inside := rel[idx+len(".zip"+string(filepath.Separator)):]
 			parts = strings.Split(inside, string(filepath.Separator))
 		} else {
+			// after system id
 			idx := strings.Index(rel, sysId+string(filepath.Separator))
 			if idx != -1 {
 				inside := rel[idx+len(sysId+string(filepath.Separator)):]
 				parts = strings.Split(inside, string(filepath.Separator))
 			} else {
+				// fallback = just file
 				parts = []string{filepath.Base(rel)}
 			}
 		}
@@ -66,12 +69,14 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 			}
 
 			if i == len(parts)-1 {
+				// always insert a game node
 				current.Children[part] = &Node{
 					Name:     part,
 					IsFolder: false,
 					Game:     &result,
 				}
 			} else {
+				// create or reuse folder node
 				child, ok := current.Children[part]
 				if !ok {
 					child = &Node{
@@ -97,6 +102,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 		var items []string
 		var order []*Node
 
+		// Sort children: folders first, then games
 		var folders, gamesList []*Node
 		for _, child := range node.Children {
 			if child.IsFolder {
@@ -129,7 +135,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 		if err != nil {
 			return err
 		}
-		if button == 3 {
+		if button == 3 { // Back
 			return nil
 		}
 		if button == 2 {
@@ -183,7 +189,7 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 }
 
 // -------------------------
-// DB Loader (1:1 from search)
+// Index loading screen (1:1 from search)
 // -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
@@ -258,12 +264,14 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		}
 
 		clearText()
+
 		spinnerCount++
 		if spinnerCount == len(spinnerSeq) {
 			spinnerCount = 0
 		}
 
 		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
+
 		win.MovePrint(1, 2, status.DisplayText)
 		drawProgressBar(status.Step, status.Total)
 
@@ -288,6 +296,7 @@ func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	if err != nil {
 		return err
 	}
+
 	if button == 0 {
 		switch selected {
 		case 0:
@@ -297,6 +306,7 @@ func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -327,37 +337,21 @@ func main() {
 		}
 	}
 
-	for {
-		button, _, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-			Title:         "Games Menu",
-			Buttons:       []string{"Options", "Open", "Exit"},
-			DefaultButton: 1,
-			ActionButton:  1,
-			ShowTotal:     false,
-			Width:         70,
-			Height:        18,
-		}, []string{"Browse systems"})
+	// Always load DB results
+	results, err := gamesdb.SearchNamesWords(games.AllSystems(), "")
+	if err != nil {
+		log.Fatal(err)
+	}
+	tree := buildTree(results)
+
+	if launchGame {
+		err = systemMenu(cfg, stdscr, tree)
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		if button == 0 {
-			err := mainOptionsWindow(cfg, stdscr)
-			if err != nil {
-				log.Fatal(err)
-			}
-		} else if button == 1 {
-			results, err := gamesdb.SearchNamesWords(games.AllSystems(), "")
-			if err != nil {
-				log.Fatal(err)
-			}
-			tree := buildTree(results)
-			err = systemMenu(cfg, stdscr, tree)
-			if err != nil {
-				log.Fatal(err)
-			}
-		} else {
-			break
+	} else {
+		for sys, node := range tree {
+			fmt.Printf("System: %s (%d entries)\n", sys, len(node.Children))
 		}
 	}
 }
