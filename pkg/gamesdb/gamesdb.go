@@ -22,9 +22,11 @@ const (
 	indexedSystemsKey = "meta:indexedSystems"
 )
 
+//
 // ---------------------------------------------------
 // Helpers
 // ---------------------------------------------------
+//
 
 // Return the key for a name in the names index.
 func NameKey(systemId string, name string) string {
@@ -76,9 +78,11 @@ func OpenForWrite() (*bolt.DB, error) {
 	return openNames()
 }
 
+//
 // ---------------------------------------------------
 // Indexed Systems
 // ---------------------------------------------------
+//
 
 func readIndexedSystems(db *bolt.DB) ([]string, error) {
 	var systems []string
@@ -111,16 +115,18 @@ func writeIndexedSystems(db *bolt.DB, systems []string) error {
 	})
 }
 
+//
 // ---------------------------------------------------
 // File Indexing
 // ---------------------------------------------------
+//
 
 type FileInfo struct {
 	SystemId string
 	Path     string
 }
 
-// Update the names index with all files in one big batch
+// Update the names index with a batch of files.
 func updateNames(db *bolt.DB, files []FileInfo) error {
 	return db.Batch(func(tx *bolt.Tx) error {
 		bns := tx.Bucket([]byte(BucketNames))
@@ -136,7 +142,7 @@ func updateNames(db *bolt.DB, files []FileInfo) error {
 	})
 }
 
-// Exported so main can call after menu.db rebuild.
+// Exported: batch update after menu rebuild (kept for compatibility).
 func UpdateNames(db *bolt.DB, files []FileInfo) error {
 	if len(files) == 0 {
 		return nil
@@ -160,9 +166,11 @@ func UpdateNames(db *bolt.DB, files []FileInfo) error {
 	return db.Sync()
 }
 
+//
 // ---------------------------------------------------
 // Search
 // ---------------------------------------------------
+//
 
 type SearchResult struct {
 	SystemId string
@@ -253,9 +261,11 @@ func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, er
 	})
 }
 
+//
 // ---------------------------------------------------
-// Indexing with progress (scanning phase)
+// Indexing with progress (Wizzo-style incremental Bolt writes)
 // ---------------------------------------------------
+//
 
 type IndexStatus struct {
 	Total    int
@@ -264,13 +274,24 @@ type IndexStatus struct {
 	Files    int
 }
 
-// NewNamesIndex scans all systems concurrently and reports progress.
+// NewNamesIndex scans all systems, writes to Bolt as it goes,
+// and reports progress per system.
 func NewNamesIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
 	update func(IndexStatus),
 ) ([]FileInfo, error) {
 	status := IndexStatus{Total: len(systems)}
+
+	// Ensure old DB is removed
+	_ = os.Remove(config.GamesDb)
+
+	db, err := OpenForWrite()
+	if err != nil {
+		return nil, fmt.Errorf("error opening gamesdb: %w", err)
+	}
+	defer db.Close()
+
 	var (
 		mu   sync.Mutex
 		out  []FileInfo
@@ -295,6 +316,14 @@ func NewNamesIndex(
 				}
 			}
 
+			// Write directly to Bolt
+			if len(sysFiles) > 0 {
+				if err := updateNames(db, sysFiles); err != nil {
+					return fmt.Errorf("error updating names for %s: %w", sys.Id, err)
+				}
+			}
+
+			// Report progress
 			mu.Lock()
 			out = append(out, sysFiles...)
 			step++
@@ -311,12 +340,27 @@ func NewNamesIndex(
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
+
+	// Write all indexed systems once at the end
+	systemIds := make([]string, 0, len(systems))
+	for _, sys := range systems {
+		systemIds = append(systemIds, sys.Id)
+	}
+	if err := writeIndexedSystems(db, systemIds); err != nil {
+		return nil, fmt.Errorf("error writing indexed systems: %w", err)
+	}
+
+	// ✅ Ensure Bolt flushes everything
+	_ = db.Sync()
+
 	return out, nil
 }
 
+//
 // ---------------------------------------------------
 // Public system index queries
 // ---------------------------------------------------
+//
 
 func SystemIndexed(system games.System) bool {
 	if !DbExists() {
