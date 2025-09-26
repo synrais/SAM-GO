@@ -167,6 +167,11 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	}{}
 
 	go func() {
+		// --- delete old db files up front ---
+		menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
+		_ = os.Remove(menuPath)
+		_ = os.Remove(config.GamesDb)
+
 		files, err := gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
 			systemName := is.SystemId
 			if sys, serr := games.GetSystem(is.SystemId); serr == nil {
@@ -199,9 +204,8 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			tree := buildTree(results)
 
 			// --- writing menu.db step ---
-			status.Step = status.Total - 1 // penultimate step
+			status.Step = status.Total - 1
 			status.DisplayText = "Writing menu.db to disk..."
-			menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
 			if f, ferr := os.Create(menuPath); ferr == nil {
 				defer f.Close()
 				_ = gob.NewEncoder(f).Encode(tree)
@@ -210,7 +214,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			// --- writing games.db step ---
 			status.Step = status.Total
 			status.DisplayText = "Writing games.db to disk..."
-			_ = os.Remove(config.GamesDb)
 			db, dberr := gamesdb.OpenForWrite()
 			if dberr != nil {
 				status.Error = dberr
