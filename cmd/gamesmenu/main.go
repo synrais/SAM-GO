@@ -142,28 +142,19 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 
 	// Progress bar helper
 	drawProgressBar := func(current int, total int) {
-		pct := int(float64(current) / float64(total) * 100)
 		progressWidth := width - 4
-		progressPct := int(float64(pct) / float64(100) * float64(progressWidth))
+		progressPct := int(float64(current) / float64(total) * float64(progressWidth))
 		if progressPct < 1 {
 			progressPct = 1
 		}
-		for i := 0; i < progressPct; i++ {
-			win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
-		}
+		bar := strings.Repeat("█", progressPct) + strings.Repeat(" ", progressWidth-progressPct)
+		win.MovePrint(2, 2, bar)
 		win.NoutRefresh()
 	}
 
-	// Clear text line
 	clearText := func() {
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 	}
-
-	// Remove old DBs
-	_ = os.Remove(config.GamesDb)
-	menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
-	_ = os.Remove(menuPath)
-	cachedTree = nil
 
 	updateStage := func(msg string) {
 		clearText()
@@ -172,8 +163,14 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		_ = gc.Update()
 	}
 
+	// Remove old DBs
+	_ = os.Remove(config.GamesDb)
+	menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
+	_ = os.Remove(menuPath)
+	cachedTree = nil
+
 	// -------------------------
-	// Phase 1: Scan files with progress
+	// Phase 1: Scan files
 	// -------------------------
 	updateStage("Scanning game folders...")
 	files, err := gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
@@ -181,7 +178,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		if sys, serr := games.GetSystem(is.SystemId); serr == nil {
 			systemName = sys.Name
 		}
-		msg := fmt.Sprintf("Indexing %s...", systemName)
+		msg := fmt.Sprintf("Indexing %s... (%d files)", systemName, is.Files)
 		updateStage(msg)
 		drawProgressBar(is.Step, is.Total)
 	})
