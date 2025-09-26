@@ -44,20 +44,20 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 		}
 
 		rel := result.Path
-
 		var parts []string
+
 		if idx := strings.Index(rel, ".zip"+string(filepath.Separator)); idx != -1 {
-			// keep only path inside the zip
+			// inside .zip
 			inside := rel[idx+len(".zip"+string(filepath.Separator)):]
 			parts = strings.Split(inside, string(filepath.Separator))
 		} else {
-			// keep path after system id
+			// after system id
 			idx := strings.Index(rel, sysId+string(filepath.Separator))
 			if idx != -1 {
 				inside := rel[idx+len(sysId+string(filepath.Separator)):]
 				parts = strings.Split(inside, string(filepath.Separator))
 			} else {
-				// fallback: just filename
+				// fallback = just file
 				parts = []string{filepath.Base(rel)}
 			}
 		}
@@ -67,14 +67,16 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 			if part == "" {
 				continue
 			}
+
 			if i == len(parts)-1 {
-				// last part = game
+				// always insert a game node
 				current.Children[part] = &Node{
 					Name:     part,
 					IsFolder: false,
 					Game:     &result,
 				}
 			} else {
+				// create or reuse folder node
 				child, ok := current.Children[part]
 				if !ok {
 					child = &Node{
