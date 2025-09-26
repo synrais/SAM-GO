@@ -69,14 +69,15 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 			}
 
 			if i == len(parts)-1 {
-				// always insert a game node
+				// leaf node (game)
+				res := result // copy per loop iteration so pointer stays valid
 				current.Children[part] = &Node{
 					Name:     part,
 					IsFolder: false,
-					Game:     &result,
+					Game:     &res,
 				}
 			} else {
-				// create or reuse folder node
+				// folder node
 				child, ok := current.Children[part]
 				if !ok {
 					child = &Node{
