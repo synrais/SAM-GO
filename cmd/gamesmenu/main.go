@@ -527,10 +527,14 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 // -------------------------
 // Main
 // -------------------------
+var cachedTree map[string]*Node // stays in RAM until program exit
+
 func main() {
 	printPtr := flag.Bool("print", false, "Print game path instead of launching")
+	rebuildPtr := flag.Bool("rebuild", false, "Force rebuild of databases")
 	flag.Parse()
 	launchGame := !*printPtr
+	forceRebuild := *rebuildPtr
 
 	cfg, err := config.LoadUserConfig("gamesmenu", &config.UserConfig{})
 	if err != nil && !os.IsNotExist(err) {
@@ -544,32 +548,53 @@ func main() {
 	}
 	defer gc.End()
 
-	var tree map[string]*Node
+	// -----------------------------
+	// Use in-memory tree if we have one
+	// -----------------------------
+	if cachedTree == nil || forceRebuild {
+		menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
+		var tree map[string]*Node
 
-	// -----------------------------
-	// Always refresh tree + menu.db
-	// -----------------------------
-	tree, err = generateIndexWindow(cfg, stdscr)
-	if err != nil {
-		log.Fatal(err)
+		if !forceRebuild {
+			// Try to load menu.db from disk
+			f, ferr := os.Open(menuPath)
+			if ferr == nil {
+				defer f.Close()
+				decErr := gob.NewDecoder(f).Decode(&tree)
+				if decErr != nil {
+					fmt.Println("Warning: could not decode menu.db, rebuilding...")
+					tree = nil
+				}
+			}
+		}
+
+		// If tree missing or corrupt, rebuild both DBs
+		if tree == nil {
+			tree, err = generateIndexWindow(cfg, stdscr)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+
+		// Keep in RAM for reuse
+		cachedTree = tree
+
+		// Warm up games.db here
+		_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
 	}
-
-	// -----------------------------
-	// Warm up games.db here
-	// -----------------------------
-	_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
 
 	// -----------------------------
 	// Ready to go
 	// -----------------------------
 	if launchGame {
-		err = systemMenu(cfg, stdscr, tree)
+		err = systemMenu(cfg, stdscr, cachedTree)
 		if err != nil {
 			log.Fatal(err)
 		}
 	} else {
-		for sys, node := range tree {
+		for sys, node := range cachedTree {
 			fmt.Printf("System: %s (%d entries)\n", sys, len(node.Children))
 		}
 	}
 }
+
