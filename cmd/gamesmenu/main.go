@@ -203,7 +203,7 @@ func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		DefaultButton: 0,
 		ActionButton:  0,
 		ShowTotal:     false,
-		Width:         70,
+		Width:         80,
 		Height:        18,
 	}, []string{"Update games database..."})
 
