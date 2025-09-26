@@ -43,11 +43,25 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 			systems[sysId] = sysNode
 		}
 
-		// Break into relative path parts (strip leading /media/ if present)
-		rel := strings.TrimPrefix(result.Path, "/media/")
-		parts := strings.Split(rel, string(filepath.Separator))
+		rel := result.Path
 
-		// Start from system root
+		var parts []string
+		if idx := strings.Index(rel, ".zip"+string(filepath.Separator)); idx != -1 {
+			// keep only path inside the zip
+			inside := rel[idx+len(".zip"+string(filepath.Separator)):]
+			parts = strings.Split(inside, string(filepath.Separator))
+		} else {
+			// keep path after system id
+			idx := strings.Index(rel, sysId+string(filepath.Separator))
+			if idx != -1 {
+				inside := rel[idx+len(sysId+string(filepath.Separator)):]
+				parts = strings.Split(inside, string(filepath.Separator))
+			} else {
+				// fallback: just filename
+				parts = []string{filepath.Base(rel)}
+			}
+		}
+
 		current := sysNode
 		for i, part := range parts {
 			if part == "" {
