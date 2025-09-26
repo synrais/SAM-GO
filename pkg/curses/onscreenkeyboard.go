@@ -7,7 +7,7 @@ import (
 	gc "github.com/rthornton128/goncurses"
 )
 
-func OnScreenKeyboard(stdscr *gc.Window, title string, buttons []string, defaultText string) (int, string, error) {
+func OnScreenKeyboard(stdscr *gc.Window, title string, buttons []string, defaultText string, defaultButton int) (int, string, error) {
 	win, err := NewWindow(stdscr, 16, 63, title, -1)
 	if err != nil {
 		return 0, "", err
@@ -16,9 +16,10 @@ func OnScreenKeyboard(stdscr *gc.Window, title string, buttons []string, default
 
 	_, width := win.MaxYX()
 
-	selected := 2
+	// selection state
+	selected := 2              // start on buttons row
 	selectedKey := Coords{0, 0}
-	selectedButton := 1
+	selectedButton := defaultButton // use caller’s requested default
 	cursor := len(defaultText)
 	text := defaultText
 
