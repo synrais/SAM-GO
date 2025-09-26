@@ -446,56 +446,66 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 // System Menu
 // -------------------------
 func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*Node) error {
-	var sysIds []string
-	for sys := range systems {
-		sysIds = append(sysIds, sys)
-	}
-	sort.Strings(sysIds)
+    var sysIds []string
+    for sys := range systems {
+        sysIds = append(sysIds, sys)
+    }
 
-	for {
-		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-			Title:         "Systems",
-			Buttons:       []string{
-				"PgUp",
-				"PgDn",
-				"Open",
-				"Search",
-				"Options",
-				"Exit",
-			},
-			DefaultButton: 2,
-			ActionButton:  2,
-			ShowTotal:     true,
-			Width:         70,
-			Height:        20,
-		}, sysIds)
-		if err != nil {
-			return err
-		}
+    // Custom sort: ao486 at top, everything else alphabetical
+    sort.Slice(sysIds, func(i, j int) bool {
+        if strings.EqualFold(sysIds[i], "ao486") {
+            return true
+        }
+        if strings.EqualFold(sysIds[j], "ao486") {
+            return false
+        }
+        return strings.ToLower(sysIds[i]) < strings.ToLower(sysIds[j])
+    })
 
-		if button == 3 {
-			_ = searchWindow(cfg, stdscr, "", true, true)
-			continue
-		}
-		if button == 4 {
-			_ = mainOptionsWindow(cfg, stdscr)
-			continue
-		}
-		if button == 5 {
-			return nil
-		}
-		if button == 2 {
-			sysId := sysIds[selected]
-			system, err := games.GetSystem(sysId)
-			if err != nil {
-				return err
-			}
-			root := systems[sysId]
-			if err := browseNode(cfg, stdscr, system, root); err != nil {
-				return err
-			}
-		}
-	}
+    for {
+        button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+            Title:         "Systems",
+            Buttons:       []string{
+                "PgUp",
+                "PgDn",
+                "Open",
+                "Search",
+                "Options",
+                "Exit",
+            },
+            DefaultButton: 2,
+            ActionButton:  2,
+            ShowTotal:     true,
+            Width:         70,
+            Height:        20,
+        }, sysIds)
+        if err != nil {
+            return err
+        }
+
+        if button == 3 {
+            _ = searchWindow(cfg, stdscr, "", true, true)
+            continue
+        }
+        if button == 4 {
+            _ = mainOptionsWindow(cfg, stdscr)
+            continue
+        }
+        if button == 5 {
+            return nil
+        }
+        if button == 2 {
+            sysId := sysIds[selected]
+            system, err := games.GetSystem(sysId)
+            if err != nil {
+                return err
+            }
+            root := systems[sysId]
+            if err := browseNode(cfg, stdscr, system, root); err != nil {
+                return err
+            }
+        }
+    }
 }
 
 // -------------------------
