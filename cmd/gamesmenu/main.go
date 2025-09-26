@@ -129,7 +129,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 
     _, width := win.MaxYX()
 
-    // Progress bar helper
     drawProgressBar := func(current int, total int) {
         pct := int(float64(current) / float64(total) * 100)
         progressWidth := width - 4
@@ -143,7 +142,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
         win.NoutRefresh()
     }
 
-    // Clear line helper
     clearText := func() {
         win.MovePrint(1, 2, strings.Repeat(" ", width-4))
     }
@@ -190,6 +188,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
                 gc.Nap(200)
 
                 tree := buildTree(results)
+
+                // 🔥 replace old cachedTree with fresh one
+                cachedTree = tree
                 status.Tree = tree
 
                 status.DisplayText = "Writing menu database..."
@@ -201,8 +202,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
                     _ = gob.NewEncoder(f).Encode(tree)
                 }
 
-                // 🔥 update RAM + warm DB here
-                cachedTree = tree
+                // 🔥 warm DB here too
                 _, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
             } else {
                 status.Error = rerr
@@ -241,7 +241,8 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
     stdscr.NoutRefresh()
     _ = gc.Update()
 
-    return status.Tree, status.Error
+    // Always return whatever we stuck into cachedTree
+    return cachedTree, status.Error
 }
 
 // -------------------------
