@@ -36,7 +36,7 @@ func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bo
 		return false, nil
 	}
 
-	cleanName := utils.RemoveFileExt(filepath.Base(path))
+	// cleanName := utils.RemoveFileExt(filepath.Base(path))
 	// fmt.Printf("[SIDELAUNCHER] %s: %s\n", system.Id, cleanName)
 
 	return true, fn(cfg, system, path)
