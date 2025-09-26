@@ -18,8 +18,6 @@ import (
 	"github.com/synrais/SAM-GO/pkg/mister"
 )
 
-const appName = "gamesmenu"
-
 // -------------------------
 // Tree structure
 // -------------------------
@@ -148,18 +146,18 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 }
 
 func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*Node) error {
-	for {
-		var sysIds []string
-		for sys := range systems {
-			sysIds = append(sysIds, sys)
-		}
-		sort.Strings(sysIds)
+	var sysIds []string
+	for sys := range systems {
+		sysIds = append(sysIds, sys)
+	}
+	sort.Strings(sysIds)
 
+	for {
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         "Systems",
-			Buttons:       []string{"Options", "PgUp", "PgDn", "Open", "Exit"},
-			DefaultButton: 3,
-			ActionButton:  3,
+			Buttons:       []string{"PgUp", "PgDn", "Open", "Exit"},
+			DefaultButton: 2,
+			ActionButton:  2,
 			ShowTotal:     true,
 			Width:         70,
 			Height:        20,
@@ -167,23 +165,10 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 		if err != nil {
 			return err
 		}
-		switch button {
-		case 4: // Exit
+		if button == 3 {
 			return nil
-		case 0: // Options -> rebuild DB
-			if err := generateIndexWindow(cfg, stdscr); err != nil {
-				return err
-			}
-			stdscr.Erase()
-			stdscr.NoutRefresh()
-			_ = gc.Update()
-
-			results, err := gamesdb.SearchNamesWords(games.AllSystems(), "")
-			if err != nil {
-				return err
-			}
-			systems = buildTree(results)
-		case 3: // Open
+		}
+		if button == 2 {
 			sysId := sysIds[selected]
 			system, err := games.GetSystem(sysId)
 			if err != nil {
@@ -198,7 +183,7 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 }
 
 // -------------------------
-// DB progress (copied from search)
+// DB Loader (1:1 from search)
 // -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
@@ -208,7 +193,8 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	defer win.Delete()
 
 	_, width := win.MaxYX()
-	drawProgressBar := func(current, total int) {
+
+	drawProgressBar := func(current int, total int) {
 		pct := int(float64(current) / float64(total) * 100)
 		progressWidth := width - 4
 		progressPct := int(float64(pct) / float64(100) * float64(progressWidth))
@@ -220,53 +206,98 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		}
 		win.NoutRefresh()
 	}
-	clearText := func() { win.MovePrint(1, 2, strings.Repeat(" ", width-4)) }
+
+	clearText := func() {
+		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
+	}
 
 	status := struct {
-		Step, Total int
+		Step        int
+		Total       int
 		SystemName  string
 		DisplayText string
 		Complete    bool
 		Error       error
-	}{Step: 1, Total: 100, DisplayText: "Finding games folders..."}
+	}{
+		Step:        1,
+		Total:       100,
+		DisplayText: "Finding games folders...",
+	}
 
 	go func() {
 		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
 			systemName := is.SystemId
-			if sys, err := games.GetSystem(is.SystemId); err == nil {
-				systemName = sys.Name
+			system, err := games.GetSystem(is.SystemId)
+			if err == nil {
+				systemName = system.Name
 			}
+
 			text := fmt.Sprintf("Indexing %s...", systemName)
 			if is.Step == 1 {
 				text = "Finding games folders..."
 			} else if is.Step == is.Total {
 				text = "Writing database to disk..."
 			}
+
 			status.Step = is.Step
 			status.Total = is.Total
 			status.SystemName = systemName
 			status.DisplayText = text
 		})
+
 		status.Error = err
 		status.Complete = true
 	}()
 
 	spinnerSeq := []string{"|", "/", "-", "\\"}
-	spin := 0
+	spinnerCount := 0
+
 	for {
 		if status.Complete || status.Error != nil {
 			break
 		}
+
 		clearText()
-		spin = (spin + 1) % len(spinnerSeq)
-		win.MovePrint(1, width-3, spinnerSeq[spin])
+		spinnerCount++
+		if spinnerCount == len(spinnerSeq) {
+			spinnerCount = 0
+		}
+
+		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
 		win.MovePrint(1, 2, status.DisplayText)
 		drawProgressBar(status.Step, status.Total)
+
 		win.NoutRefresh()
 		_ = gc.Update()
 		gc.Nap(100)
 	}
+
 	return status.Error
+}
+
+func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
+	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+		Title:         "Options",
+		Buttons:       []string{"Select", "Back"},
+		DefaultButton: 0,
+		ActionButton:  0,
+		ShowTotal:     false,
+		Width:         70,
+		Height:        18,
+	}, []string{"Update games database..."})
+	if err != nil {
+		return err
+	}
+	if button == 0 {
+		switch selected {
+		case 0:
+			err := generateIndexWindow(cfg, stdscr)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // -------------------------
@@ -277,10 +308,10 @@ func main() {
 	flag.Parse()
 	launchGame := !*printPtr
 
-	cfg, err := config.LoadUserConfig(appName, &config.UserConfig{})
-	if err != nil {
-		fmt.Println("[WARN] Could not load config, using defaults:", err)
-		cfg = &config.UserConfig{}
+	cfg, err := config.LoadUserConfig("gamesmenu", &config.UserConfig{})
+	if err != nil && !os.IsNotExist(err) {
+		fmt.Println("Error loading config:", err)
+		os.Exit(1)
 	}
 
 	stdscr, err := curses.Setup()
@@ -290,27 +321,43 @@ func main() {
 	defer gc.End()
 
 	if !gamesdb.DbExists() {
-		if err := generateIndexWindow(cfg, stdscr); err != nil {
+		err := generateIndexWindow(cfg, stdscr)
+		if err != nil {
 			log.Fatal(err)
 		}
-		stdscr.Erase()
-		stdscr.NoutRefresh()
-		_ = gc.Update()
 	}
 
-	results, err := gamesdb.SearchNamesWords(games.AllSystems(), "")
-	if err != nil {
-		log.Fatal(err)
-	}
-	tree := buildTree(results)
-
-	if launchGame {
-		if err := systemMenu(cfg, stdscr, tree); err != nil {
+	for {
+		button, _, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+			Title:         "Games Menu",
+			Buttons:       []string{"Options", "Open", "Exit"},
+			DefaultButton: 1,
+			ActionButton:  1,
+			ShowTotal:     false,
+			Width:         70,
+			Height:        18,
+		}, []string{"Browse systems"})
+		if err != nil {
 			log.Fatal(err)
 		}
-	} else {
-		for sys, node := range tree {
-			fmt.Printf("System: %s (%d entries)\n", sys, len(node.Children))
+
+		if button == 0 {
+			err := mainOptionsWindow(cfg, stdscr)
+			if err != nil {
+				log.Fatal(err)
+			}
+		} else if button == 1 {
+			results, err := gamesdb.SearchNamesWords(games.AllSystems(), "")
+			if err != nil {
+				log.Fatal(err)
+			}
+			tree := buildTree(results)
+			err = systemMenu(cfg, stdscr, tree)
+			if err != nil {
+				log.Fatal(err)
+			}
+		} else {
+			break
 		}
 	}
 }
