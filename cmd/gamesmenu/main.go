@@ -117,132 +117,156 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 // Shared DB Indexer
 // -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]*Node, error) {
-    stdscr.Erase()
-    stdscr.NoutRefresh()
-    _ = gc.Update()
+	stdscr.Erase()
+	stdscr.NoutRefresh()
+	_ = gc.Update()
 
-    win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
-    if err != nil {
-        return nil, err
-    }
-    defer win.Delete()
+	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
+	if err != nil {
+		return nil, err
+	}
+	defer win.Delete()
 
-    _, width := win.MaxYX()
+	_, width := win.MaxYX()
 
-    drawProgressBar := func(current int, total int) {
-        pct := int(float64(current) / float64(total) * 100)
-        progressWidth := width - 4
-        progressPct := int(float64(pct) / float64(100) * float64(progressWidth))
-        if progressPct < 1 {
-            progressPct = 1
-        }
-        for i := 0; i < progressPct; i++ {
-            win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
-        }
-        win.NoutRefresh()
-    }
+	// Progress bar helper
+	drawProgressBar := func(current int, total int) {
+		pct := int(float64(current) / float64(total) * 100)
+		progressWidth := width - 4
+		progressPct := int(float64(pct) / float64(100) * float64(progressWidth))
+		if progressPct < 1 {
+			progressPct = 1
+		}
+		for i := 0; i < progressPct; i++ {
+			win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
+		}
+		win.NoutRefresh()
+	}
 
-    clearText := func() {
-        win.MovePrint(1, 2, strings.Repeat(" ", width-4))
-    }
+	// Clear line helper
+	clearText := func() {
+		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
+	}
 
-    status := struct {
-        Step        int
-        Total       int
-        SystemName  string
-        DisplayText string
-        Complete    bool
-        Error       error
-        Tree        map[string]*Node
-    }{Step: 1, Total: 100, DisplayText: "Finding games folders..."}
+	// Status struct for spinner
+	status := struct {
+		Step        int
+		Total       int
+		SystemName  string
+		DisplayText string
+		Complete    bool
+		Error       error
+		Tree        map[string]*Node
+	}{Step: 1, Total: 100, DisplayText: "Finding games folders..."}
 
-    // Background worker: force rebuild games.db + menu.db
-    go func() {
-        _, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
-            systemName := is.SystemId
-            if system, serr := games.GetSystem(is.SystemId); serr == nil {
-                systemName = system.Name
-            }
+	// Background worker: force rebuild games.db + menu.db
+	go func() {
+		// 🔥 Clear old cached tree immediately (so no stale copy lingers)
+		cachedTree = nil
 
-            text := fmt.Sprintf("Indexing %s...", systemName)
-            if is.Step == 1 {
-                text = "Finding games folders..."
-            } else if is.Step == is.Total {
-                text = "Writing games database..."
-            }
+		// -------------------------
+		// Phase 1: Build games.db from scratch
+		// -------------------------
+		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
+			systemName := is.SystemId
+			if system, serr := games.GetSystem(is.SystemId); serr == nil {
+				systemName = system.Name
+			}
 
-            status.Step = is.Step
-            status.Total = is.Total
-            status.SystemName = systemName
-            status.DisplayText = text
-        })
+			text := fmt.Sprintf("Indexing %s...", systemName)
+			if is.Step == 1 {
+				text = "Finding games folders..."
+			} else if is.Step == is.Total {
+				text = "Writing games database..."
+			}
 
-        if err == nil {
-            status.DisplayText = "Loading game list..."
-            status.Step = status.Total
-            gc.Nap(200)
+			status.Step = is.Step
+			status.Total = is.Total
+			status.SystemName = systemName
+			status.DisplayText = text
+		})
 
-            results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
-            if rerr == nil {
-                status.DisplayText = "Building menu tree..."
-                gc.Nap(200)
+		if err == nil {
+			// -------------------------
+			// Phase 2: Load fresh results from games.db
+			// -------------------------
+			status.DisplayText = "Loading game list..."
+			status.Step = status.Total
+			gc.Nap(200) // let UI refresh
 
-                tree := buildTree(results)
+			results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
+			if rerr == nil {
+				// -------------------------
+				// Phase 3: Build new menu tree
+				// -------------------------
+				status.DisplayText = "Building menu tree..."
+				gc.Nap(200)
 
-                // 🔥 replace old cachedTree with fresh one
-                cachedTree = tree
-                status.Tree = tree
+				tree := buildTree(results)
+				status.Tree = tree
 
-                status.DisplayText = "Writing menu database..."
-                gc.Nap(200)
+				// -------------------------
+				// Phase 4: Write menu.db
+				// -------------------------
+				status.DisplayText = "Writing menu database..."
+				gc.Nap(200)
 
-                menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
-                if f, ferr := os.Create(menuPath); ferr == nil {
-                    defer f.Close()
-                    _ = gob.NewEncoder(f).Encode(tree)
-                }
+				menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
+				if f, ferr := os.Create(menuPath); ferr == nil {
+					defer f.Close()
+					_ = gob.NewEncoder(f).Encode(tree)
+				}
 
-                // 🔥 warm DB here too
-                _, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
-            } else {
-                status.Error = rerr
-            }
-        } else {
-            status.Error = err
-        }
+				// 🔥 Replace with fresh in-memory copy
+				cachedTree = tree
 
-        status.Complete = true
-    }()
+				// Warm up games.db too
+				_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
+			} else {
+				status.Error = rerr
+			}
+		} else {
+			status.Error = err
+		}
 
-    spinnerSeq := []string{"|", "/", "-", "\\"}
-    spinnerCount := 0
+		status.Complete = true
+	}()
 
-    for {
-        if status.Complete || status.Error != nil {
-            break
-        }
+	// -------------------------
+	// Spinner loop
+	// -------------------------
+	spinnerSeq := []string{"|", "/", "-", "\\"}
+	spinnerCount := 0
 
-        clearText()
-        spinnerCount++
-        if spinnerCount == len(spinnerSeq) {
-            spinnerCount = 0
-        }
+	for {
+		if status.Complete || status.Error != nil {
+			break
+		}
 
-        win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
-        win.MovePrint(1, 2, status.DisplayText)
-        drawProgressBar(status.Step, status.Total)
+		clearText()
 
-        win.NoutRefresh()
-        _ = gc.Update()
-        gc.Nap(100)
-    }
+		spinnerCount++
+		if spinnerCount == len(spinnerSeq) {
+			spinnerCount = 0
+		}
 
-    stdscr.Erase()
-    stdscr.NoutRefresh()
-    _ = gc.Update()
+		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
+		win.MovePrint(1, 2, status.DisplayText)
+		drawProgressBar(status.Step, status.Total)
 
-    // Always return whatever we stuck into cachedTree
-    return cachedTree, status.Error
+		win.NoutRefresh()
+		_ = gc.Update()
+		gc.Nap(100)
+	}
+
+	// -------------------------
+	// Cleanup + return
+	// -------------------------
+	stdscr.Erase()
+	stdscr.NoutRefresh()
+	_ = gc.Update()
+
+	return status.Tree, status.Error
 }
 
 // -------------------------
