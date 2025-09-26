@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	gc "github.com/rthornton128/goncurses"
@@ -14,15 +16,181 @@ import (
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/gamesdb"
 	"github.com/synrais/SAM-GO/pkg/mister"
-	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-// TODO: list display window showing 2 values per row (left and right aligned)
-// TODO: list display window with selected/deselected status per item
-// TODO: small popup selection menu dialog
+// -------------------------
+// Tree structure
+// -------------------------
+type Node struct {
+	Name     string
+	IsFolder bool
+	Children map[string]*Node
+	Game     *gamesdb.SearchResult
+}
 
-const appName = "search"
+func buildTree(results []gamesdb.SearchResult) map[string]*Node {
+	systems := make(map[string]*Node)
 
+	for _, result := range results {
+		sysId := result.SystemId
+		sysNode, ok := systems[sysId]
+		if !ok {
+			sysNode = &Node{
+				Name:     sysId,
+				IsFolder: true,
+				Children: make(map[string]*Node),
+			}
+			systems[sysId] = sysNode
+		}
+
+		rel := result.Path
+		var parts []string
+
+		if idx := strings.Index(rel, ".zip"+string(filepath.Separator)); idx != -1 {
+			// inside .zip
+			inside := rel[idx+len(".zip"+string(filepath.Separator)):]
+			parts = strings.Split(inside, string(filepath.Separator))
+		} else {
+			// after system id
+			idx := strings.Index(rel, sysId+string(filepath.Separator))
+			if idx != -1 {
+				inside := rel[idx+len(sysId+string(filepath.Separator)):]
+				parts = strings.Split(inside, string(filepath.Separator))
+			} else {
+				// fallback = just file
+				parts = []string{filepath.Base(rel)}
+			}
+		}
+
+		current := sysNode
+		for i, part := range parts {
+			if part == "" {
+				continue
+			}
+
+			if i == len(parts)-1 {
+				// always insert a game node
+				current.Children[part] = &Node{
+					Name:     part,
+					IsFolder: false,
+					Game:     &result,
+				}
+			} else {
+				// create or reuse folder node
+				child, ok := current.Children[part]
+				if !ok {
+					child = &Node{
+						Name:     part,
+						IsFolder: true,
+						Children: make(map[string]*Node),
+					}
+					current.Children[part] = child
+				}
+				current = child
+			}
+		}
+	}
+
+	return systems
+}
+
+// -------------------------
+// Browsing
+// -------------------------
+func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System, node *Node) error {
+	for {
+		var items []string
+		var order []*Node
+
+		// Sort children: folders first, then games
+		var folders, gamesList []*Node
+		for _, child := range node.Children {
+			if child.IsFolder {
+				folders = append(folders, child)
+			} else {
+				gamesList = append(gamesList, child)
+			}
+		}
+		sort.Slice(folders, func(i, j int) bool { return strings.ToLower(folders[i].Name) < strings.ToLower(folders[j].Name) })
+		sort.Slice(gamesList, func(i, j int) bool { return strings.ToLower(gamesList[i].Name) < strings.ToLower(gamesList[j].Name) })
+
+		for _, f := range folders {
+			items = append(items, "[DIR] "+f.Name)
+			order = append(order, f)
+		}
+		for _, g := range gamesList {
+			items = append(items, g.Name)
+			order = append(order, g)
+		}
+
+		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+			Title:         node.Name,
+			Buttons:       []string{"PgUp", "PgDn", "Open", "Back"},
+			DefaultButton: 2,
+			ActionButton:  2,
+			ShowTotal:     true,
+			Width:         70,
+			Height:        20,
+		}, items)
+		if err != nil {
+			return err
+		}
+		if button == 3 { // Back
+			return nil
+		}
+		if button == 2 {
+			choice := order[selected]
+			if choice.IsFolder {
+				if err := browseNode(cfg, stdscr, system, choice); err != nil {
+					return err
+				}
+			} else {
+				return mister.LaunchGame(cfg, *system, choice.Game.Path)
+			}
+		}
+	}
+}
+
+func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*Node) error {
+	var sysIds []string
+	for sys := range systems {
+		sysIds = append(sysIds, sys)
+	}
+	sort.Strings(sysIds)
+
+	for {
+		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+			Title:         "Systems",
+			Buttons:       []string{"PgUp", "PgDn", "Open", "Exit"},
+			DefaultButton: 2,
+			ActionButton:  2,
+			ShowTotal:     true,
+			Width:         70,
+			Height:        20,
+		}, sysIds)
+		if err != nil {
+			return err
+		}
+		if button == 3 {
+			return nil
+		}
+		if button == 2 {
+			sysId := sysIds[selected]
+			system, err := games.GetSystem(sysId)
+			if err != nil {
+				return err
+			}
+			root := systems[sysId]
+			if err := browseNode(cfg, stdscr, system, root); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// -------------------------
+// Index loading screen (1:1 from search)
+// -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
@@ -125,7 +293,6 @@ func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		Width:         70,
 		Height:        18,
 	}, []string{"Update games database..."})
-
 	if err != nil {
 		return err
 	}
@@ -143,125 +310,18 @@ func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	return nil
 }
 
-func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launchGame bool) (err error) {
-	stdscr.Erase()
-	stdscr.NoutRefresh()
-	_ = gc.Update()
-
-	searchTitle := "Search"
-	searchButtons := []string{"Options", "Search", "Exit"}
-	button, text, err := curses.OnScreenKeyboard(stdscr, searchTitle, searchButtons, query)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if button == 0 {
-		err = mainOptionsWindow(cfg, stdscr)
-		if err != nil {
-			return err
-		}
-
-		return searchWindow(cfg, stdscr, text, launchGame)
-	} else if button == 1 {
-		if len(text) == 0 {
-			return searchWindow(cfg, stdscr, "", launchGame)
-		}
-
-		if err := curses.InfoBox(stdscr, "", "Searching...", false, false); err != nil {
-			log.Fatal(err)
-		}
-
-		results, err := gamesdb.SearchNamesWords(games.AllSystems(), text)
-		if err != nil {
-			return err
-		}
-
-		if len(results) == 0 {
-			if err := curses.InfoBox(stdscr, "", "No results found.", false, true); err != nil {
-				log.Fatal(err)
-			}
-			return searchWindow(cfg, stdscr, text, launchGame)
-		}
-
-		var names []string
-		var items []gamesdb.SearchResult
-		for _, result := range results {
-			systemName := result.SystemId
-			system, err := games.GetSystem(result.SystemId)
-			if err == nil {
-				systemName = system.Name
-			}
-
-			display := fmt.Sprintf("[%s] %s", systemName, result.Name)
-			if !utils.Contains(names, display) {
-				names = append(names, display)
-				items = append(items, result)
-			}
-		}
-
-		stdscr.Erase()
-		stdscr.NoutRefresh()
-		_ = gc.Update()
-
-		var titleLabel, launchLabel string
-
-		if launchGame {
-			titleLabel = "Launch Game"
-			launchLabel = "Launch"
-		} else {
-			titleLabel = "Pick Game"
-			launchLabel = "Select"
-		}
-		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-			Title:         titleLabel,
-			Buttons:       []string{"PgUp", "PgDn", launchLabel, "Cancel"},
-			DefaultButton: 2,
-			ActionButton:  2,
-			ShowTotal:     true,
-			Width:         70,
-			Height:        18,
-		}, names)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if button == 2 {
-			game := items[selected]
-
-			if launchGame {
-				system, err := games.GetSystem(game.SystemId)
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				err = mister.LaunchGame(cfg, *system, game.Path)
-				if err != nil {
-					log.Fatal(err)
-				} else {
-					return nil
-				}
-			} else {
-				gc.End()
-				fmt.Fprintln(os.Stderr, game.Path)
-				os.Exit(0)
-			}
-		}
-
-		return searchWindow(cfg, stdscr, text, launchGame)
-	} else {
-		return nil
-	}
-}
-
+// -------------------------
+// Main
+// -------------------------
 func main() {
-	printPtr := flag.Bool("print", false, "Print game path to stderr instead of launching the game")
+	printPtr := flag.Bool("print", false, "Print game path instead of launching")
 	flag.Parse()
-	var launchGame bool = !*printPtr
+	launchGame := !*printPtr
 
-	cfg, err := config.LoadUserConfig(appName, &config.UserConfig{})
+	cfg, err := config.LoadUserConfig("gamesmenu", &config.UserConfig{})
 	if err != nil && !os.IsNotExist(err) {
-    	fmt.Println("Error loading config file:", err)
-    	os.Exit(1)
+		fmt.Println("Error loading config:", err)
+		os.Exit(1)
 	}
 
 	stdscr, err := curses.Setup()
@@ -277,8 +337,21 @@ func main() {
 		}
 	}
 
-	err = searchWindow(cfg, stdscr, "", launchGame)
+	// Always load DB results
+	results, err := gamesdb.SearchNamesWords(games.AllSystems(), "")
 	if err != nil {
 		log.Fatal(err)
+	}
+	tree := buildTree(results)
+
+	if launchGame {
+		err = systemMenu(cfg, stdscr, tree)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		for sys, node := range tree {
+			fmt.Printf("System: %s (%d entries)\n", sys, len(node.Children))
+		}
 	}
 }
