@@ -37,7 +37,7 @@ func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bo
 	}
 
 	cleanName := utils.RemoveFileExt(filepath.Base(path))
-	fmt.Printf("[SIDELAUNCHER] %s: %s\n", system.Id, cleanName)
+	// fmt.Printf("[SIDELAUNCHER] %s: %s\n", system.Id, cleanName)
 
 	return true, fn(cfg, system, path)
 }
@@ -47,7 +47,7 @@ func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bo
 // --------------------------------------------------
 
 func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string) error {
-	fmt.Println("[SIDELAUNCHER] AmigaVision launch starting…")
+	// fmt.Println("[SIDELAUNCHER] AmigaVision launch starting…")
 
 	if !strings.EqualFold(filepath.Ext(path), ".ags") {
 		return nil
@@ -191,7 +191,7 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 // --------------------------------------------------
 
 func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error {
-	fmt.Println("[SIDELAUNCHER] AmigaCD32 launch starting…")
+	// fmt.Println("[SIDELAUNCHER] AmigaCD32 launch starting…")
 
 	cleanPath := func(p string) string {
 		return "../" + strings.TrimPrefix(p, "/media/")
