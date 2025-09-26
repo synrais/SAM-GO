@@ -154,18 +154,17 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		win.NoutRefresh()
 	}
 
-	// Clear line helper
+	// Clear text line
 	clearText := func() {
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 	}
 
-	// cleanup old DB files
+	// Remove old DBs
 	_ = os.Remove(config.GamesDb)
 	menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
 	_ = os.Remove(menuPath)
 	cachedTree = nil
 
-	// stage updater
 	updateStage := func(msg string) {
 		clearText()
 		win.MovePrint(1, 2, msg)
@@ -174,10 +173,16 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	}
 
 	// -------------------------
-	// Phase 1: Scan and index files
+	// Phase 1: Scan files with progress
 	// -------------------------
 	updateStage("Scanning game folders...")
-	_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
+	files, err := gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
+		systemName := is.SystemId
+		if sys, serr := games.GetSystem(is.SystemId); serr == nil {
+			systemName = sys.Name
+		}
+		msg := fmt.Sprintf("Indexing %s...", systemName)
+		updateStage(msg)
 		drawProgressBar(is.Step, is.Total)
 	})
 	if err != nil {
@@ -185,11 +190,18 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	}
 
 	// -------------------------
-	// Phase 2: Build fresh tree from results
+	// Phase 2: Build fresh tree
 	// -------------------------
 	updateStage("Building menu tree...")
-	resultsList, _ := gamesdb.SearchNamesWords(games.AllSystems(), "")
-	tree := buildTree(resultsList)
+	var results []gamesdb.SearchResult
+	for _, f := range files {
+		results = append(results, gamesdb.SearchResult{
+			SystemId: f.SystemId,
+			Name:     filepath.Base(f.Path),
+			Path:     f.Path,
+		})
+	}
+	tree := buildTree(results)
 
 	// -------------------------
 	// Phase 3: Write menu.db
@@ -201,32 +213,20 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	}
 
 	// -------------------------
-	// Phase 4: Write games.db from tree
+	// Phase 4: Build games.db
 	// -------------------------
-	updateStage("Writing games database...")
+	updateStage("Building games database...")
 	db, dberr := gamesdb.OpenForWrite()
 	if dberr != nil {
 		return nil, dberr
 	}
 	defer db.Close()
 
-	files := collectFiles(tree)
 	if uerr := gamesdb.UpdateNames(db, files); uerr != nil {
 		return nil, uerr
 	}
 
-	// also record which systems were indexed
-	var sysIds []string
-	for sysId := range tree {
-		sysIds = append(sysIds, sysId)
-	}
-	if werr := gamesdb.WriteIndexedSystems(db, sysIds); werr != nil {
-		return nil, werr
-	}
-
-	// -------------------------
 	// Done
-	// -------------------------
 	cachedTree = tree
 	drawProgressBar(1, 1)
 	win.NoutRefresh()
