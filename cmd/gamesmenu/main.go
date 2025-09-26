@@ -147,9 +147,9 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 }
 
 // -------------------------
-// Tree Builder with spinner
+// Shared DB Indexer
 // -------------------------
-func generateTreeWindow(stdscr *gc.Window, results []gamesdb.SearchResult) (map[string]*Node, error) {
+func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]*Node, error) {
 	stdscr.Erase()
 	stdscr.NoutRefresh()
 	_ = gc.Update()
@@ -157,68 +157,6 @@ func generateTreeWindow(stdscr *gc.Window, results []gamesdb.SearchResult) (map[
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
 		return nil, err
-	}
-	defer win.Delete()
-
-	_, width := win.MaxYX()
-
-	status := struct {
-		Complete bool
-		Error    error
-		Tree     map[string]*Node
-	}{
-		Complete: false,
-	}
-
-	// Build in background
-	go func() {
-		tree := buildTree(results)
-		status.Tree = tree
-		status.Complete = true
-	}()
-
-	spinnerSeq := []string{"|", "/", "-", "\\"}
-	spinnerCount := 0
-
-	for {
-		if status.Complete {
-			break
-		}
-
-		// Clear line + show text
-		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
-		win.MovePrint(1, 2, "Building directory tree...")
-
-		// Spinny
-		spinnerCount++
-		if spinnerCount == len(spinnerSeq) {
-			spinnerCount = 0
-		}
-		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
-
-		win.NoutRefresh()
-		_ = gc.Update()
-		gc.Nap(100)
-	}
-
-	stdscr.Erase()
-	stdscr.NoutRefresh()
-	_ = gc.Update()
-
-	return status.Tree, status.Error
-}
-
-// -------------------------
-// Shared DB Indexer
-// -------------------------
-func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
-	stdscr.Erase()
-	stdscr.NoutRefresh()
-	_ = gc.Update()
-
-	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
-	if err != nil {
-		return err
 	}
 	defer win.Delete()
 
@@ -248,11 +186,8 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		DisplayText string
 		Complete    bool
 		Error       error
-	}{
-		Step:        1,
-		Total:       100,
-		DisplayText: "Finding games folders...",
-	}
+		Tree        map[string]*Node
+	}{Step: 1, Total: 100, DisplayText: "Finding games folders..."}
 
 	go func() {
 		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
@@ -275,7 +210,25 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 			status.DisplayText = text
 		})
 
-		status.Error = err
+		if err == nil {
+			// Build directory tree right after indexing
+			results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
+			if rerr == nil {
+				tree := buildTree(results)
+				status.Tree = tree
+
+				// Save tree to menu.db
+				menuPath := filepath.Join(config.DataDir, "menu.db")
+				if b, jerr := json.MarshalIndent(tree, "", "  "); jerr == nil {
+					_ = os.WriteFile(menuPath, b, 0644)
+				}
+			} else {
+				status.Error = rerr
+			}
+		} else {
+			status.Error = err
+		}
+
 		status.Complete = true
 	}()
 
@@ -307,7 +260,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	stdscr.NoutRefresh()
 	_ = gc.Update()
 
-	return status.Error
+	return status.Tree, status.Error
 }
 
 // -------------------------
@@ -566,12 +519,9 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 // Main
 // -------------------------
 func main() {
-	// If another instance is running, attach and exit
 	if tryAttach() {
 		return
 	}
-
-	// Otherwise, start IPC server for future attach calls
 	startSocketServer()
 
 	printPtr := flag.Bool("print", false, "Print game path instead of launching")
@@ -590,20 +540,21 @@ func main() {
 	}
 	defer gc.End()
 
-	if !gamesdb.DbExists() {
-		err := generateIndexWindow(cfg, stdscr)
-		if err != nil {
-			log.Fatal(err)
+	menuPath := filepath.Join(config.DataDir, "menu.db")
+	var tree map[string]*Node
+
+	data, err := os.ReadFile(menuPath)
+	if err == nil {
+		if uerr := json.Unmarshal(data, &tree); uerr != nil {
+			tree = nil
 		}
 	}
 
-	results, err := gamesdb.SearchNamesWords(games.AllSystems(), "")
-	if err != nil {
-		log.Fatal(err)
-	}
-	tree, err := generateTreeWindow(stdscr, results)
-	if err != nil {
-		log.Fatal(err)
+	if tree == nil {
+		tree, err = generateIndexWindow(cfg, stdscr)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	if launchGame {
