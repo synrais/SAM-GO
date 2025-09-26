@@ -72,34 +72,34 @@ func DrawBox(win *gc.Window, y int, x int, height int, width int) {
 	win.NoutRefresh()
 }
 
-func DrawActionButtons(win *gc.Window, buttons []string, selected int, padding int) {
+func DrawActionButtons(win *gc.Window, buttons []string, selected int, _ int) {
 	height, width := win.MaxYX()
 
+	// Draw horizontal separator
 	win.HLine(height-3, 1, gc.ACS_HLINE, width-2)
 	win.MoveAddChar(height-3, 0, gc.ACS_LTEE)
 	win.MoveAddChar(height-3, width-1, gc.ACS_RTEE)
 
-	maxButtonTextLen := 0
-	for _, button := range buttons {
-		if len(button) > maxButtonTextLen {
-			maxButtonTextLen = len(button)
-		}
+	// Build all button texts first
+	buttonTexts := make([]string, len(buttons))
+	totalWidth := 0
+	for i, button := range buttons {
+		buttonTexts[i] = "<" + button + ">"
+		totalWidth += len(buttonTexts[i])
 	}
 
-	buttonPadding := padding
-	buttonWidth := maxButtonTextLen + 2
-	totalButtonWidth := buttonWidth*len(buttons) + ((len(buttons) - 1) * buttonPadding)
-	buttonsLeftMargin := (width - totalButtonWidth) / 2
+	// Center the whole button row
+	leftMargin := (width - totalWidth) / 2
+	x := leftMargin
 
-	// buttonSection := width / (len(buttons) + 1)
-	for i, button := range buttons {
+	for i, text := range buttonTexts {
 		if i == selected {
 			win.ColorOn(1)
 		}
-		textPadding := (maxButtonTextLen - len(button)) / 2
-		buttonText := "<" + s.Repeat(" ", textPadding) + button + s.Repeat(" ", textPadding) + ">"
-		win.MovePrint(height-2, buttonsLeftMargin+(i*(buttonWidth+buttonPadding)), buttonText)
+		win.MovePrint(height-2, x, text)
 		win.ColorOff(1)
+
+		x += len(text) // advance with *no* extra space
 	}
 
 	win.NoutRefresh()
