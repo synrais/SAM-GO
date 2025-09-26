@@ -140,21 +140,11 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 
 	_, width := win.MaxYX()
 
-	// Spinner
-	spinnerSeq := []string{"|", "/", "-", "\\"}
-	spinnerCount := 0
-
-	// Progress bar using ACS_BLOCK (safe ncurses char)
-	drawProgressBar := func(current, total int) {
-		if total == 0 {
-			total = 1
-		}
+	// Progress bar helper
+	drawProgressBar := func(current int, total int) {
 		progressWidth := width - 4
-		if progressWidth < 10 {
-			progressWidth = 10
-		}
 		progressPct := int(float64(current) / float64(total) * float64(progressWidth))
-		if progressPct < 1 && current > 0 {
+		if progressPct < 1 {
 			progressPct = 1
 		}
 		for i := 0; i < progressPct; i++ {
@@ -167,7 +157,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 	}
 
-	// Shared status struct
 	status := struct {
 		Step        int
 		Total       int
@@ -177,13 +166,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		Error       error
 	}{}
 
-	// Remove old DBs
-	_ = os.Remove(config.GamesDb)
-	menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
-	_ = os.Remove(menuPath)
-	cachedTree = nil
-
-	// Async scan + indexer
 	go func() {
 		files, err := gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
 			systemName := is.SystemId
@@ -195,7 +177,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			if is.Step == 1 {
 				text = "Finding games folders..."
 			} else if is.Step == is.Total {
-				text = "Writing databases..."
+				text = "Writing database to disk..."
 			}
 
 			status.Step = is.Step
@@ -206,69 +188,93 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 
 		if err != nil {
 			status.Error = err
-			status.Complete = true
-			return
-		}
+		} else {
+			// build tree + save menu.db
+			var results []gamesdb.SearchResult
+			for _, f := range files {
+				results = append(results, gamesdb.SearchResult{
+					SystemId: f.SystemId,
+					Name:     filepath.Base(f.Path),
+					Path:     f.Path,
+				})
+			}
+			tree := buildTree(results)
 
-		// Phase 2: Build fresh tree
-		var results []gamesdb.SearchResult
-		for _, f := range files {
-			results = append(results, gamesdb.SearchResult{
-				SystemId: f.SystemId,
-				Name:     filepath.Base(f.Path),
-				Path:     f.Path,
-			})
-		}
-		tree := buildTree(results)
+			menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
+			if f, ferr := os.Create(menuPath); ferr == nil {
+				defer f.Close()
+				_ = gob.NewEncoder(f).Encode(tree)
+			}
 
-		// Phase 3: Write menu.db
-		if f, ferr := os.Create(menuPath); ferr == nil {
-			defer f.Close()
-			_ = gob.NewEncoder(f).Encode(tree)
+			db, dberr := gamesdb.OpenForWrite()
+			if dberr != nil {
+				status.Error = dberr
+			} else {
+				defer db.Close()
+				_ = gamesdb.UpdateNames(db, files)
+				cachedTree = tree
+			}
 		}
-
-		// Phase 4: Write games.db
-		db, dberr := gamesdb.OpenForWrite()
-		if dberr == nil {
-			defer db.Close()
-			_ = gamesdb.UpdateNames(db, files)
-		}
-
-		cachedTree = tree
 		status.Complete = true
 	}()
 
-	// UI loop with spinner + bar
+	// Spinner animation
+	spinnerSeq := []string{"|", "/", "-", "\\"}
+	spinnerCount := 0
+
 	for {
 		if status.Complete || status.Error != nil {
 			break
 		}
 
 		clearText()
-
 		spinnerCount++
 		if spinnerCount == len(spinnerSeq) {
 			spinnerCount = 0
 		}
 		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
 
-		if status.DisplayText != "" {
-			win.MovePrint(1, 2, status.DisplayText)
-		} else {
-			win.MovePrint(1, 2, "Scanning...")
-		}
-
+		win.MovePrint(1, 2, status.DisplayText)
 		drawProgressBar(status.Step, status.Total)
+
 		win.NoutRefresh()
 		_ = gc.Update()
-		gc.Nap(100) // tick spinner every 100ms
+		gc.Nap(100)
 	}
 
 	if status.Error != nil {
 		return nil, status.Error
 	}
-
 	return cachedTree, nil
+}
+
+// -------------------------
+// Options
+// -------------------------
+func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]*Node, error) {
+	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+		Title:         "Options",
+		Buttons:       []string{"Select", "Back"},
+		DefaultButton: 0,
+		ActionButton:  0,
+		ShowTotal:     false,
+		Width:         70,
+		Height:        18,
+	}, []string{"Update games database..."})
+	if err != nil {
+		return nil, err
+	}
+
+	if button == 0 && selected == 0 {
+		tree, err := generateIndexWindow(cfg, stdscr)
+		if err != nil {
+			return nil, err
+		}
+		cachedTree = tree
+		return tree, nil
+	}
+
+	return nil, nil
 }
 
 // -------------------------
@@ -572,7 +578,8 @@ func main() {
 	cachedTree = tree
 
 	if launchGame {
-		if err := systemMenu(cfg, stdscr, cachedTree); err != nil {
+		err = systemMenu(cfg, stdscr, cachedTree)
+		if err != nil {
 			log.Fatal(err)
 		}
 	} else {
