@@ -103,7 +103,7 @@ func DrawActionButtons(win *gc.Window, buttons []string, selected int, _ int) {
 
 		x += len(text)
 		if i < len(buttonTexts)-1 {
-			x++ // one space between buttons
+			x += 3 // 3 space between buttons
 		}
 	}
 
