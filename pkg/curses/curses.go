@@ -79,6 +79,9 @@ func DrawActionButtons(win *gc.Window, buttons []string, selected int, _ int) {
 	win.MoveAddChar(height-3, 0, gc.ACS_LTEE)
 	win.MoveAddChar(height-3, width-1, gc.ACS_RTEE)
 
+	// Clear the whole row where buttons will sit
+	win.MovePrint(height-2, 1, strings.Repeat(" ", width-2))
+
 	// Build button texts
 	buttonTexts := make([]string, len(buttons))
 	totalWidth := 0
@@ -109,7 +112,6 @@ func DrawActionButtons(win *gc.Window, buttons []string, selected int, _ int) {
 
 	win.NoutRefresh()
 }
-
 
 func InfoBox(stdscr *gc.Window, title string, text string, clear bool, ok bool) error {
 	if clear {
