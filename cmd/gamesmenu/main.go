@@ -201,27 +201,27 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 }
 
 func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
-	, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-		Title:         "Options",
-		s:       []string{"Select", "Back"},
-		Default: 0,
-		Action:  0,
-		ShowTotal:     false,
-		Width:         70,
-		Height:        18,
-	}, []string{"Update games database..."})
+    button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+        Title:         "Options",
+        Buttons:       []string{"Select", "Back"},
+        DefaultButton: 0,
+        ActionButton:  0,
+        ShowTotal:     false,
+        Width:         70,
+        Height:        18,
+    }, []string{"Update games database..."})
 
-	if err != nil {
-		return err
-	}
+    if err != nil {
+        return err
+    }
 
-	if  == 0 && selected == 0 {
-		err := generateIndexWindow(cfg, stdscr)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+    if button == 0 && selected == 0 {
+        err := generateIndexWindow(cfg, stdscr)
+        if err != nil {
+            return err
+        }
+    }
+    return nil
 }
 
 // -------------------------
@@ -253,7 +253,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 			order = append(order, g)
 		}
 
-		, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         node.Name,
 			s:       []string{"PgUp", "PgDn", "Open", "Back"},
 			Default: 2,
