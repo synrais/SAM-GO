@@ -17,9 +17,9 @@ func OnScreenKeyboard(stdscr *gc.Window, title string, buttons []string, default
 	_, width := win.MaxYX()
 
 	// selection state
-	selected := 2              // start on buttons row
+	selected := 2                   // start on buttons row
 	selectedKey := Coords{0, 0}
-	selectedButton := defaultButton // use caller’s requested default
+	selectedButton := 0              // always default to first button ("Search")
 	cursor := len(defaultText)
 	text := defaultText
 
@@ -49,6 +49,7 @@ func OnScreenKeyboard(stdscr *gc.Window, title string, buttons []string, default
 		win.MovePrint(2, 2, s.Repeat(" ", width-4))
 		win.MovePrint(2, 2, text)
 
+		// draw keys
 		for y, row := range keys {
 			for x, key := range row {
 				win.Move(5+(y*2), 2+(x*6))
@@ -85,6 +86,7 @@ func OnScreenKeyboard(stdscr *gc.Window, title string, buttons []string, default
 			}
 		}
 
+		// draw action buttons (evenly spaced + centered)
 		var button int
 		if selected == 2 {
 			button = selectedButton
@@ -108,14 +110,9 @@ func OnScreenKeyboard(stdscr *gc.Window, title string, buttons []string, default
 				if selectedKey.Y < 3 {
 					selectedKey.Y++
 				} else {
+					// jump to buttons row, ALWAYS start on "Search"
 					selected = 2
-					if selectedKey.X < 3 {
-						selectedButton = 0
-					} else if selectedKey.X > 6 {
-						selectedButton = 2
-					} else {
-						selectedButton = 1
-					}
+					selectedButton = 0
 				}
 			} else if selected == 2 {
 				selected = 0
@@ -125,7 +122,7 @@ func OnScreenKeyboard(stdscr *gc.Window, title string, buttons []string, default
 			if selected == 0 {
 				selected = 2
 				selectedKey.Y = 3
-				selectedButton = 1
+				selectedButton = 0 // back to "Search"
 			} else if selected == 1 {
 				if selectedKey.Y > 0 {
 					selectedKey.Y--
@@ -135,14 +132,7 @@ func OnScreenKeyboard(stdscr *gc.Window, title string, buttons []string, default
 			} else if selected == 2 {
 				selected = 1
 				selectedKey.Y = 3
-				// FIXME: this only works well for 3 buttons
-				if selectedButton == 0 {
-					selectedKey.X = 2
-				} else if selectedButton == 1 {
-					selectedKey.X = 4
-				} else {
-					selectedKey.X = 7
-				}
+				selectedKey.X = 4 // land roughly in the middle row of keys
 			}
 		case gc.KEY_LEFT:
 			if selected == 0 {
