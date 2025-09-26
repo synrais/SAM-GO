@@ -148,19 +148,23 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 	}
 
-	// Status struct for spinner
+	// wipe old DB files before rebuilding
+	_ = os.Remove(config.GamesDb)
+	menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
+	_ = os.Remove(menuPath)
+
+	// reset in-memory tree so no stale copy lingers
+	cachedTree = nil
+
+	// status for spinner
 	status := struct {
 		Step        int
 		Total       int
 		SystemName  string
 		DisplayText string
-		Complete    bool
 		Error       error
 		Tree        map[string]*Node
 	}{Step: 1, Total: 100, DisplayText: "Finding games folders..."}
-
-	// 🔥 Clear old cached tree immediately (so no stale copy lingers)
-	cachedTree = nil
 
 	// -------------------------
 	// Phase 1: Build games.db from scratch
@@ -183,7 +187,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		status.SystemName = systemName
 		status.DisplayText = text
 
-		// update spinner UI here
+		// update spinner UI
 		clearText()
 		win.MovePrint(1, 2, status.DisplayText)
 		drawProgressBar(status.Step, status.Total)
@@ -192,14 +196,13 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	})
 	if err != nil {
 		status.Error = err
-		status.Complete = true
 	} else {
 		// -------------------------
-		// Phase 2: Load fresh results from games.db
+		// Phase 2: Load fresh results
 		// -------------------------
 		status.DisplayText = "Loading game list..."
 		status.Step = status.Total
-		gc.Nap(200) // let UI refresh
+		gc.Nap(200)
 
 		results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
 		if rerr == nil {
@@ -218,27 +221,22 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			status.DisplayText = "Writing menu database..."
 			gc.Nap(200)
 
-			menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
 			if f, ferr := os.Create(menuPath); ferr == nil {
 				defer f.Close()
 				_ = gob.NewEncoder(f).Encode(tree)
 			}
 
-			// Replace with fresh in-memory copy
+			// replace in-memory copy
 			cachedTree = tree
 
-			// Warm up games.db too
+			// warm up games.db
 			_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
 		} else {
 			status.Error = rerr
 		}
-
-		status.Complete = true
 	}
 
-	// -------------------------
-	// Cleanup + return
-	// -------------------------
+	// cleanup + return
 	stdscr.Erase()
 	stdscr.NoutRefresh()
 	_ = gc.Update()
@@ -249,7 +247,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 // -------------------------
 // Options
 // -------------------------
-func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]*Node, error) {
+func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 		Title:         "Options",
 		Buttons:       []string{"Select", "Back"},
@@ -261,17 +259,16 @@ func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]*N
 	}, []string{"Update games database..."})
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if button == 0 && selected == 0 {
-		tree, err := generateIndexWindow(cfg, stdscr)
+		_, err := generateIndexWindow(cfg, stdscr)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		return tree, nil
 	}
-	return nil, nil
+	return nil
 }
 
 // -------------------------
@@ -490,25 +487,8 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
             _ = searchWindow(cfg, stdscr, "", true, true)
             continue
         }
-        if button == 4 { // Options
-            tree, _ := mainOptionsWindow(cfg, stdscr)
-            if tree != nil {
-                systems = tree
-                // 🔥 rebuild sysIds list too
-                sysIds = nil
-                for sys := range systems {
-                    sysIds = append(sysIds, sys)
-                }
-                sort.Slice(sysIds, func(i, j int) bool {
-                    if strings.EqualFold(sysIds[i], "ao486") {
-                        return true
-                    }
-                    if strings.EqualFold(sysIds[j], "ao486") {
-                        return false
-                    }
-                    return strings.ToLower(sysIds[i]) < strings.ToLower(sysIds[j])
-                })
-            }
+        if button == 4 {
+            _ = mainOptionsWindow(cfg, stdscr)
             continue
         }
         if button == 5 {
@@ -534,71 +514,61 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 var cachedTree map[string]*Node // stays in RAM until program exit
 
 func main() {
-	printPtr := flag.Bool("print", false, "Print game path instead of launching")
-	rebuildPtr := flag.Bool("rebuild", false, "Force rebuild of databases")
-	flag.Parse()
-	launchGame := !*printPtr
-	forceRebuild := *rebuildPtr
+    printPtr := flag.Bool("print", false, "Print game path instead of launching")
+    flag.Parse()
+    launchGame := !*printPtr
 
-	cfg, err := config.LoadUserConfig("gamesmenu", &config.UserConfig{})
-	if err != nil && !os.IsNotExist(err) {
-		fmt.Println("Error loading config:", err)
-		os.Exit(1)
-	}
+    cfg, err := config.LoadUserConfig("gamesmenu", &config.UserConfig{})
+    if err != nil && !os.IsNotExist(err) {
+        fmt.Println("Error loading config:", err)
+        os.Exit(1)
+    }
 
-	stdscr, err := curses.Setup()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer gc.End()
+    stdscr, err := curses.Setup()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer gc.End()
 
-	// -----------------------------
-	// Use in-memory tree if we have one
-	// -----------------------------
-	if cachedTree == nil || forceRebuild {
-		menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
-		var tree map[string]*Node
+    // -----------------------------
+    // Load menu tree (or rebuild if missing/corrupt)
+    // -----------------------------
+    menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
+    var tree map[string]*Node
 
-		if !forceRebuild {
-			// Try to load menu.db from disk
-			f, ferr := os.Open(menuPath)
-			if ferr == nil {
-				defer f.Close()
-				decErr := gob.NewDecoder(f).Decode(&tree)
-				if decErr != nil {
-					fmt.Println("Warning: could not decode menu.db, rebuilding...")
-					tree = nil
-				}
-			}
-		}
+    f, ferr := os.Open(menuPath)
+    if ferr == nil {
+        defer f.Close()
+        decErr := gob.NewDecoder(f).Decode(&tree)
+        if decErr != nil {
+            fmt.Println("Warning: could not decode menu.db, rebuilding...")
+            tree = nil
+        }
+    }
 
-		// If tree missing or corrupt, rebuild both DBs
-		if tree == nil {
-			tree, err = generateIndexWindow(cfg, stdscr)
-			if err != nil {
-				log.Fatal(err)
-			}
-		}
+    if tree == nil {
+        tree, err = generateIndexWindow(cfg, stdscr)
+        if err != nil {
+            log.Fatal(err)
+        }
+    }
 
-		// Keep in RAM for reuse
-		cachedTree = tree
+    cachedTree = tree
+    _, _ = gamesdb.SearchNamesWords(games.AllSystems(), "") // warm up
 
-		// Warm up games.db here
-		_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
-	}
-
-	// -----------------------------
-	// Ready to go
-	// -----------------------------
-	if launchGame {
-		err = systemMenu(cfg, stdscr, cachedTree)
-		if err != nil {
-			log.Fatal(err)
-		}
-	} else {
-		for sys, node := range cachedTree {
-			fmt.Printf("System: %s (%d entries)\n", sys, len(node.Children))
-		}
-	}
+    // -----------------------------
+    // Ready to go
+    // -----------------------------
+    if launchGame {
+        err = systemMenu(cfg, stdscr, cachedTree)
+        if err != nil {
+            log.Fatal(err)
+        }
+    } else {
+        for sys, node := range cachedTree {
+            fmt.Printf("System: %s (%d entries)\n", sys, len(node.Children))
+        }
+    }
 }
+
 
