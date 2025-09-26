@@ -65,7 +65,14 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
                     marker := sysFolder + string(filepath.Separator)
                     if idx := strings.Index(strings.ToLower(rel), strings.ToLower(marker)); idx != -1 {
                         inside := rel[idx+len(marker):]
-                        parts = strings.Split(inside, string(filepath.Separator))
+
+                        // include the system folder path itself as the first parts
+                        folderParts := strings.Split(sysFolder, string(filepath.Separator))
+                        if len(folderParts) > 0 && folderParts[0] == "" {
+                            folderParts = folderParts[1:] // drop leading empty if path started with /
+                        }
+
+                        parts = append(folderParts, strings.Split(inside, string(filepath.Separator))...)
                         break
                     }
                 }
@@ -91,17 +98,9 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
             if i == len(parts)-1 {
                 // leaf node = actual game file
                 res := result
-                key := part
-                _, exists := current.Children[key]
-                counter := 1
-                for exists {
-                    // ensure uniqueness in the map
-                    key = fmt.Sprintf("%s#%d", part, counter)
-                    _, exists = current.Children[key]
-                    counter++
-                }
-                current.Children[key] = &Node{
-                    Name:     part, // display stays clean
+                // always overwrite to avoid losing duplicates with same filename in different folders
+                current.Children[part] = &Node{
+                    Name:     part,
                     IsFolder: false,
                     Game:     &res,
                 }
