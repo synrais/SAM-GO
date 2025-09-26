@@ -166,10 +166,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		Error       error
 	}{}
 
-	// Spinner animation
-	spinnerSeq := []string{"|", "/", "-", "\\"}
-	spinnerCount := 0
-
 	go func() {
 		files, err := gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
 			systemName := is.SystemId
@@ -180,12 +176,10 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			text := fmt.Sprintf("Indexing %s... (%d files)", systemName, is.Files)
 			if is.Step == 1 {
 				text = "Finding games folders..."
-			} else if is.Step == is.Total {
-				text = "Writing database to disk..."
 			}
 
 			status.Step = is.Step
-			status.Total = is.Total
+			status.Total = is.Total + 2 // +2 for menu.db and games.db writes
 			status.SystemName = systemName
 			status.DisplayText = text
 		})
@@ -204,35 +198,34 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			}
 			tree := buildTree(results)
 
+			// --- writing menu.db step ---
+			status.Step = status.Total - 1 // penultimate step
+			status.DisplayText = "Writing menu.db to disk..."
 			menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
 			if f, ferr := os.Create(menuPath); ferr == nil {
 				defer f.Close()
 				_ = gob.NewEncoder(f).Encode(tree)
 			}
 
-			// ✅ Remove old games.db before rebuilding
+			// --- writing games.db step ---
+			status.Step = status.Total
+			status.DisplayText = "Writing games.db to disk..."
 			_ = os.Remove(config.GamesDb)
-
-			// Fake progress while writing Bolt DB
-			status.DisplayText = "Writing database to disk..."
-			status.Step = status.Total - 1
-			status.Total = status.Total + 20 // add buffer for fake ticks
-
 			db, dberr := gamesdb.OpenForWrite()
 			if dberr != nil {
 				status.Error = dberr
 			} else {
 				defer db.Close()
-				// run in background so UI can animate
-				go func() {
-					_ = gamesdb.UpdateNames(db, files)
-					cachedTree = tree
-					status.Step = status.Total
-					status.Complete = true
-				}()
+				_ = gamesdb.UpdateNames(db, files)
+				cachedTree = tree
 			}
 		}
+		status.Complete = true
 	}()
+
+	// Spinner animation
+	spinnerSeq := []string{"|", "/", "-", "\\"}
+	spinnerCount := 0
 
 	for {
 		if status.Complete || status.Error != nil {
@@ -247,13 +240,8 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
 
 		win.MovePrint(1, 2, status.DisplayText)
-
-		// keep ticking forward slowly if we're "writing"
-		if strings.Contains(status.DisplayText, "Writing") && status.Step < status.Total {
-			status.Step++
-		}
-
 		drawProgressBar(status.Step, status.Total)
+
 		win.NoutRefresh()
 		_ = gc.Update()
 		gc.Nap(100)
