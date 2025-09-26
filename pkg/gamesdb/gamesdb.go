@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	bolt "go.etcd.io/bbolt"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
@@ -104,13 +103,14 @@ func writeIndexedSystems(db *bolt.DB, systems []string) error {
 	})
 }
 
-type fileInfo struct {
+// ✅ Exported so main can use it
+type FileInfo struct {
 	SystemId string
 	Path     string
 }
 
 // Update the names index with the given files (deduped by SystemId+Name).
-func updateNames(db *bolt.DB, files []fileInfo) error {
+func updateNames(db *bolt.DB, files []FileInfo) error {
 	return db.Batch(func(tx *bolt.Tx) error {
 		bns := tx.Bucket([]byte(BucketNames))
 		for _, file := range files {
@@ -126,78 +126,20 @@ func updateNames(db *bolt.DB, files []fileInfo) error {
 }
 
 // Exported so main can call after menu.db rebuild.
-func UpdateNames(db *bolt.DB, files []fileInfo) error {
-	return updateNames(db, files)
-}
-
-type IndexStatus struct {
-	Total    int
-	Step     int
-	SystemId string
-	Files    int
-}
-
-// Old path: still available if you want to directly build games.db off disk.
-func NewNamesIndex(
-	cfg *config.UserConfig,
-	systems []games.System,
-	update func(IndexStatus),
-) (int, error) {
-	status := IndexStatus{Total: len(systems) + 1, Step: 1}
-
-	db, err := openNames()
-	if err != nil {
-		return status.Files, fmt.Errorf("error opening gamesdb: %s", err)
+func UpdateNames(db *bolt.DB, files []FileInfo) error {
+	if len(files) == 0 {
+		return nil
 	}
-	defer db.Close()
-
-	update(status)
-	systemPaths := make(map[string][]string, 0)
-	for _, v := range games.GetSystemPaths(cfg, systems) {
-		systemPaths[v.System.Id] = append(systemPaths[v.System.Id], v.Path)
+	if err := updateNames(db, files); err != nil {
+		return err
 	}
-
-	g := new(errgroup.Group)
-	for _, k := range utils.AlphaMapKeys(systemPaths) {
-		status.SystemId = k
-		status.Step++
-		update(status)
-
-		var files []fileInfo
-		for _, path := range systemPaths[k] {
-			pathFiles, err := games.GetFiles(k, path)
-			if err != nil {
-				return status.Files, fmt.Errorf("error getting files: %s", err)
-			}
-			for pf := range pathFiles {
-				files = append(files, fileInfo{SystemId: k, Path: pathFiles[pf]})
-			}
+	systemIds := make([]string, 0, len(files))
+	for _, f := range files {
+		if !utils.Contains(systemIds, f.SystemId) {
+			systemIds = append(systemIds, f.SystemId)
 		}
-
-		if len(files) == 0 {
-			continue
-		}
-		status.Files += len(files)
-
-		g.Go(func() error {
-			return updateNames(db, files)
-		})
 	}
-
-	status.Step++
-	status.SystemId = ""
-	update(status)
-
-	if err := g.Wait(); err != nil {
-		return status.Files, fmt.Errorf("error updating names index: %s", err)
-	}
-	if err := writeIndexedSystems(db, utils.AlphaMapKeys(systemPaths)); err != nil {
-		return status.Files, fmt.Errorf("error writing indexed systems: %s", err)
-	}
-	if err := db.Sync(); err != nil {
-		return status.Files, fmt.Errorf("error syncing database: %s", err)
-	}
-	return status.Files, nil
+	return writeIndexedSystems(db, systemIds)
 }
 
 type SearchResult struct {
