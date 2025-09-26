@@ -112,12 +112,10 @@ func updateNames(db *bolt.DB, files []fileInfo) error {
 		bns := tx.Bucket([]byte(BucketNames))
 
 		for _, file := range files {
-			base := filepath.Base(file.Path)
-			name := strings.TrimSuffix(base, filepath.Ext(base))
+			// Key must be unique per file path
+			nk := file.SystemId + ":" + file.Path
 
-			nk := NameKey(file.SystemId, name)
-			err := bns.Put([]byte(nk), []byte(file.Path))
-			if err != nil {
+			if err := bns.Put([]byte(nk), []byte(file.Path)); err != nil {
 				return err
 			}
 		}
@@ -243,28 +241,34 @@ func searchNamesGeneric(
 	defer db.Close()
 
 	var results []SearchResult
+	seen := make(map[string]bool) // prevent dupes in search
 
 	err = db.View(func(tx *bolt.Tx) error {
 		bn := tx.Bucket([]byte(BucketNames))
 
 		for _, system := range systems {
 			pre := []byte(system.Id + ":")
-			nameIdx := bytes.Index(pre, []byte(":"))
 
 			c := bn.Cursor()
-			for k, v := c.Seek([]byte(pre)); k != nil && bytes.HasPrefix(k, pre); k, v = c.Next() {
-				keyName := string(k[nameIdx+1:])
+			for k, v := c.Seek(pre); k != nil && bytes.HasPrefix(k, pre); k, v = c.Next() {
+				path := string(v)
+				base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 
-				if test(query, keyName) {
+				if test(query, base) {
+					key := system.Id + ":" + base
+					if seen[key] {
+						continue // skip duplicate names in search
+					}
+					seen[key] = true
+
 					results = append(results, SearchResult{
 						SystemId: system.Id,
-						Name:     keyName,
-						Path:     string(v),
+						Name:     base,
+						Path:     path,
 					})
 				}
 			}
 		}
-
 		return nil
 	})
 
