@@ -270,31 +270,79 @@ type IndexStatus struct {
 
 // NewNamesIndex scans all systems, returning all FileInfo while
 // calling the update callback for progress display.
+package gamesdb
+
+import (
+	"fmt"
+	"sync"
+
+	"golang.org/x/sync/errgroup"
+
+	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/games"
+)
+
+type FileInfo struct {
+	SystemId string
+	Path     string
+}
+
+type IndexStatus struct {
+	Total    int
+	Step     int
+	SystemId string
+	Files    int
+}
+
+// Scan all systems in parallel and return all files discovered.
+// Calls update() once per system with progress info.
 func NewNamesIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
 	update func(IndexStatus),
 ) ([]FileInfo, error) {
-	status := IndexStatus{Total: len(systems), Step: 0}
-	var out []FileInfo
+	status := IndexStatus{Total: len(systems)}
+	var (
+		mu   sync.Mutex
+		out  []FileInfo
+		step int
+	)
+
+	g, ctx := errgroup.WithContext(nil)
 
 	for _, sys := range systems {
-		status.Step++
-		status.SystemId = sys.Id
-		update(status)
+		sys := sys
+		g.Go(func() error {
+			paths := games.GetSystemPaths(cfg, []games.System{sys})
 
-		paths := games.GetSystemPaths(cfg, []games.System{sys})
-		for _, p := range paths {
-			pathFiles, err := games.GetFiles(sys.Id, p.Path)
-			if err != nil {
-				return nil, fmt.Errorf("error getting files for %s: %v", sys.Id, err)
+			var sysFiles []FileInfo
+			for _, p := range paths {
+				files, err := games.GetFiles(sys.Id, p.Path)
+				if err != nil {
+					return fmt.Errorf("error getting files for %s: %w", sys.Id, err)
+				}
+				for _, f := range files {
+					sysFiles = append(sysFiles, FileInfo{SystemId: sys.Id, Path: f})
+				}
 			}
-			for pf := range pathFiles {
-				out = append(out, FileInfo{SystemId: sys.Id, Path: pathFiles[pf]})
-			}
-		}
-		status.Files = len(out)
-		update(status)
+
+			// Merge results safely
+			mu.Lock()
+			out = append(out, sysFiles...)
+			step++
+			status.Step = step
+			status.SystemId = sys.Id
+			status.Files = len(sysFiles)
+			update(status) // notify caller for progress bar
+			mu.Unlock()
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
+
