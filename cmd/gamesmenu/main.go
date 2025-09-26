@@ -161,6 +161,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		win.MovePrint(1, 2, msg)
 		win.NoutRefresh()
 		_ = gc.Update()
+		gc.Nap(100) // 👈 ensure the update is visible
 	}
 
 	// Remove old DBs
