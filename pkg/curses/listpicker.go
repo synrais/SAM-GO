@@ -34,27 +34,36 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 	pgAmount := viewHeight - 1
 
 	pageUp := func() {
-		if viewStart == 0 {
-			selectedItem = 0
-		} else if (viewStart - pgAmount) < 0 {
-			viewStart = 0
-			selectedItem = 0
-		} else {
-			viewStart -= pgAmount
-			selectedItem = viewStart + pgAmount
-		}
+    	if viewStart == 0 {
+        	selectedItem = 0
+    	} else if (viewStart - pgAmount) < 0 {
+        	viewStart = 0
+        	selectedItem = 0
+    	} else {
+        	viewStart -= pgAmount
+        	selectedItem = viewStart
+    	}
+    	if selectedItem >= len(items) {
+        	selectedItem = len(items) - 1
+    	}
 	}
 
 	pageDown := func() {
-		if viewStart == len(items)-viewHeight {
-			selectedItem = len(items) - 1
-		} else if (viewStart + pgAmount) > len(items)-viewHeight {
-			viewStart = len(items) - viewHeight
-			selectedItem = len(items) - 1
-		} else {
-			viewStart += pgAmount
-			selectedItem = viewStart
-		}
+    	if len(items) <= viewHeight {
+        	return // nothing to page
+    	}
+    	if viewStart+viewHeight >= len(items) {
+        	selectedItem = len(items) - 1
+    	} else {
+        	viewStart += pgAmount
+        	if viewStart+viewHeight > len(items) {
+            	viewStart = len(items) - viewHeight
+        	}
+        	selectedItem = viewStart
+    	}
+    	if selectedItem >= len(items) {
+        	selectedItem = len(items) - 1
+    	}
 	}
 
 	win, err := NewWindow(stdscr, height, width, opts.Title, -1)
