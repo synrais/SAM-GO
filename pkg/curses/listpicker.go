@@ -34,36 +34,36 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 	pgAmount := viewHeight - 1
 
 	pageUp := func() {
-    	if viewStart == 0 {
-        	selectedItem = 0
-    	} else if (viewStart - pgAmount) < 0 {
-        	viewStart = 0
-        	selectedItem = 0
-    	} else {
-        	viewStart -= pgAmount
-        	selectedItem = viewStart
-    	}
-    	if selectedItem >= len(items) {
-        	selectedItem = len(items) - 1
-    	}
+		if viewStart == 0 {
+			selectedItem = 0
+		} else if (viewStart - pgAmount) < 0 {
+			viewStart = 0
+			selectedItem = 0
+		} else {
+			viewStart -= pgAmount
+			selectedItem = viewStart
+		}
+		if selectedItem >= len(items) {
+			selectedItem = len(items) - 1
+		}
 	}
 
 	pageDown := func() {
-    	if len(items) <= viewHeight {
-        	return // nothing to page
-    	}
-    	if viewStart+viewHeight >= len(items) {
-        	selectedItem = len(items) - 1
-    	} else {
-        	viewStart += pgAmount
-        	if viewStart+viewHeight > len(items) {
-            	viewStart = len(items) - viewHeight
-        	}
-        	selectedItem = viewStart
-    	}
-    	if selectedItem >= len(items) {
-        	selectedItem = len(items) - 1
-    	}
+		if len(items) <= viewHeight {
+			return // nothing to page
+		}
+		if viewStart+viewHeight >= len(items) {
+			selectedItem = len(items) - 1
+		} else {
+			viewStart += pgAmount
+			if viewStart+viewHeight > len(items) {
+				viewStart = len(items) - viewHeight
+			}
+			selectedItem = viewStart
+		}
+		if selectedItem >= len(items) {
+			selectedItem = len(items) - 1
+		}
 	}
 
 	win, err := NewWindow(stdscr, height, width, opts.Title, -1)
@@ -80,11 +80,10 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 
 		for i := 0; i < max; i++ {
 			var display string
-
 			item := items[viewStart+i]
 
 			if len(item) > viewWidth {
-				display = item[:width-(width-viewWidth)-3] + "..."
+				display = item[:viewWidth-3] + "..."
 			} else {
 				display = item
 			}
@@ -92,53 +91,39 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 			if viewStart+i == selectedItem {
 				win.ColorOn(1)
 			}
-
 			win.MovePrint(i+1, 2, s.Repeat(" ", viewWidth))
 			win.MovePrint(i+1, 2, display)
 			win.ColorOff(1)
 		}
 
-		// scroll bar
-		// FIXME: not quite working
-		// var gripHeight int
-		// var gripOffset int
-		// scrollHeight := viewHeight - 2
+		// --- Scroll bar ---
+		scrollHeight := viewHeight
+		if scrollHeight > 0 {
+			var gripHeight int
+			if len(items) <= scrollHeight {
+				gripHeight = scrollHeight
+			} else {
+				gripHeight = int(float64(scrollHeight) * (float64(scrollHeight) / float64(len(items))))
+				if gripHeight < 1 {
+					gripHeight = 1
+				}
+			}
 
-		// if len(items) <= scrollHeight {
-		// 	gripHeight = scrollHeight
-		// } else {
-		// 	gripHeight = int(m.Ceil((float64(scrollHeight) / float64(len(items))) * float64(scrollHeight)))
-		// }
+			gripOffset := 0
+			if len(items) > scrollHeight {
+				gripOffset = int(float64(viewStart) * float64(scrollHeight-gripHeight) / float64(len(items)-scrollHeight))
+			}
 
-		// if gripHeight >= scrollHeight {
-		// 	gripOffset = 0
-		// } else {
-		// 	gripOffset = int(m.Floor(float64(viewStart) * float64(scrollHeight) / float64(len(items))))
-		// }
-
-		// for i := 0; i < scrollHeight; i++ {
-		// 	if i >= gripOffset && i < gripOffset+gripHeight {
-		// 		win.ColorOn(1)
-		// 		win.MoveAddChar(i+2, width-2, ' ')
-		// 	} else {
-		// 		win.MoveAddChar(i+2, width-2, ' ')
-		// 	}
-		// 	win.ColorOff(1)
-		// }
-
-		// win.MoveAddChar(1, width-2, ' ')
-		// if viewStart > 0 {
-		// 	win.ColorOn(1)
-		// 	win.MoveAddChar(1, width-2, gc.ACS_UARROW)
-		// 	win.ColorOff(1)
-		// }
-
-		// win.MoveAddChar(height-4, width-2, ' ')
-		// if viewStart+viewHeight < len(items) {
-		// 	win.ColorOn(1)
-		// 	win.MoveAddChar(height-4, width-2, gc.ACS_DARROW)
-		// 	win.ColorOff(1)
-		// }
+			for i := 0; i < scrollHeight; i++ {
+				if i >= gripOffset && i < gripOffset+gripHeight {
+					win.ColorOn(1)
+					win.MoveAddChar(i+1, width-2, ' ')
+					win.ColorOff(1)
+				} else {
+					win.MoveAddChar(i+1, width-2, gc.ACS_CKBOARD) // background line
+				}
+			}
+		}
 
 		// buttons
 		DrawActionButtons(win, opts.Buttons, selectedButton, 4)
@@ -214,13 +199,4 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 	}
 
 	return -1, -1, nil
-}
-
-func KeyValueListPicker(stdscr *gc.Window, opts ListPickerOpts, items [][2]string) (int, int, error) {
-	strItems := make([]string, len(items))
-	for i, item := range items {
-		strItems[i] = item[0] + " " + item[1]
-	}
-
-	return ListPicker(stdscr, opts, strItems)
 }
