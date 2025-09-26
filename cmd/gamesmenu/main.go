@@ -446,33 +446,26 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 // System Menu
 // -------------------------
 func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*Node) error {
-    var sysIds []string
-    for sys := range systems {
-        sysIds = append(sysIds, sys)
-    }
-
-    // Custom sort: ao486 at top, everything else alphabetical
-    sort.Slice(sysIds, func(i, j int) bool {
-        if strings.EqualFold(sysIds[i], "ao486") {
-            return true
-        }
-        if strings.EqualFold(sysIds[j], "ao486") {
-            return false
-        }
-        return strings.ToLower(sysIds[i]) < strings.ToLower(sysIds[j])
-    })
-
     for {
+        // rebuild sysIds fresh each time
+        var sysIds []string
+        for sys := range systems {
+            sysIds = append(sysIds, sys)
+        }
+
+        sort.Slice(sysIds, func(i, j int) bool {
+            if strings.EqualFold(sysIds[i], "ao486") {
+                return true
+            }
+            if strings.EqualFold(sysIds[j], "ao486") {
+                return false
+            }
+            return strings.ToLower(sysIds[i]) < strings.ToLower(sysIds[j])
+        })
+
         button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-            Title:         "Systems",
-            Buttons:       []string{
-                "PgUp",
-                "PgDn",
-                "Open",
-                "Search",
-                "Options",
-                "Exit",
-            },
+            Title: "Systems",
+            Buttons: []string{"PgUp","PgDn","Open","Search","Options","Exit"},
             DefaultButton: 2,
             ActionButton:  2,
             ShowTotal:     true,
@@ -488,7 +481,10 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
             continue
         }
         if button == 4 {
-            _ = mainOptionsWindow(cfg, stdscr)
+            // after rebuild, refresh systems reference
+            if tree, err := mainOptionsWindow(cfg, stdscr); err == nil && tree != nil {
+                systems = tree
+            }
             continue
         }
         if button == 5 {
