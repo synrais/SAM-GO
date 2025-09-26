@@ -403,12 +403,12 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         "Systems",
 			Buttons:       []string{
-				"PgUp   ",
-				"PgDn   ",
-				"Open   ",
-				"Search ",
+				"PgUp",
+				"PgDn",
+				"Open",
+				"Search",
 				"Options",
-				"Exit   ",
+				"Exit",
 			},
 			DefaultButton: 2,
 			ActionButton:  2,
