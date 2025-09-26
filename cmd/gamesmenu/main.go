@@ -102,7 +102,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 
 	stdscr.Erase()
     stdscr.NoutRefresh()
-    _ = gc.Update
+    _ = gc.Update()
 	
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
@@ -201,11 +201,11 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 }
 
 func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
-	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+	, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 		Title:         "Options",
-		Buttons:       []string{"Select", "Back"},
-		DefaultButton: 0,
-		ActionButton:  0,
+		s:       []string{"Select", "Back"},
+		Default: 0,
+		Action:  0,
 		ShowTotal:     false,
 		Width:         70,
 		Height:        18,
@@ -215,7 +215,7 @@ func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		return err
 	}
 
-	if button == 0 && selected == 0 {
+	if  == 0 && selected == 0 {
 		err := generateIndexWindow(cfg, stdscr)
 		if err != nil {
 			return err
@@ -253,11 +253,11 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 			order = append(order, g)
 		}
 
-		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+		, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         node.Name,
-			Buttons:       []string{"PgUp", "PgDn", "Open", "Back"},
-			DefaultButton: 2,
-			ActionButton:  2,
+			s:       []string{"PgUp", "PgDn", "Open", "Back"},
+			Default: 2,
+			Action:  2,
 			ShowTotal:     true,
 			Width:         70,
 			Height:        20,
@@ -275,7 +275,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 					return err
 				}
 			} else {
-				return mister.LaunchGame(cfg, *system, choice.Game.Path)
+				_ = mister.LaunchGame(cfg, *system, choice.Game.Path)
 			}
 		}
 	}
