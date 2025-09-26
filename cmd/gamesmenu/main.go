@@ -140,7 +140,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 
 	_, width := win.MaxYX()
 
-	// Progress bar helper
+	// Helpers
 	drawProgressBar := func(current int, total int) {
 		pct := int(float64(current) / float64(total) * 100)
 		progressWidth := width - 4
@@ -153,10 +153,14 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		}
 		win.NoutRefresh()
 	}
-
-	// Clear text line
 	clearText := func() {
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
+	}
+	updateStage := func(msg string) {
+		clearText()
+		win.MovePrint(1, 2, msg)
+		win.NoutRefresh()
+		_ = gc.Update()
 	}
 
 	// Remove old DBs
@@ -165,71 +169,108 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	_ = os.Remove(menuPath)
 	cachedTree = nil
 
-	updateStage := func(msg string) {
-		clearText()
-		win.MovePrint(1, 2, msg)
-		win.NoutRefresh()
-		_ = gc.Update()
-	}
+	// -------------------------
+	// Phase 1: Scan files → games.db (temporary)
+	// -------------------------
+	totalSteps := len(games.AllSystems()) + 4 // scan + tree + menu + bolt + finalize
+	step := 0
 
-	// -------------------------
-	// Phase 1: Scan files with progress
-	// -------------------------
-	updateStage("Scanning game folders...")
-	files, err := gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
+	_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
+		step = is.Step
 		systemName := is.SystemId
 		if sys, serr := games.GetSystem(is.SystemId); serr == nil {
 			systemName = sys.Name
 		}
-		msg := fmt.Sprintf("Indexing %s...", systemName)
-		updateStage(msg)
-		drawProgressBar(is.Step, is.Total)
+		switch {
+		case is.Step == 1:
+			updateStage("Finding games folders...")
+		case is.Step == is.Total:
+			updateStage("Finalizing initial scan...")
+		default:
+			updateStage(fmt.Sprintf("Scanning %s...", systemName))
+		}
+		drawProgressBar(step, totalSteps)
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	// -------------------------
-	// Phase 2: Build fresh tree
+	// Phase 2: Build menu tree
 	// -------------------------
+	step++
 	updateStage("Building menu tree...")
-	var results []gamesdb.SearchResult
-	for _, f := range files {
-		results = append(results, gamesdb.SearchResult{
-			SystemId: f.SystemId,
-			Name:     filepath.Base(f.Path),
-			Path:     f.Path,
-		})
+	results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
+	if rerr != nil {
+		return nil, rerr
 	}
 	tree := buildTree(results)
+	drawProgressBar(step, totalSteps)
 
 	// -------------------------
 	// Phase 3: Write menu.db
 	// -------------------------
+	step++
 	updateStage("Writing menu database...")
 	if f, ferr := os.Create(menuPath); ferr == nil {
 		defer f.Close()
 		_ = gob.NewEncoder(f).Encode(tree)
 	}
+	drawProgressBar(step, totalSteps)
 
 	// -------------------------
-	// Phase 4: Build games.db
+	// Phase 4: Rebuild Bolt DB from menu.db
 	// -------------------------
-	updateStage("Building games database...")
+	files := collectFiles(tree)
 	db, dberr := gamesdb.OpenForWrite()
 	if dberr != nil {
 		return nil, dberr
 	}
 	defer db.Close()
 
-	if uerr := gamesdb.UpdateNames(db, files); uerr != nil {
-		return nil, uerr
+	systemsDone := 0
+	for sysId, root := range tree {
+		systemName := sysId
+		if sys, serr := games.GetSystem(sysId); serr == nil {
+			systemName = sys.Name
+		}
+		updateStage(fmt.Sprintf("Building index for %s...", systemName))
+
+		// collect system files only
+		var sysFiles []gamesdb.FileInfo
+		for _, child := range root.Children {
+			var walk func(node *Node)
+			walk = func(node *Node) {
+				if !node.IsFolder && node.Game != nil {
+					sysFiles = append(sysFiles, gamesdb.FileInfo{
+						SystemId: sysId,
+						Path:     node.Game.Path,
+					})
+				}
+				for _, c := range node.Children {
+					walk(c)
+				}
+			}
+			walk(child)
+		}
+
+		if len(sysFiles) > 0 {
+			if uerr := gamesdb.UpdateNames(db, sysFiles); uerr != nil {
+				return nil, uerr
+			}
+		}
+
+		systemsDone++
+		drawProgressBar(step+systemsDone, totalSteps)
 	}
 
-	// Done
+	// -------------------------
+	// Phase 5: Done
+	// -------------------------
+	updateStage("Finalizing games database...")
+	drawProgressBar(totalSteps, totalSteps)
+
 	cachedTree = tree
-	drawProgressBar(1, 1)
-	win.NoutRefresh()
 	_ = gc.Update()
 
 	stdscr.Erase()
