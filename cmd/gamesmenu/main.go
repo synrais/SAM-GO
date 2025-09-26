@@ -140,14 +140,15 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 
 	_, width := win.MaxYX()
 
+	// Progress bar
 	drawProgressBar := func(current int, total int) {
 		if total == 0 {
 			return
 		}
-		pct := int(float64(current) / float64(total) * 100)
+		pct := float64(current) / float64(total)
 		progressWidth := width - 4
-		progressPct := int(float64(pct) / 100.0 * float64(progressWidth))
-		if progressPct < 1 {
+		progressPct := int(pct * float64(progressWidth))
+		if progressPct < 1 && current > 0 {
 			progressPct = 1
 		}
 		for i := 0; i < progressWidth; i++ {
@@ -160,10 +161,10 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		win.NoutRefresh()
 	}
 
+	// Text helpers
 	clearText := func() {
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 	}
-
 	updateStage := func(msg string) {
 		clearText()
 		win.MovePrint(1, 2, msg)
@@ -180,43 +181,57 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	cachedTree = nil
 
 	// -------------------------
-	// Phase 1: Scan → Bolt temp index
+	// Progress step accounting
 	// -------------------------
-	updateStage("Scanning game folders...")
-	totalSteps := len(games.AllSystems())*2 + 3 // scan + bolt build + wrap up
+	systems := games.AllSystems()
+	totalSteps := len(systems)*2 + 3 // scan + bolt per system, plus tree+menu+finalize
 	step := 0
 
-	_, err = gamesdb.UpdateIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
+	// -------------------------
+	// Phase 1: Scan files
+	// -------------------------
+	for i, sys := range systems {
+		updateStage(fmt.Sprintf("Scanning %s (%d/%d)...", sys.Name, i+1, len(systems)))
+		results, err := gamesdb.SearchNamesWords([]games.System{sys}, "")
+		if err != nil {
+			return nil, err
+		}
+		if i == 0 {
+			// first system triggers tree init
+			_ = results
+		}
 		step++
-		updateStage(fmt.Sprintf("Scanning %s (%d/%d)...", is.SystemId, step, totalSteps))
 		drawProgressBar(step, totalSteps)
-	})
-	if err != nil {
-		return nil, err
+		gc.Nap(30) // small delay so user sees progress
 	}
 
 	// -------------------------
-	// Phase 2: Build menu tree
+	// Phase 2: Build tree
 	// -------------------------
+	updateStage("Building menu tree...")
+	results, err := gamesdb.SearchNamesWords(systems, "")
+	if err != nil {
+		return nil, err
+	}
+	tree := buildTree(results)
 	step++
-	updateStage(fmt.Sprintf("Building menu tree (%d/%d)...", step, totalSteps))
-	resultsList, _ := gamesdb.SearchNamesWords(games.AllSystems(), "")
-	tree := buildTree(resultsList)
 	drawProgressBar(step, totalSteps)
+	gc.Nap(100)
 
 	// -------------------------
 	// Phase 3: Write menu.db
 	// -------------------------
-	step++
-	updateStage(fmt.Sprintf("Writing menu database (%d/%d)...", step, totalSteps))
+	updateStage("Writing menu database...")
 	if f, ferr := os.Create(menuPath); ferr == nil {
 		defer f.Close()
 		_ = gob.NewEncoder(f).Encode(tree)
 	}
+	step++
 	drawProgressBar(step, totalSteps)
+	gc.Nap(100)
 
 	// -------------------------
-	// Phase 4: Build Bolt DB from menu.db
+	// Phase 4: Build games.db per system
 	// -------------------------
 	db, dberr := gamesdb.OpenForWrite()
 	if dberr != nil {
@@ -224,32 +239,31 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	}
 	defer db.Close()
 
-	sysCount := 0
-	for sysId, root := range tree {
-		sysCount++
-		systemName := sysId
-		if sys, serr := games.GetSystem(sysId); serr == nil {
-			systemName = sys.Name
-		}
-		step++
-		updateStage(fmt.Sprintf("Indexing %s (%d/%d)...", systemName, step, totalSteps))
+	for i, sys := range systems {
+		sysId := sys.Id
+		systemName := sys.Name
 
-		// Collect only this system's files
+		updateStage(fmt.Sprintf("Indexing %s (%d/%d)...", systemName, i+1, len(systems)))
+
+		// Collect files for this system
 		var sysFiles []gamesdb.FileInfo
-		var walk func(node *Node)
-		walk = func(node *Node) {
-			if !node.IsFolder && node.Game != nil {
-				sysFiles = append(sysFiles, gamesdb.FileInfo{
-					SystemId: sysId,
-					Path:     node.Game.Path,
-				})
+		root, ok := tree[sysId]
+		if ok {
+			var walk func(node *Node)
+			walk = func(node *Node) {
+				if !node.IsFolder && node.Game != nil {
+					sysFiles = append(sysFiles, gamesdb.FileInfo{
+						SystemId: sysId,
+						Path:     node.Game.Path,
+					})
+				}
+				for _, c := range node.Children {
+					walk(c)
+				}
 			}
-			for _, c := range node.Children {
-				walk(c)
+			for _, child := range root.Children {
+				walk(child)
 			}
-		}
-		for _, child := range root.Children {
-			walk(child)
 		}
 
 		if len(sysFiles) > 0 {
@@ -257,17 +271,22 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 				return nil, uerr
 			}
 		}
+
+		step++
 		drawProgressBar(step, totalSteps)
+		gc.Nap(30)
 	}
 
 	// -------------------------
-	// Wrap up
+	// Phase 5: Finalize
 	// -------------------------
 	step++
-	updateStage(fmt.Sprintf("Finalizing (%d/%d)...", step, totalSteps))
+	updateStage("Finalizing...")
 	cachedTree = tree
 	drawProgressBar(step, totalSteps)
+	gc.Nap(150)
 
+	// Cleanup screen
 	stdscr.Erase()
 	stdscr.NoutRefresh()
 	_ = gc.Update()
