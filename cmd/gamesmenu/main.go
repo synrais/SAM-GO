@@ -248,9 +248,18 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 			order = append(order, g)
 		}
 
+		// Default label = "Open"
+		actionLabel := "Open"
+		if len(order) > 0 {
+			// Peek at first item if possible
+			if !order[0].IsFolder {
+				actionLabel = "Launch"
+			}
+		}
+
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         node.Name,
-			Buttons:       []string{"PgUp", "PgDn", "Open", "Back"},
+			Buttons:       []string{"PgUp", "PgDn", actionLabel, "Back"},
 			DefaultButton: 2,
 			ActionButton:  2,
 			ShowTotal:     true,
@@ -265,11 +274,15 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 		}
 		if button == 2 {
 			choice := order[selected]
+
+			// Update label dynamically for this selection
 			if choice.IsFolder {
+				// Re-run loop with "Open"
 				if err := browseNode(cfg, stdscr, system, choice); err != nil {
 					return err
 				}
 			} else {
+				// Launch actual game
 				return mister.LaunchGame(cfg, *system, choice.Game.Path)
 			}
 		}
