@@ -159,104 +159,81 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		Tree        map[string]*Node
 	}{Step: 1, Total: 100, DisplayText: "Finding games folders..."}
 
-	// Background worker: force rebuild games.db + menu.db
-	go func() {
-		// 🔥 Clear old cached tree immediately (so no stale copy lingers)
-		cachedTree = nil
+	// 🔥 Clear old cached tree immediately (so no stale copy lingers)
+	cachedTree = nil
 
+	// -------------------------
+	// Phase 1: Build games.db from scratch
+	// -------------------------
+	_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
+		systemName := is.SystemId
+		if system, serr := games.GetSystem(is.SystemId); serr == nil {
+			systemName = system.Name
+		}
+
+		text := fmt.Sprintf("Indexing %s...", systemName)
+		if is.Step == 1 {
+			text = "Finding games folders..."
+		} else if is.Step == is.Total {
+			text = "Writing games database..."
+		}
+
+		status.Step = is.Step
+		status.Total = is.Total
+		status.SystemName = systemName
+		status.DisplayText = text
+
+		// update spinner UI here
+		clearText()
+		win.MovePrint(1, 2, status.DisplayText)
+		drawProgressBar(status.Step, status.Total)
+		win.NoutRefresh()
+		_ = gc.Update()
+	})
+	if err != nil {
+		status.Error = err
+		status.Complete = true
+	} else {
 		// -------------------------
-		// Phase 1: Build games.db from scratch
+		// Phase 2: Load fresh results from games.db
 		// -------------------------
-		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
-			systemName := is.SystemId
-			if system, serr := games.GetSystem(is.SystemId); serr == nil {
-				systemName = system.Name
-			}
+		status.DisplayText = "Loading game list..."
+		status.Step = status.Total
+		gc.Nap(200) // let UI refresh
 
-			text := fmt.Sprintf("Indexing %s...", systemName)
-			if is.Step == 1 {
-				text = "Finding games folders..."
-			} else if is.Step == is.Total {
-				text = "Writing games database..."
-			}
-
-			status.Step = is.Step
-			status.Total = is.Total
-			status.SystemName = systemName
-			status.DisplayText = text
-		})
-
-		if err == nil {
+		results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
+		if rerr == nil {
 			// -------------------------
-			// Phase 2: Load fresh results from games.db
+			// Phase 3: Build new menu tree
 			// -------------------------
-			status.DisplayText = "Loading game list..."
-			status.Step = status.Total
-			gc.Nap(200) // let UI refresh
+			status.DisplayText = "Building menu tree..."
+			gc.Nap(200)
 
-			results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
-			if rerr == nil {
-				// -------------------------
-				// Phase 3: Build new menu tree
-				// -------------------------
-				status.DisplayText = "Building menu tree..."
-				gc.Nap(200)
+			tree := buildTree(results)
+			status.Tree = tree
 
-				tree := buildTree(results)
-				status.Tree = tree
+			// -------------------------
+			// Phase 4: Write menu.db
+			// -------------------------
+			status.DisplayText = "Writing menu database..."
+			gc.Nap(200)
 
-				// -------------------------
-				// Phase 4: Write menu.db
-				// -------------------------
-				status.DisplayText = "Writing menu database..."
-				gc.Nap(200)
-
-				menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
-				if f, ferr := os.Create(menuPath); ferr == nil {
-					defer f.Close()
-					_ = gob.NewEncoder(f).Encode(tree)
-				}
-
-				// 🔥 Replace with fresh in-memory copy
-				cachedTree = tree
-
-				// Warm up games.db too
-				_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
-			} else {
-				status.Error = rerr
+			menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
+			if f, ferr := os.Create(menuPath); ferr == nil {
+				defer f.Close()
+				_ = gob.NewEncoder(f).Encode(tree)
 			}
+
+			// 🔥 Replace with fresh in-memory copy
+			cachedTree = tree
+
+			// Warm up games.db too
+			_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
 		} else {
-			status.Error = err
+			status.Error = rerr
 		}
 
 		status.Complete = true
-	}()
-
-	// -------------------------
-	// Spinner loop
-	// -------------------------
-	spinnerSeq := []string{"|", "/", "-", "\\"}
-	spinnerCount := 0
-
-	for {
-		if status.Complete || status.Error != nil {
-			break
-		}
-
-		clearText()
-
-		spinnerCount++
-		if spinnerCount == len(spinnerSeq) {
-			spinnerCount = 0
-		}
-
-		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
-		win.MovePrint(1, 2, status.DisplayText)
-		drawProgressBar(status.Step, status.Total)
-
-		win.NoutRefresh()
-		_ = gc.Update()
-		gc.Nap(100)
 	}
 
 	// -------------------------
