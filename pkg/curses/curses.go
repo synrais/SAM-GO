@@ -1,7 +1,6 @@
 package curses
 
 import (
-	s "strings"
 
 	gc "github.com/rthornton128/goncurses"
 )
