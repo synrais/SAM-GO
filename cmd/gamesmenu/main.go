@@ -275,7 +275,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 					return err
 				}
 			} else {
-				return mister.LaunchGame(cfg, *system, choice.Game.Path)
+				_ = mister.LaunchGame(cfg, *system, choice.Game.Path)
 			}
 		}
 	}
