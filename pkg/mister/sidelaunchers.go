@@ -228,18 +228,33 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 
 	// Compat map: title substring → alternate HDF
 	compatHDF := map[string]string{
-		"chaos engine":             "CD32NoFastMem.hdf",
-		"dangerous streets":        "CD32NoFastMem.hdf",
-		"fears":                    "CD32NoFastMem.hdf",
-		"humans":                   "CD32NoFastMem.hdf",
-		"lotus trilogy":            "CD32NoFastMem.hdf",
-		"pinball fantasies":        "CD32NoFastMem.hdf",
-		"quik the thunder rabbit":  "CD32NoFastMem.hdf",
-		"soccer kid":               "CD32NoFastMem.hdf",
-		"surf ninjas":              "CD32NoFastMem.hdf",
-		"dizzy collection":         "CD32NoFastMemNoICache.hdf",
-		"ultimate body blows":      "CD32NoICache.hdf",
-		"guardian":                 "CD32NoVolumeControl.hdf",
+
+		// --- No FastMem required ---
+		"chaos engine":            "CD32NoFastMem.hdf",
+		"dangerous streets":       "CD32NoFastMem.hdf",
+		"fears":                   "CD32NoFastMem.hdf",
+		"humans":                  "CD32NoFastMem.hdf",
+		"lotus trilogy":           "CD32NoFastMem.hdf",
+		"pinball fantasies":       "CD32NoFastMem.hdf",
+		"quik the thunder rabbit": "CD32NoFastMem.hdf",
+		"soccer kid":              "CD32NoFastMem.hdf",
+		"surf ninjas":             "CD32NoFastMem.hdf",
+		"fire force":              "CD32NoFastMem.hdf",
+
+		// --- No FastMem + No ICache ---
+		"dizzy collection": "CD32NoFastMemNoICache.hdf",
+
+		// --- No ICache only ---
+		"ultimate body blows": "CD32NoICache.hdf",
+
+		// --- No Volume Control ---
+		"guardian": "CD32NoVolumeControl.hdf",
+
+		// --- Winboot variant ---
+		"arabian nights":      "CD32Winboot.hdf",
+		"beneath a steel sky": "CD32Winboot.hdf",
+		"deep core":           "CD32Winboot.hdf",
+		"fields of glory":     "CD32Winboot.hdf",
 	}
 
 	// Tmp cfg
@@ -293,6 +308,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		"CD32NoICache.hdf",
 		"CD32NoFastMemNoICache.hdf",
 		"CD32NoFastMem.hdf",
+		"CD32Winboot.hdf"
 		"CD32.hdf",
 	}
 	for _, h := range hdfNames {
