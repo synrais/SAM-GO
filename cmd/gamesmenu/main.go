@@ -156,15 +156,13 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	// reset in-memory tree so no stale copy lingers
 	cachedTree = nil
 
-	// status for spinner
-	status := struct {
-		Step        int
-		Total       int
-		SystemName  string
-		DisplayText string
-		Error       error
-		Tree        map[string]*Node
-	}{Step: 1, Total: 100, DisplayText: "Finding games folders..."}
+	// simple stage updater
+	updateStage := func(msg string) {
+		clearText()
+		win.MovePrint(1, 2, msg)
+		win.NoutRefresh()
+		_ = gc.Update()
+	}
 
 	// -------------------------
 	// Phase 1: Build games.db from scratch
@@ -175,73 +173,64 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			systemName = system.Name
 		}
 
-		text := fmt.Sprintf("Indexing %s...", systemName)
+		var text string
 		if is.Step == 1 {
 			text = "Finding games folders..."
 		} else if is.Step == is.Total {
 			text = "Writing games database..."
+		} else {
+			text = fmt.Sprintf("Indexing %s...", systemName)
 		}
 
-		status.Step = is.Step
-		status.Total = is.Total
-		status.SystemName = systemName
-		status.DisplayText = text
-
-		// update spinner UI
-		clearText()
-		win.MovePrint(1, 2, status.DisplayText)
-		drawProgressBar(status.Step, status.Total)
-		win.NoutRefresh()
-		_ = gc.Update()
+		updateStage(text)
+		drawProgressBar(is.Step, is.Total)
 	})
 	if err != nil {
-		status.Error = err
-	} else {
-		// -------------------------
-		// Phase 2: Load fresh results
-		// -------------------------
-		status.DisplayText = "Loading game list..."
-		status.Step = status.Total
-		gc.Nap(200)
-
-		results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
-		if rerr == nil {
-			// -------------------------
-			// Phase 3: Build new menu tree
-			// -------------------------
-			status.DisplayText = "Building menu tree..."
-			gc.Nap(200)
-
-			tree := buildTree(results)
-			status.Tree = tree
-
-			// -------------------------
-			// Phase 4: Write menu.db
-			// -------------------------
-			status.DisplayText = "Writing menu database..."
-			gc.Nap(200)
-
-			if f, ferr := os.Create(menuPath); ferr == nil {
-				defer f.Close()
-				_ = gob.NewEncoder(f).Encode(tree)
-			}
-
-			// replace in-memory copy
-			cachedTree = tree
-
-			// warm up games.db
-			_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
-		} else {
-			status.Error = rerr
-		}
+		return nil, err
 	}
+
+	// -------------------------
+	// Phase 2: Load fresh results
+	// -------------------------
+	updateStage("Loading game list...")
+	gc.Nap(200)
+
+	results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
+	if rerr != nil {
+		return nil, rerr
+	}
+
+	// -------------------------
+	// Phase 3: Build new menu tree
+	// -------------------------
+	updateStage("Building menu tree...")
+	gc.Nap(200)
+
+	tree := buildTree(results)
+
+	// -------------------------
+	// Phase 4: Write menu.db
+	// -------------------------
+	updateStage("Writing menu database...")
+	gc.Nap(200)
+
+	if f, ferr := os.Create(menuPath); ferr == nil {
+		defer f.Close()
+		_ = gob.NewEncoder(f).Encode(tree)
+	}
+
+	// replace in-memory copy
+	cachedTree = tree
+
+	// warm up games.db
+	_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
 
 	// cleanup + return
 	stdscr.Erase()
 	stdscr.NoutRefresh()
 	_ = gc.Update()
 
-	return status.Tree, status.Error
+	return tree, nil
 }
 
 // -------------------------
