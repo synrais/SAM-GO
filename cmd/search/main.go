@@ -259,9 +259,9 @@ func main() {
 	var launchGame bool = !*printPtr
 
 	cfg, err := config.LoadUserConfig(appName, &config.UserConfig{})
-	if err != nil {
-		fmt.Println("Error loading config file:", err)
-		os.Exit(1)
+	if err != nil && !os.IsNotExist(err) {
+    	fmt.Println("Error loading config file:", err)
+    	os.Exit(1)
 	}
 
 	stdscr, err := curses.Setup()
