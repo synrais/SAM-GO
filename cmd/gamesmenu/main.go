@@ -254,7 +254,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 			DefaultButton: 2,
 			ActionButton:  2,
 			ShowTotal:     true,
-			Width:         80,
+			Width:         70,
 			Height:        20,
 		}, items)
 		if err != nil {
@@ -413,7 +413,7 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 			DefaultButton: 2,
 			ActionButton:  2,
 			ShowTotal:     true,
-			Width:         80,
+			Width:         70,
 			Height:        20,
 		}, sysIds)
 		if err != nil {
