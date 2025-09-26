@@ -292,7 +292,8 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 		searchButtons = append(searchButtons, "Exit")
 	}
 
-	button, text, err := curses.OnScreenKeyboard(stdscr, searchTitle, searchButtons, query)
+	// ✅ DefaultButton = 0 → highlight "Search"
+	button, text, err := curses.OnScreenKeyboard(stdscr, searchTitle, searchButtons, query, 0)
 	if err != nil {
 		return err
 	}
