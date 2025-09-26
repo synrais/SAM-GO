@@ -132,6 +132,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	stdscr.NoutRefresh()
 	_ = gc.Update()
 
+	// Progress window overlay
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
 		return nil, err
@@ -140,153 +141,134 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 
 	_, width := win.MaxYX()
 
-	// Progress bar
+	// Progress bar helper
 	drawProgressBar := func(current int, total int) {
-		if total == 0 {
-			return
+		if total <= 0 {
+			total = 1
 		}
-		pct := float64(current) / float64(total)
+		pct := int(float64(current) / float64(total) * 100)
 		progressWidth := width - 4
-		progressPct := int(pct * float64(progressWidth))
-		if progressPct < 1 && current > 0 {
+		progressPct := int(float64(pct) / float64(100) * float64(progressWidth))
+		if progressPct < 1 {
 			progressPct = 1
 		}
 		for i := 0; i < progressWidth; i++ {
 			ch := ' '
 			if i < progressPct {
-				ch = '█'
+				ch = gc.ACS_BLOCK
 			}
-			win.MoveAddChar(2, 2+i, gc.Char(ch))
+			win.MoveAddChar(2, 2+i, ch)
 		}
 		win.NoutRefresh()
 	}
 
-	// Text helpers
+	// Clear the message line
 	clearText := func() {
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 	}
-	updateStage := func(msg string) {
-		clearText()
-		win.MovePrint(1, 2, msg)
-		win.NoutRefresh()
-		_ = gc.Update()
-	}
 
-	// -------------------------
-	// Reset DBs
-	// -------------------------
+	// Remove old DB files
 	_ = os.Remove(config.GamesDb)
 	menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
 	_ = os.Remove(menuPath)
 	cachedTree = nil
 
-	// -------------------------
-	// Progress step accounting
-	// -------------------------
-	systems := games.AllSystems()
-	totalSteps := len(systems)*2 + 3 // scan + bolt per system, plus tree+menu+finalize
-	step := 0
+	// Status struct updated from background job
+	status := struct {
+		Step        int
+		Total       int
+		DisplayText string
+		Complete    bool
+		Error       error
+	}{Step: 1, Total: 100, DisplayText: "Finding games folders..."}
 
-	// -------------------------
-	// Phase 1: Scan files
-	// -------------------------
-	for i, sys := range systems {
-		updateStage(fmt.Sprintf("Scanning %s (%d/%d)...", sys.Name, i+1, len(systems)))
-		results, err := gamesdb.SearchNamesWords([]games.System{sys}, "")
-		if err != nil {
-			return nil, err
+	// Spinner sequence
+	spinnerSeq := []string{"|", "/", "-", "\\"}
+	spinnerCount := 0
+
+	// Run indexing in goroutine
+	go func() {
+		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
+			systemName := is.SystemId
+			if sys, serr := games.GetSystem(is.SystemId); serr == nil {
+				systemName = sys.Name
+			}
+
+			text := fmt.Sprintf("Indexing %s...", systemName)
+			if is.Step == 1 {
+				text = "Finding games folders..."
+			} else if is.Step == is.Total {
+				text = "Writing menu database..."
+			}
+
+			status.Step = is.Step
+			status.Total = is.Total
+			status.DisplayText = text
+		})
+
+		status.Error = err
+		status.Complete = true
+	}()
+
+	// UI loop
+	for {
+		if status.Complete || status.Error != nil {
+			break
 		}
-		if i == 0 {
-			// first system triggers tree init
-			_ = results
-		}
-		step++
-		drawProgressBar(step, totalSteps)
-		gc.Nap(30) // small delay so user sees progress
+
+		clearText()
+		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
+		win.MovePrint(1, 2, status.DisplayText)
+		drawProgressBar(status.Step, status.Total)
+
+		stdscr.NoutRefresh()
+		win.NoutRefresh()
+		_ = gc.Update()
+		gc.Nap(100)
 	}
 
-	// -------------------------
-	// Phase 2: Build tree
-	// -------------------------
-	updateStage("Building menu tree...")
-	results, err := gamesdb.SearchNamesWords(systems, "")
-	if err != nil {
-		return nil, err
+	if status.Error != nil {
+		return nil, status.Error
+	}
+
+	// Load results and build tree
+	results, rerr := gamesdb.SearchNamesWords(games.AllSystems(), "")
+	if rerr != nil {
+		return nil, rerr
 	}
 	tree := buildTree(results)
-	step++
-	drawProgressBar(step, totalSteps)
-	gc.Nap(100)
 
-	// -------------------------
-	// Phase 3: Write menu.db
-	// -------------------------
-	updateStage("Writing menu database...")
+	// Save menu.db
 	if f, ferr := os.Create(menuPath); ferr == nil {
 		defer f.Close()
 		_ = gob.NewEncoder(f).Encode(tree)
 	}
-	step++
-	drawProgressBar(step, totalSteps)
-	gc.Nap(100)
 
-	// -------------------------
-	// Phase 4: Build games.db per system
-	// -------------------------
+	// Phase 2: rebuild games.db from menu.db
+	updateMsg := "Building games database..."
+	clearText()
+	win.MovePrint(1, 2, updateMsg)
+	win.NoutRefresh()
+	_ = gc.Update()
+
 	db, dberr := gamesdb.OpenForWrite()
 	if dberr != nil {
 		return nil, dberr
 	}
 	defer db.Close()
 
-	for i, sys := range systems {
-		sysId := sys.Id
-		systemName := sys.Name
-
-		updateStage(fmt.Sprintf("Indexing %s (%d/%d)...", systemName, i+1, len(systems)))
-
-		// Collect files for this system
-		var sysFiles []gamesdb.FileInfo
-		root, ok := tree[sysId]
-		if ok {
-			var walk func(node *Node)
-			walk = func(node *Node) {
-				if !node.IsFolder && node.Game != nil {
-					sysFiles = append(sysFiles, gamesdb.FileInfo{
-						SystemId: sysId,
-						Path:     node.Game.Path,
-					})
-				}
-				for _, c := range node.Children {
-					walk(c)
-				}
-			}
-			for _, child := range root.Children {
-				walk(child)
-			}
-		}
-
-		if len(sysFiles) > 0 {
-			if uerr := gamesdb.UpdateNames(db, sysFiles); uerr != nil {
-				return nil, uerr
-			}
-		}
-
-		step++
-		drawProgressBar(step, totalSteps)
-		gc.Nap(30)
+	files := collectFiles(tree)
+	if uerr := gamesdb.UpdateNames(db, files); uerr != nil {
+		return nil, uerr
 	}
 
-	// -------------------------
-	// Phase 5: Finalize
-	// -------------------------
-	step++
-	updateStage("Finalizing...")
+	// Finalize
 	cachedTree = tree
-	drawProgressBar(step, totalSteps)
-	gc.Nap(150)
+	drawProgressBar(1, 1)
+	win.NoutRefresh()
+	_ = gc.Update()
 
-	// Cleanup screen
 	stdscr.Erase()
 	stdscr.NoutRefresh()
 	_ = gc.Update()
