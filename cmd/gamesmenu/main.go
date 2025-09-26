@@ -226,6 +226,11 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	// warm up games.db
 	_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
 
+	// fill progress bar to 100% before leaving
+	drawProgressBar(1, 1)
+	win.NoutRefresh()
+	_ = gc.Update()
+
 	// cleanup + return
 	stdscr.Erase()
 	stdscr.NoutRefresh()
