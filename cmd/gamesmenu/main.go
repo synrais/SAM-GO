@@ -99,6 +99,11 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 // DB Indexer (same as search)
 // -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
+
+	stdscr.Erase()
+    stdscr.NoutRefresh()
+    _ = gc.Update
+	
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
 		return err
