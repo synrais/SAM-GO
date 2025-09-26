@@ -272,63 +272,72 @@ func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]*N
 // Browsing
 // -------------------------
 func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System, node *Node) error {
-	for {
-		var items []string
-		var order []*Node
+    for {
+        var items []string
+        var order []*Node
 
-		var folders, gamesList []*Node
-		for _, child := range node.Children {
-			if child.IsFolder {
-				folders = append(folders, child)
-			} else {
-				gamesList = append(gamesList, child)
-			}
-		}
-		sort.Slice(folders, func(i, j int) bool { return strings.ToLower(folders[i].Name) < strings.ToLower(folders[j].Name) })
-		sort.Slice(gamesList, func(i, j int) bool { return strings.ToLower(gamesList[i].Name) < strings.ToLower(gamesList[j].Name) })
+        var folders, gamesList []*Node
+        for _, child := range node.Children {
+            if child.IsFolder {
+                folders = append(folders, child)
+            } else {
+                gamesList = append(gamesList, child)
+            }
+        }
+        sort.Slice(folders, func(i, j int) bool {
+            return strings.ToLower(folders[i].Name) < strings.ToLower(folders[j].Name)
+        })
+        sort.Slice(gamesList, func(i, j int) bool {
+            return strings.ToLower(gamesList[i].Name) < strings.ToLower(gamesList[j].Name)
+        })
 
-		for _, f := range folders {
-			items = append(items, "[DIR] "+f.Name)
-			order = append(order, f)
-		}
-		for _, g := range gamesList {
-			items = append(items, g.Name)
-			order = append(order, g)
-		}
+        for _, f := range folders {
+            items = append(items, "[DIR] "+f.Name)
+            order = append(order, f)
+        }
+        for _, g := range gamesList {
+            items = append(items, g.Name)
+            order = append(order, g)
+        }
 
-		actionLabel := "Open"
-		if len(order) > 0 && !order[0].IsFolder {
-			actionLabel = "Launch"
-		}
-
-		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-			Title:         node.Name,
-			Buttons:       []string{"PgUp", "PgDn", actionLabel, "Back"},
-			DefaultButton: 2,
-			ActionButton:  2,
-			ShowTotal:     true,
-			Width:         70,
-			Height:        20,
-		}, items)
-		if err != nil {
-			return err
-		}
-		if button == 3 {
-			return nil
-		}
-		if button == 2 {
-			choice := order[selected]
-			if choice.IsFolder {
-				if err := browseNode(cfg, stdscr, system, choice); err != nil {
-					return err
-				}
-			} else {
-				_ = mister.LaunchGame(cfg, *system, choice.Game.Path)
-				gc.End()
-				os.Exit(0)
-			}
-		}
-	}
+        button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+            Title:         node.Name,
+            Buttons:       []string{"PgUp", "PgDn", "", "Back"}, // placeholder at index 2
+            DefaultButton: 2,
+            ActionButton:  2,
+            ShowTotal:     true,
+            Width:         70,
+            Height:        20,
+            DynamicActionLabel: func(idx int) string {
+                if idx < 0 || idx >= len(order) {
+                    return "Open"
+                }
+                if order[idx].IsFolder {
+                    return "Open"
+                }
+                return "Launch"
+            },
+        }, items)
+        if err != nil {
+            return err
+        }
+        if button == 3 { // “Back”
+            return nil
+        }
+        if button == 2 { // Action button pressed
+            choice := order[selected]
+            if choice.IsFolder {
+                if err := browseNode(cfg, stdscr, system, choice); err != nil {
+                    return err
+                }
+            } else {
+                _ = mister.LaunchGame(cfg, *system, choice.Game.Path)
+                gc.End()
+                os.Exit(0)
+            }
+        }
+        // after returning from a recursive call or launch, loop again to refresh
+    }
 }
 
 // -------------------------
@@ -461,13 +470,16 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
         })
 
         button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-            Title: "Systems",
-            Buttons: []string{"PgUp","PgDn","Open","Search","Options","Exit"},
+            Title:         "Systems",
+            Buttons:       []string{"PgUp","PgDn","", "Search","Options","Exit"}, // placeholder at 2
             DefaultButton: 2,
             ActionButton:  2,
             ShowTotal:     true,
             Width:         70,
             Height:        20,
+            DynamicActionLabel: func(idx int) string {
+                return "Open"
+            },
         }, sysIds)
         if err != nil {
             return err
