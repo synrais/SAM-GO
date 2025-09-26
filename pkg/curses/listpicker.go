@@ -9,13 +9,14 @@ import (
 )
 
 type ListPickerOpts struct {
-	Title         string
-	Buttons       []string
-	DefaultButton int
-	ActionButton  int
-	ShowTotal     bool
-	Width         int
-	Height        int
+	Title              string
+	Buttons            []string
+	DefaultButton      int
+	ActionButton       int
+	ShowTotal          bool
+	Width              int
+	Height             int
+	DynamicActionLabel func(selectedItem int) string // <── NEW
 }
 
 func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, int, error) {
@@ -125,8 +126,14 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 			}
 		}
 
-		// buttons
-		DrawActionButtons(win, opts.Buttons, selectedButton, 4)
+		// --- Buttons ---
+		buttons := make([]string, len(opts.Buttons))
+		copy(buttons, opts.Buttons)
+		if opts.DynamicActionLabel != nil && len(buttons) > opts.ActionButton {
+			buttons[opts.ActionButton] = opts.DynamicActionLabel(selectedItem)
+		}
+
+		DrawActionButtons(win, buttons, selectedButton, 4)
 		win.NoutRefresh()
 
 		// location indicators
