@@ -18,6 +18,8 @@ import (
 	"github.com/synrais/SAM-GO/pkg/mister"
 )
 
+const appName = "gamesmenu"
+
 // -------------------------
 // Tree structure
 // -------------------------
@@ -47,17 +49,14 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 		var parts []string
 
 		if idx := strings.Index(rel, ".zip"+string(filepath.Separator)); idx != -1 {
-			// inside .zip
 			inside := rel[idx+len(".zip"+string(filepath.Separator)):]
 			parts = strings.Split(inside, string(filepath.Separator))
 		} else {
-			// after system id
 			idx := strings.Index(rel, sysId+string(filepath.Separator))
 			if idx != -1 {
 				inside := rel[idx+len(sysId+string(filepath.Separator)):]
 				parts = strings.Split(inside, string(filepath.Separator))
 			} else {
-				// fallback = just file
 				parts = []string{filepath.Base(rel)}
 			}
 		}
@@ -93,96 +92,7 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 }
 
 // -------------------------
-// Index builder (copied from search)
-// -------------------------
-func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
-	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
-	if err != nil {
-		return err
-	}
-	defer win.Delete()
-
-	_, width := win.MaxYX()
-
-	drawProgressBar := func(current int, total int) {
-		pct := int(float64(current) / float64(total) * 100)
-		progressWidth := width - 4
-		progressPct := int(float64(pct) / float64(100) * float64(progressWidth))
-		if progressPct < 1 {
-			progressPct = 1
-		}
-		for i := 0; i < progressPct; i++ {
-			win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
-		}
-		win.NoutRefresh()
-	}
-
-	clearText := func() {
-		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
-	}
-
-	status := struct {
-		Step        int
-		Total       int
-		SystemName  string
-		DisplayText string
-		Complete    bool
-		Error       error
-	}{Step: 1, Total: 100, DisplayText: "Finding games folders..."}
-
-	go func() {
-		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
-			systemName := is.SystemId
-			system, err := games.GetSystem(is.SystemId)
-			if err == nil {
-				systemName = system.Name
-			}
-
-			text := fmt.Sprintf("Indexing %s...", systemName)
-			if is.Step == 1 {
-				text = "Finding games folders..."
-			} else if is.Step == is.Total {
-				text = "Writing database to disk..."
-			}
-
-			status.Step = is.Step
-			status.Total = is.Total
-			status.SystemName = systemName
-			status.DisplayText = text
-		})
-
-		status.Error = err
-		status.Complete = true
-	}()
-
-	spinnerSeq := []string{"|", "/", "-", "\\"}
-	spinnerCount := 0
-
-	for {
-		if status.Complete || status.Error != nil {
-			break
-		}
-
-		clearText()
-		spinnerCount++
-		if spinnerCount == len(spinnerSeq) {
-			spinnerCount = 0
-		}
-
-		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
-		win.MovePrint(1, 2, status.DisplayText)
-		drawProgressBar(status.Step, status.Total)
-
-		win.NoutRefresh()
-		_ = gc.Update()
-		gc.Nap(100)
-	}
-
-	return status.Error
-}
-
-// -------------------------
-// Browsing (unchanged)
+// Browsing
 // -------------------------
 func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System, node *Node) error {
 	for {
@@ -238,18 +148,18 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, system *games.System,
 }
 
 func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*Node) error {
-	var sysIds []string
-	for sys := range systems {
-		sysIds = append(sysIds, sys)
-	}
-	sort.Strings(sysIds)
-
 	for {
+		var sysIds []string
+		for sys := range systems {
+			sysIds = append(sysIds, sys)
+		}
+		sort.Strings(sysIds)
+
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         "Systems",
-			Buttons:       []string{"PgUp", "PgDn", "Open", "Exit"},
-			DefaultButton: 2,
-			ActionButton:  2,
+			Buttons:       []string{"Options", "PgUp", "PgDn", "Open", "Exit"},
+			DefaultButton: 3,
+			ActionButton:  3,
 			ShowTotal:     true,
 			Width:         70,
 			Height:        20,
@@ -257,10 +167,23 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 		if err != nil {
 			return err
 		}
-		if button == 3 {
+		switch button {
+		case 4: // Exit
 			return nil
-		}
-		if button == 2 {
+		case 0: // Options -> rebuild DB
+			if err := generateIndexWindow(cfg, stdscr); err != nil {
+				return err
+			}
+			stdscr.Erase()
+			stdscr.NoutRefresh()
+			_ = gc.Update()
+
+			results, err := gamesdb.SearchNamesWords(games.AllSystems(), "")
+			if err != nil {
+				return err
+			}
+			systems = buildTree(results)
+		case 3: // Open
 			sysId := sysIds[selected]
 			system, err := games.GetSystem(sysId)
 			if err != nil {
@@ -275,6 +198,78 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 }
 
 // -------------------------
+// DB progress (copied from search)
+// -------------------------
+func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
+	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
+	if err != nil {
+		return err
+	}
+	defer win.Delete()
+
+	_, width := win.MaxYX()
+	drawProgressBar := func(current, total int) {
+		pct := int(float64(current) / float64(total) * 100)
+		progressWidth := width - 4
+		progressPct := int(float64(pct) / float64(100) * float64(progressWidth))
+		if progressPct < 1 {
+			progressPct = 1
+		}
+		for i := 0; i < progressPct; i++ {
+			win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
+		}
+		win.NoutRefresh()
+	}
+	clearText := func() { win.MovePrint(1, 2, strings.Repeat(" ", width-4)) }
+
+	status := struct {
+		Step, Total int
+		SystemName  string
+		DisplayText string
+		Complete    bool
+		Error       error
+	}{Step: 1, Total: 100, DisplayText: "Finding games folders..."}
+
+	go func() {
+		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
+			systemName := is.SystemId
+			if sys, err := games.GetSystem(is.SystemId); err == nil {
+				systemName = sys.Name
+			}
+			text := fmt.Sprintf("Indexing %s...", systemName)
+			if is.Step == 1 {
+				text = "Finding games folders..."
+			} else if is.Step == is.Total {
+				text = "Writing database to disk..."
+			}
+			status.Step = is.Step
+			status.Total = is.Total
+			status.SystemName = systemName
+			status.DisplayText = text
+		})
+		status.Error = err
+		status.Complete = true
+	}()
+
+	spinnerSeq := []string{"|", "/", "-", "\\"}
+	spin := 0
+	for {
+		if status.Complete || status.Error != nil {
+			break
+		}
+		clearText()
+		spin = (spin + 1) % len(spinnerSeq)
+		win.MovePrint(1, width-3, spinnerSeq[spin])
+		win.MovePrint(1, 2, status.DisplayText)
+		drawProgressBar(status.Step, status.Total)
+		win.NoutRefresh()
+		_ = gc.Update()
+		gc.Nap(100)
+	}
+	return status.Error
+}
+
+// -------------------------
 // Main
 // -------------------------
 func main() {
@@ -282,10 +277,10 @@ func main() {
 	flag.Parse()
 	launchGame := !*printPtr
 
-	cfg, err := config.LoadUserConfig("gamesmenu", &config.UserConfig{})
-	if err != nil && !os.IsNotExist(err) {
-		fmt.Println("Error loading config:", err)
-		os.Exit(1)
+	cfg, err := config.LoadUserConfig(appName, &config.UserConfig{})
+	if err != nil {
+		fmt.Println("[WARN] Could not load config, using defaults:", err)
+		cfg = &config.UserConfig{}
 	}
 
 	stdscr, err := curses.Setup()
@@ -294,14 +289,15 @@ func main() {
 	}
 	defer gc.End()
 
-	// Make sure DB exists
 	if !gamesdb.DbExists() {
 		if err := generateIndexWindow(cfg, stdscr); err != nil {
 			log.Fatal(err)
 		}
+		stdscr.Erase()
+		stdscr.NoutRefresh()
+		_ = gc.Update()
 	}
 
-	// Now load results from DB
 	results, err := gamesdb.SearchNamesWords(games.AllSystems(), "")
 	if err != nil {
 		log.Fatal(err)
