@@ -224,7 +224,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 				_ = gob.NewEncoder(f).Encode(tree)
 			}
 
-			// 🔥 Replace with fresh in-memory copy
+			// Replace with fresh in-memory copy
 			cachedTree = tree
 
 			// Warm up games.db too
@@ -249,7 +249,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 // -------------------------
 // Options
 // -------------------------
-func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
+func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]*Node, error) {
 	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 		Title:         "Options",
 		Buttons:       []string{"Select", "Back"},
@@ -261,16 +261,17 @@ func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	}, []string{"Update games database..."})
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if button == 0 && selected == 0 {
-		_, err := generateIndexWindow(cfg, stdscr)
+		tree, err := generateIndexWindow(cfg, stdscr)
 		if err != nil {
-			return err
+			return nil, err
 		}
+		return tree, nil
 	}
-	return nil
+	return nil, nil
 }
 
 // -------------------------
@@ -489,8 +490,25 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
             _ = searchWindow(cfg, stdscr, "", true, true)
             continue
         }
-        if button == 4 {
-            _ = mainOptionsWindow(cfg, stdscr)
+        if button == 4 { // Options
+            tree, _ := mainOptionsWindow(cfg, stdscr)
+            if tree != nil {
+                systems = tree
+                // 🔥 rebuild sysIds list too
+                sysIds = nil
+                for sys := range systems {
+                    sysIds = append(sysIds, sys)
+                }
+                sort.Slice(sysIds, func(i, j int) bool {
+                    if strings.EqualFold(sysIds[i], "ao486") {
+                        return true
+                    }
+                    if strings.EqualFold(sysIds[j], "ao486") {
+                        return false
+                    }
+                    return strings.ToLower(sysIds[i]) < strings.ToLower(sysIds[j])
+                })
+            }
             continue
         }
         if button == 5 {
