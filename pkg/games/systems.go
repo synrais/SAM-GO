@@ -1370,7 +1370,7 @@ var Systems = map[string]System{
 		Category:     CategoryComputer,
 		Manufacturer: ManufacturerIBM,
 		ReleaseDate:  "1989-04-10",
-		Folder:       []string{"AO486"},
+		Folder:       []string{"AO486", "_DOS Games"},
 		Rbf:          "_Computer/ao486",
 		Slots: []Slot{
 			{
