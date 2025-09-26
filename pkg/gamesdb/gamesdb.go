@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	bolt "go.etcd.io/bbolt"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
@@ -103,7 +105,7 @@ func writeIndexedSystems(db *bolt.DB, systems []string) error {
 	})
 }
 
-// ✅ Exported so main can use it
+// FileInfo represents a single ROM path + system for indexing
 type FileInfo struct {
 	SystemId string
 	Path     string
@@ -148,11 +150,15 @@ type SearchResult struct {
 	Path     string
 }
 
+// -------------------------
+// Search functions
+// -------------------------
+
 // Iterate all indexed names and return matches to test func against query.
 func searchNamesGeneric(
 	systems []games.System,
 	query string,
-	test func(string, string) bool,
+	test func(string) bool,
 ) ([]SearchResult, error) {
 	if !DbExists() {
 		return nil, fmt.Errorf("gamesdb does not exist")
@@ -173,7 +179,7 @@ func searchNamesGeneric(
 			c := bn.Cursor()
 			for k, v := c.Seek(pre); k != nil && bytes.HasPrefix(k, pre); k, v = c.Next() {
 				keyName := string(k[nameIdx+1:])
-				if test(query, keyName) {
+				if test(keyName) {
 					results = append(results, SearchResult{
 						SystemId: system.Id,
 						Name:     keyName,
@@ -190,36 +196,113 @@ func searchNamesGeneric(
 	return results, nil
 }
 
+// Exact match (case-insensitive)
 func SearchNamesExact(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
-		return strings.EqualFold(query, keyName)
+	q := strings.ToLower(query)
+	return searchNamesGeneric(systems, query, func(keyName string) bool {
+		return strings.ToLower(keyName) == q
 	})
 }
+
+// Partial substring match (case-insensitive)
 func SearchNamesPartial(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
-		return strings.Contains(strings.ToLower(keyName), strings.ToLower(query))
+	q := strings.ToLower(query)
+	return searchNamesGeneric(systems, query, func(keyName string) bool {
+		return strings.Contains(strings.ToLower(keyName), q)
 	})
 }
+
+// Match all words in query (case-insensitive)
 func SearchNamesWords(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
-		qWords := strings.Fields(strings.ToLower(query))
-		for _, word := range qWords {
-			if !strings.Contains(strings.ToLower(keyName), word) {
+	words := strings.Fields(strings.ToLower(query))
+	return searchNamesGeneric(systems, query, func(keyName string) bool {
+		lowerName := strings.ToLower(keyName)
+		for _, w := range words {
+			if !strings.Contains(lowerName, w) {
 				return false
 			}
 		}
 		return true
 	})
 }
+
+// Regex search (compile once)
 func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
-		r, err := regexp.Compile(query)
-		if err != nil {
-			return false
-		}
+	r, err := regexp.Compile(query)
+	if err != nil {
+		return nil, err
+	}
+	return searchNamesGeneric(systems, query, func(keyName string) bool {
 		return r.MatchString(keyName)
 	})
 }
+
+// -------------------------
+// Indexing with progress
+// -------------------------
+
+type IndexStatus struct {
+	Total    int
+	Step     int
+	SystemId string
+	Files    int
+}
+
+// NewNamesIndex scans all systems concurrently, returning all FileInfo while
+// calling update() once per system for progress display.
+func NewNamesIndex(
+	cfg *config.UserConfig,
+	systems []games.System,
+	update func(IndexStatus),
+) ([]FileInfo, error) {
+	status := IndexStatus{Total: len(systems)}
+	var (
+		mu   sync.Mutex
+		out  []FileInfo
+		step int
+	)
+
+	g := new(errgroup.Group)
+
+	for _, sys := range systems {
+		sys := sys
+		g.Go(func() error {
+			paths := games.GetSystemPaths(cfg, []games.System{sys})
+
+			var sysFiles []FileInfo
+			for _, p := range paths {
+				files, err := games.GetFiles(sys.Id, p.Path)
+				if err != nil {
+					return fmt.Errorf("error getting files for %s: %w", sys.Id, err)
+				}
+				for _, f := range files {
+					sysFiles = append(sysFiles, FileInfo{SystemId: sys.Id, Path: f})
+				}
+			}
+
+			// Merge results + update status
+			mu.Lock()
+			out = append(out, sysFiles...)
+			step++
+			status.Step = step
+			status.SystemId = sys.Id
+			status.Files = len(sysFiles)
+			update(status)
+			mu.Unlock()
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// -------------------------
+// Indexed Systems
+// -------------------------
 
 // Return true if a specific system is indexed in the gamesdb
 func SystemIndexed(system games.System) bool {
@@ -256,93 +339,3 @@ func IndexedSystems() ([]string, error) {
 	}
 	return systems, nil
 }
-
-// -------------------------
-// Full Indexer with progress
-// -------------------------
-
-type IndexStatus struct {
-	Total    int
-	Step     int
-	SystemId string
-	Files    int
-}
-
-// NewNamesIndex scans all systems, returning all FileInfo while
-// calling the update callback for progress display.
-package gamesdb
-
-import (
-	"fmt"
-	"sync"
-
-	"golang.org/x/sync/errgroup"
-
-	"github.com/synrais/SAM-GO/pkg/config"
-	"github.com/synrais/SAM-GO/pkg/games"
-)
-
-type FileInfo struct {
-	SystemId string
-	Path     string
-}
-
-type IndexStatus struct {
-	Total    int
-	Step     int
-	SystemId string
-	Files    int
-}
-
-// Scan all systems in parallel and return all files discovered.
-// Calls update() once per system with progress info.
-func NewNamesIndex(
-	cfg *config.UserConfig,
-	systems []games.System,
-	update func(IndexStatus),
-) ([]FileInfo, error) {
-	status := IndexStatus{Total: len(systems)}
-	var (
-		mu   sync.Mutex
-		out  []FileInfo
-		step int
-	)
-
-	g, ctx := errgroup.WithContext(nil)
-
-	for _, sys := range systems {
-		sys := sys
-		g.Go(func() error {
-			paths := games.GetSystemPaths(cfg, []games.System{sys})
-
-			var sysFiles []FileInfo
-			for _, p := range paths {
-				files, err := games.GetFiles(sys.Id, p.Path)
-				if err != nil {
-					return fmt.Errorf("error getting files for %s: %w", sys.Id, err)
-				}
-				for _, f := range files {
-					sysFiles = append(sysFiles, FileInfo{SystemId: sys.Id, Path: f})
-				}
-			}
-
-			// Merge results safely
-			mu.Lock()
-			out = append(out, sysFiles...)
-			step++
-			status.Step = step
-			status.SystemId = sys.Id
-			status.Files = len(sysFiles)
-			update(status) // notify caller for progress bar
-			mu.Unlock()
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
