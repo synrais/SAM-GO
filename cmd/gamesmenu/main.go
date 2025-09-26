@@ -508,9 +508,9 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
     }
 }
 
-// -------------------------
+// -----------------------------
 // Main
-// -------------------------
+// -----------------------------
 var cachedTree map[string]*Node // stays in RAM until program exit
 
 func main() {
@@ -536,17 +536,28 @@ func main() {
     menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
     var tree map[string]*Node
 
-    f, ferr := os.Open(menuPath)
-    if ferr == nil {
+    menuOk := false
+    gamesOk := false
+
+    // check menu.db
+    if f, ferr := os.Open(menuPath); ferr == nil {
         defer f.Close()
         decErr := gob.NewDecoder(f).Decode(&tree)
-        if decErr != nil {
+        if decErr == nil {
+            menuOk = true
+        } else {
             fmt.Println("Warning: could not decode menu.db, rebuilding...")
             tree = nil
         }
     }
 
-    if tree == nil {
+    // check games.db
+    if _, gerr := os.Stat(config.GamesDb); gerr == nil {
+        gamesOk = true
+    }
+
+    // if either DB is missing/corrupt → rebuild both
+    if !menuOk || !gamesOk {
         tree, err = generateIndexWindow(cfg, stdscr)
         if err != nil {
             log.Fatal(err)
