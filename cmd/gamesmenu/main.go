@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,6 +19,60 @@ import (
 	"github.com/synrais/SAM-GO/pkg/mister"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
+
+// -------------------------
+// Single-instance socket
+// -------------------------
+const socketPath = "/tmp/sam-go.sock"
+
+// tryAttach tries to connect to an existing instance.
+// Returns true if one was found and messaged.
+func tryAttach() bool {
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	_, _ = conn.Write([]byte("focus"))
+	return true
+}
+
+// startSocketServer runs a goroutine that accepts IPC messages.
+func startSocketServer() {
+	// Clean up any stale socket
+	if _, err := os.Stat(socketPath); err == nil {
+		os.Remove(socketPath)
+	}
+	l, err := net.Listen("unix", socketPath)
+	if err != nil {
+		fmt.Println("Warning: could not create IPC socket:", err)
+		return
+	}
+
+	go func() {
+		defer l.Close()
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				continue
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				buf := make([]byte, 256)
+				n, _ := c.Read(buf)
+				msg := strings.TrimSpace(string(buf[:n]))
+				switch msg {
+				case "focus":
+					// Just redraw the screen
+					gc.Update()
+				case "quit":
+					// Optional: allow external quit
+					os.Exit(0)
+				}
+			}(conn)
+		}
+	}()
+}
 
 // -------------------------
 // Tree structure
@@ -511,6 +566,14 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 // Main
 // -------------------------
 func main() {
+	// If another instance is running, attach and exit
+	if tryAttach() {
+		return
+	}
+
+	// Otherwise, start IPC server for future attach calls
+	startSocketServer()
+
 	printPtr := flag.Bool("print", false, "Print game path instead of launching")
 	flag.Parse()
 	launchGame := !*printPtr
