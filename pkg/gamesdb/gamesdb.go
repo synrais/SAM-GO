@@ -52,7 +52,6 @@ func open(options *bolt.Options) (*bolt.DB, error) {
 				return err
 			}
 		}
-
 		return nil
 	})
 
@@ -67,9 +66,14 @@ func openNames() (*bolt.DB, error) {
 	})
 }
 
+// Exported: open gamesdb for write from main/menu rebuild.
+func OpenForWrite() (*bolt.DB, error) {
+	return openNames()
+}
+
+// Read indexed systems
 func readIndexedSystems(db *bolt.DB) ([]string, error) {
 	var systems []string
-
 	err := db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(BucketNames))
 		v := b.Get([]byte(indexedSystemsKey))
@@ -78,10 +82,10 @@ func readIndexedSystems(db *bolt.DB) ([]string, error) {
 		}
 		return nil
 	})
-
 	return systems, err
 }
 
+// Write list of indexed systems
 func writeIndexedSystems(db *bolt.DB, systems []string) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(BucketNames))
@@ -89,15 +93,14 @@ func writeIndexedSystems(db *bolt.DB, systems []string) error {
 		if v == nil {
 			v = []byte(strings.Join(systems, ","))
 			return b.Put([]byte(indexedSystemsKey), v)
-		} else {
-			existing := strings.Split(string(v), ",")
-			for _, s := range systems {
-				if !utils.Contains(existing, s) {
-					existing = append(existing, s)
-				}
-			}
-			return b.Put([]byte(indexedSystemsKey), []byte(strings.Join(existing, ",")))
 		}
+		existing := strings.Split(string(v), ",")
+		for _, s := range systems {
+			if !utils.Contains(existing, s) {
+				existing = append(existing, s)
+			}
+		}
+		return b.Put([]byte(indexedSystemsKey), []byte(strings.Join(existing, ",")))
 	})
 }
 
@@ -106,24 +109,25 @@ type fileInfo struct {
 	Path     string
 }
 
-// Update the names index with the given files.
+// Update the names index with the given files (deduped by SystemId+Name).
 func updateNames(db *bolt.DB, files []fileInfo) error {
 	return db.Batch(func(tx *bolt.Tx) error {
 		bns := tx.Bucket([]byte(BucketNames))
-
 		for _, file := range files {
 			base := filepath.Base(file.Path)
 			name := strings.TrimSuffix(base, filepath.Ext(base))
-
 			nk := NameKey(file.SystemId, name)
-			err := bns.Put([]byte(nk), []byte(file.Path))
-			if err != nil {
+			if err := bns.Put([]byte(nk), []byte(file.Path)); err != nil {
 				return err
 			}
 		}
-
 		return nil
 	})
+}
+
+// Exported so main can call after menu.db rebuild.
+func UpdateNames(db *bolt.DB, files []fileInfo) error {
+	return updateNames(db, files)
 }
 
 type IndexStatus struct {
@@ -133,23 +137,13 @@ type IndexStatus struct {
 	Files    int
 }
 
-// Given a list of systems, index all valid game files on disk and write a
-// names index to the DB. Overwrites any existing names index, but does not
-// clean up old missing files.
-//
-// Takes a function which will be called with the current status of the index
-// during key steps.
-//
-// Returns the total number of files indexed.
+// Old path: still available if you want to directly build games.db off disk.
 func NewNamesIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
 	update func(IndexStatus),
 ) (int, error) {
-	status := IndexStatus{
-		Total: len(systems) + 1,
-		Step:  1,
-	}
+	status := IndexStatus{Total: len(systems) + 1, Step: 1}
 
 	db, err := openNames()
 	if err != nil {
@@ -164,24 +158,17 @@ func NewNamesIndex(
 	}
 
 	g := new(errgroup.Group)
-
 	for _, k := range utils.AlphaMapKeys(systemPaths) {
 		status.SystemId = k
 		status.Step++
 		update(status)
 
-		files := make([]fileInfo, 0)
-
+		var files []fileInfo
 		for _, path := range systemPaths[k] {
 			pathFiles, err := games.GetFiles(k, path)
 			if err != nil {
 				return status.Files, fmt.Errorf("error getting files: %s", err)
 			}
-
-			if len(pathFiles) == 0 {
-				continue
-			}
-
 			for pf := range pathFiles {
 				files = append(files, fileInfo{SystemId: k, Path: pathFiles[pf]})
 			}
@@ -190,7 +177,6 @@ func NewNamesIndex(
 		if len(files) == 0 {
 			continue
 		}
-
 		status.Files += len(files)
 
 		g.Go(func() error {
@@ -202,21 +188,15 @@ func NewNamesIndex(
 	status.SystemId = ""
 	update(status)
 
-	err = g.Wait()
-	if err != nil {
+	if err := g.Wait(); err != nil {
 		return status.Files, fmt.Errorf("error updating names index: %s", err)
 	}
-
-	err = writeIndexedSystems(db, utils.AlphaMapKeys(systemPaths))
-	if err != nil {
+	if err := writeIndexedSystems(db, utils.AlphaMapKeys(systemPaths)); err != nil {
 		return status.Files, fmt.Errorf("error writing indexed systems: %s", err)
 	}
-
-	err = db.Sync()
-	if err != nil {
+	if err := db.Sync(); err != nil {
 		return status.Files, fmt.Errorf("error syncing database: %s", err)
 	}
-
 	return status.Files, nil
 }
 
@@ -243,18 +223,14 @@ func searchNamesGeneric(
 	defer db.Close()
 
 	var results []SearchResult
-
 	err = db.View(func(tx *bolt.Tx) error {
 		bn := tx.Bucket([]byte(BucketNames))
-
 		for _, system := range systems {
 			pre := []byte(system.Id + ":")
 			nameIdx := bytes.Index(pre, []byte(":"))
-
 			c := bn.Cursor()
-			for k, v := c.Seek([]byte(pre)); k != nil && bytes.HasPrefix(k, pre); k, v = c.Next() {
+			for k, v := c.Seek(pre); k != nil && bytes.HasPrefix(k, pre); k, v = c.Next() {
 				keyName := string(k[nameIdx+1:])
-
 				if test(query, keyName) {
 					results = append(results, SearchResult{
 						SystemId: system.Id,
@@ -264,54 +240,41 @@ func searchNamesGeneric(
 				}
 			}
 		}
-
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
-
 	return results, nil
 }
 
-// Return indexed names matching exact query (case insensitive).
 func SearchNamesExact(systems []games.System, query string) ([]SearchResult, error) {
 	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
 		return strings.EqualFold(query, keyName)
 	})
 }
-
-// Return indexed names partially matching query (case insensitive).
 func SearchNamesPartial(systems []games.System, query string) ([]SearchResult, error) {
 	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
 		return strings.Contains(strings.ToLower(keyName), strings.ToLower(query))
 	})
 }
-
-// Return indexed names that include every word in query (case insensitive).
 func SearchNamesWords(systems []games.System, query string) ([]SearchResult, error) {
 	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
 		qWords := strings.Fields(strings.ToLower(query))
-
 		for _, word := range qWords {
 			if !strings.Contains(strings.ToLower(keyName), word) {
 				return false
 			}
 		}
-
 		return true
 	})
 }
-
-// Return indexed names matching query using regular expression.
 func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, error) {
 	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
 		r, err := regexp.Compile(query)
 		if err != nil {
 			return false
 		}
-
 		return r.MatchString(keyName)
 	})
 }
@@ -321,7 +284,6 @@ func SystemIndexed(system games.System) bool {
 	if !DbExists() {
 		return false
 	}
-
 	db, err := open(&bolt.Options{ReadOnly: true})
 	if err != nil {
 		return false
@@ -332,7 +294,6 @@ func SystemIndexed(system games.System) bool {
 	if err != nil {
 		return false
 	}
-
 	return utils.Contains(systems, system.Id)
 }
 
@@ -341,7 +302,6 @@ func IndexedSystems() ([]string, error) {
 	if !DbExists() {
 		return nil, fmt.Errorf("gamesdb does not exist")
 	}
-
 	db, err := open(&bolt.Options{ReadOnly: true})
 	if err != nil {
 		return nil, err
@@ -352,6 +312,5 @@ func IndexedSystems() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return systems, nil
 }
