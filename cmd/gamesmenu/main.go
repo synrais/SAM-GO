@@ -174,11 +174,12 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		}
 
 		var text string
-		if is.Step == 1 {
+		switch {
+		case is.Step == 1:
 			text = "Finding games folders..."
-		} else if is.Step == is.Total {
-			text = "Writing games database..."
-		} else {
+		case is.Step == is.Total:
+			text = "Finalizing games database..."
+		default:
 			text = fmt.Sprintf("Indexing %s...", systemName)
 		}
 
