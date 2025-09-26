@@ -413,7 +413,7 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 			DefaultButton: 2,
 			ActionButton:  2,
 			ShowTotal:     true,
-			Width:         70,
+			Width:         80,
 			Height:        20,
 		}, sysIds)
 		if err != nil {
