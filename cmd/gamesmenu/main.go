@@ -167,11 +167,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	}{}
 
 	go func() {
-		// --- delete old db files up front ---
-		menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
-		_ = os.Remove(menuPath)
-		_ = os.Remove(config.GamesDb)
-
+		// 🔹 Step 1: Scan games + write incrementally to Bolt
 		files, err := gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
 			systemName := is.SystemId
 			if sys, serr := games.GetSystem(is.SystemId); serr == nil {
@@ -182,47 +178,53 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			if is.Step == 1 {
 				text = "Finding games folders..."
 			}
-
 			status.Step = is.Step
-			status.Total = is.Total + 2 // +2 for menu.db and games.db writes
+			status.Total = is.Total
 			status.SystemName = systemName
 			status.DisplayText = text
 		})
 
 		if err != nil {
 			status.Error = err
-		} else {
-			// build tree + save menu.db
-			var results []gamesdb.SearchResult
+			status.Complete = true
+			return
+		}
+
+		// 🔹 Step 2: Build menu.db
+		status.DisplayText = "Building menu.db..."
+		tree := buildTree(func() []gamesdb.SearchResult {
+			var res []gamesdb.SearchResult
 			for _, f := range files {
-				results = append(results, gamesdb.SearchResult{
+				res = append(res, gamesdb.SearchResult{
 					SystemId: f.SystemId,
 					Name:     filepath.Base(f.Path),
 					Path:     f.Path,
 				})
 			}
-			tree := buildTree(results)
+			return res
+		}())
 
-			// --- writing menu.db step ---
-			status.Step = status.Total - 1
-			status.DisplayText = "Writing menu.db to disk..."
-			if f, ferr := os.Create(menuPath); ferr == nil {
-				defer f.Close()
-				_ = gob.NewEncoder(f).Encode(tree)
-			}
-
-			// --- writing games.db step ---
-			status.Step = status.Total
-			status.DisplayText = "Writing games.db to disk..."
-			db, dberr := gamesdb.OpenForWrite()
-			if dberr != nil {
-				status.Error = dberr
-			} else {
-				defer db.Close()
-				_ = gamesdb.UpdateNames(db, files)
-				cachedTree = tree
-			}
+		menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
+		_ = os.Remove(menuPath) // ensure fresh
+		if f, ferr := os.Create(menuPath); ferr == nil {
+			_ = gob.NewEncoder(f).Encode(tree)
+			f.Close()
 		}
+
+		// 🔹 Step 3: Explicit Bolt flush
+		status.DisplayText = "Finalizing games.db..."
+		db, dberr := gamesdb.OpenForWrite()
+		if dberr != nil {
+			status.Error = dberr
+			status.Complete = true
+			return
+		}
+		// we already wrote in NewNamesIndex, just sync
+		_ = db.Sync()
+		db.Close()
+
+		cachedTree = tree
+		status.DisplayText = "Rebuild complete."
 		status.Complete = true
 	}()
 
@@ -243,7 +245,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
 
 		win.MovePrint(1, 2, status.DisplayText)
-		drawProgressBar(status.Step, status.Total)
+		if status.Total > 0 {
+			drawProgressBar(status.Step, status.Total)
+		}
 
 		win.NoutRefresh()
 		_ = gc.Update()
