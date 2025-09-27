@@ -62,23 +62,20 @@ func buildTree(results []gamesdb.SearchResult) map[string]*Node {
 			system, err := games.GetSystem(sysId)
 			if err == nil {
 				for _, sysFolder := range system.Folder {
-					marker := sysFolder + string(filepath.Separator)
-					if idx := strings.Index(strings.ToLower(rel), strings.ToLower(marker)); idx != -1 {
-						inside := rel[idx+len(marker):]
-						folderParts := strings.Split(inside, string(filepath.Separator))
+					// Normalize case for comparison
+					marker := strings.ToLower(sysFolder) + string(filepath.Separator)
+					relLower := strings.ToLower(rel)
 
-						// ✅ Skip the first folder (fixes Amiga/Amiga)
-						if len(folderParts) > 1 {
-							parts = folderParts[1:]
-						} else {
-							parts = folderParts
-						}
+					if idx := strings.Index(relLower, marker); idx != -1 {
+						// Strip the system folder prefix
+						inside := rel[idx+len(marker):]
+						parts = strings.Split(inside, string(filepath.Separator))
 						break
 					}
 				}
 			}
 
-			// Fallback: just use the file name
+			// Fallback: just use the file name if no folder matched
 			if len(parts) == 0 {
 				parts = []string{filepath.Base(rel)}
 			}
