@@ -130,9 +130,6 @@ func collectFiles(tree map[string]*Node) []gamesdb.FileInfo {
 // -------------------------
 // Shared DB Indexer
 // -------------------------
-// -------------------------
-// Shared DB Indexer
-// -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]*Node, error) {
 	stdscr.Erase()
 	stdscr.NoutRefresh()
@@ -488,19 +485,13 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 // -------------------------
 func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*Node) error {
 	for {
-		// Build slice of system IDs and friendly names
+		// Build slice of system IDs (map keys) for stable processing
 		var sysIds []string
-		var sysNames []string
 		for sys := range systems {
 			sysIds = append(sysIds, sys)
-			if s, err := games.GetSystem(sys); err == nil {
-				sysNames = append(sysNames, s.Name)
-			} else {
-				sysNames = append(sysNames, sys) // fallback to ID
-			}
 		}
 
-		// Sort by friendly name
+		// Sort by friendly name, fallback to ID
 		sort.SliceStable(sysIds, func(i, j int) bool {
 			var nameI, nameJ string
 			if s, err := games.GetSystem(sysIds[i]); err == nil {
@@ -516,7 +507,7 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 			return strings.ToLower(nameI) < strings.ToLower(nameJ)
 		})
 
-		// Build names list in the same order as sysIds
+		// Build display list matching sysIds order
 		var sysDisplay []string
 		for _, sysId := range sysIds {
 			if s, err := games.GetSystem(sysId); err == nil {
@@ -543,20 +534,21 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 			return err
 		}
 
-		if button == 3 {
+		// Handle buttons
+		if button == 3 { // Search
 			_ = searchWindow(cfg, stdscr, "", true, true)
 			continue
 		}
-		if button == 4 {
+		if button == 4 { // Options
 			if tree, err := mainOptionsWindow(cfg, stdscr); err == nil && tree != nil {
 				systems = tree
 			}
 			continue
 		}
-		if button == 5 {
+		if button == 5 { // Exit
 			return nil
 		}
-		if button == 2 {
+		if button == 2 { // Open
 			sysId := sysIds[selected]
 			system, err := games.GetSystem(sysId)
 			if err != nil {
