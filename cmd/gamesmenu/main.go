@@ -198,7 +198,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			return
 		}
 
-		// 🔹 Step 2: Build menu.db from the *same files we wrote to Bolt*
+		// 🔹 Step 2: Build menu.db
 		status.DisplayText = "Building menu.db..."
 		var results []gamesdb.SearchResult
 		for _, f := range files {
@@ -223,6 +223,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			status.Complete = true
 			return
 		}
+		// we already wrote in NewNamesIndex, just sync
 		_ = db.Sync()
 		db.Close()
 
@@ -257,7 +258,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		gc.Nap(100)
 	}
 
-	// ✅ Clear window once complete
+	// Clear the indexing window once complete
 	win.Erase()
 	win.NoutRefresh()
 	_ = gc.Update()
