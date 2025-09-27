@@ -261,7 +261,7 @@ func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, er
 
 //
 // ---------------------------------------------------
-// Indexing with progress (Wizzo-style sequential)
+// Indexing with progress (Wizzo-style sequential Bolt writes)
 // ---------------------------------------------------
 //
 
@@ -272,7 +272,7 @@ type IndexStatus struct {
 	Files    int
 }
 
-// NewNamesIndex scans all systems sequentially and reports progress.
+// NewNamesIndex scans systems sequentially and writes each system immediately.
 func NewNamesIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
@@ -281,7 +281,13 @@ func NewNamesIndex(
 	status := IndexStatus{Total: len(systems)}
 	var out []FileInfo
 
-	for step, sys := range systems {
+	db, err := OpenForWrite()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	for i, sys := range systems {
 		paths := games.GetSystemPaths(cfg, []games.System{sys})
 
 		var sysFiles []FileInfo
@@ -295,15 +301,25 @@ func NewNamesIndex(
 			}
 		}
 
-		// Append results in order
+		// Write this system immediately into Bolt
+		if err := updateNames(db, sysFiles); err != nil {
+			return nil, err
+		}
+		if err := writeIndexedSystems(db, []string{sys.Id}); err != nil {
+			return nil, err
+		}
+
 		out = append(out, sysFiles...)
 
-		// Update progress
-		status.Step = step + 1
+		// Report progress
+		status.Step = i + 1
 		status.SystemId = sys.Id
 		status.Files = len(sysFiles)
 		update(status)
 	}
+
+	// ✅ Final flush
+	_ = db.Sync()
 
 	return out, nil
 }
