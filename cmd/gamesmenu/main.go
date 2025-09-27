@@ -59,20 +59,20 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             relParts = []string{filepath.Base(f.Path)}
         }
 
-        // ✅ Collapse or skip .zip node
-        if len(relParts) > 1 && strings.HasSuffix(strings.ToLower(relParts[1]), ".zip") {
-            zipName := strings.TrimSuffix(relParts[1], ".zip")
-            if strings.EqualFold(zipName, sysId) {
-                // Case: SystemId.zip -> drop both sysId and .zip
-                relParts = relParts[2:]
-            } else {
-                // Case: Other.zip -> drop .zip but keep sysId
-                relParts = append(relParts[:1], relParts[2:]...)
-            }
+        // ✅ Handle .zip
+        if len(relParts) > 1 && strings.EqualFold(relParts[1], sysId+".zip") {
+            // Collapse SystemId.zip
+            relParts = relParts[2:]
         } else {
-            // Drop the sysId itself, root node already exists
+            // Drop the sysId itself (root already exists)
             if len(relParts) > 0 && strings.EqualFold(relParts[0], sysId) {
                 relParts = relParts[1:]
+            }
+            // Normalize any other ".zip" into folder (strip extension)
+            for i, part := range relParts {
+                if strings.HasSuffix(strings.ToLower(part), ".zip") {
+                    relParts[i] = strings.TrimSuffix(part, ".zip")
+                }
             }
         }
 
