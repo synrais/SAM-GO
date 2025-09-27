@@ -51,13 +51,22 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
         var relParts []string
         for i, p := range parts {
             if strings.EqualFold(p, sysId) {
-                relParts = parts[i:] // keep sysId and everything after
+                relParts = parts[i:]
                 break
             }
         }
         if len(relParts) == 0 {
-            // fallback: only use filename if sysId not in path
             relParts = []string{filepath.Base(f.Path)}
+        }
+
+        // ✅ Skip .zip folder
+        if len(relParts) > 1 && strings.HasSuffix(strings.ToLower(relParts[1]), ".zip") {
+            relParts = append(relParts[:1], relParts[2:]...)
+        }
+
+        // ✅ Drop duplicate sysId at root
+        if len(relParts) > 0 && strings.EqualFold(relParts[0], sysId) {
+            relParts = relParts[1:]
         }
 
         // Walk tree
