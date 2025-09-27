@@ -117,10 +117,10 @@ func updateNames(db *bolt.DB, files []fileInfo) error {
 		bns := tx.Bucket([]byte(BucketNames))
 
 		for _, file := range files {
+			// Keep the extension in the key
 			base := filepath.Base(file.Path)
-			name := strings.TrimSuffix(base, filepath.Ext(base))
 
-			nk := NameKey(file.SystemId, name)
+			nk := NameKey(file.SystemId, base)
 			err := bns.Put([]byte(nk), []byte(file.Path))
 			if err != nil {
 				return err
