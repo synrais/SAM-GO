@@ -45,13 +45,14 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             systems[sysId] = sysNode
         }
 
+        // Split full path
         parts := strings.Split(f.Path, string(filepath.Separator))
 
-        // Find SystemId in path
+        // Find where SystemId occurs in the path
         var relParts []string
         for i, p := range parts {
             if strings.EqualFold(p, sysId) {
-                relParts = parts[i:]
+                relParts = parts[i+1:] // everything after sysId
                 break
             }
         }
@@ -59,52 +60,20 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             relParts = []string{filepath.Base(f.Path)}
         }
 
-        // ✅ Handle .zip
-        if len(relParts) > 1 && strings.EqualFold(relParts[1], sysId+".zip") {
-            // Collapse SystemId.zip
-            relParts = relParts[2:]
-        } else {
-            // Drop the sysId itself (root already exists)
-            if len(relParts) > 0 && strings.EqualFold(relParts[0], sysId) {
-                relParts = relParts[1:]
-            }
-            // Normalize any other ".zip" into folder (strip extension)
-            for i, part := range relParts {
-                if strings.HasSuffix(strings.ToLower(part), ".zip") {
-                    relParts[i] = strings.TrimSuffix(part, ".zip")
-                }
-            }
-        }
-
-        // ✅ Handle `.txt` folders (convert to folder, drop "listings" before it)
-        for i := 0; i < len(relParts)-1; i++ {
-            part := relParts[i]
-            if strings.HasSuffix(strings.ToLower(part), ".txt") {
-                txtName := strings.TrimSuffix(part, ".txt")
-                relParts[i] = txtName // keep as folder
-
-                // Drop "listings" if it’s right before
-                if i > 0 && strings.EqualFold(relParts[i-1], "listings") {
-                    relParts = append(relParts[:i-1], relParts[i:]...)
-                    i-- // adjust index
-                }
-            }
-        }
-
-        // Walk tree
+        // Walk the tree with raw folder/file names
         current := sysNode
         for i, part := range relParts {
             if part == "" {
                 continue
             }
             if i == len(relParts)-1 {
-                // leaf = game
+                // Leaf = game/file
                 current.Children[part] = &Node{
                     Name:     part,
                     IsFolder: false,
                     Game: &gamesdb.SearchResult{
                         SystemId: f.SystemId,
-                        Name:     filepath.Base(f.Path),
+                        Name:     filepath.Base(f.Path), // clean file name
                         Path:     f.Path,
                     },
                 }
@@ -122,6 +91,7 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             }
         }
     }
+
     return systems
 }
 
