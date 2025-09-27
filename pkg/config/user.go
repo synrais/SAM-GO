@@ -174,7 +174,12 @@ func LoadUserConfig(name string, defaultConfig *UserConfig) (*UserConfig, error)
 	// Parse INI
 	cfg, err := ini.ShadowLoad(iniPath)
 	if err != nil {
-		return defaultConfig, err
+    	// Missing INI is fine, just return defaults
+    	if os.IsNotExist(err) {
+        	return defaultConfig, nil
+    	}
+    	// Only return error for real parse/load errors
+    	return defaultConfig, err
 	}
 
 	// normalize keys case-insensitively
