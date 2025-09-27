@@ -45,23 +45,41 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             systems[sysId] = sysNode
         }
 
-        // ✅ Use the path from FileInfo directly
         parts := strings.Split(f.Path, string(filepath.Separator))
 
-        // ✅ Collapse zips if same name as systemId
-        var newParts []string
-        for _, part := range parts {
-            if strings.EqualFold(part, sysId+".zip") {
-                continue // drop systemId.zip entirely
+        // Find SystemId in path
+        var relParts []string
+        for i, p := range parts {
+            if strings.EqualFold(p, sysId) {
+                relParts = parts[i:]
+                break
             }
-            newParts = append(newParts, part)
         }
-        parts = newParts
+        if len(relParts) == 0 {
+            relParts = []string{filepath.Base(f.Path)}
+        }
 
-        // ✅ Handle .txt-based folder names (turn into real folders)
-        newParts = nil
-        for i := 0; i < len(parts); i++ {
-            part := parts[i]
+        // ✅ Collapse or skip .zip node
+        if len(relParts) > 1 && strings.HasSuffix(strings.ToLower(relParts[1]), ".zip") {
+            zipName := strings.TrimSuffix(relParts[1], ".zip")
+            if strings.EqualFold(zipName, sysId) {
+                // Case: SystemId.zip -> drop both sysId and .zip
+                relParts = relParts[2:]
+            } else {
+                // Case: Other.zip -> drop .zip but keep sysId
+                relParts = append(relParts[:1], relParts[2:]...)
+            }
+        } else {
+            // Drop the sysId itself, root node already exists
+            if len(relParts) > 0 && strings.EqualFold(relParts[0], sysId) {
+                relParts = relParts[1:]
+            }
+        }
+
+        // ✅ Handle `.txt` folders (each becomes a folder, drop "listings" before it)
+        var newParts []string
+        for i := 0; i < len(relParts); i++ {
+            part := relParts[i]
 
             if strings.HasSuffix(strings.ToLower(part), ".txt") {
                 txtName := strings.TrimSuffix(part, ".txt")
@@ -71,28 +89,28 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
                     newParts = newParts[:len(newParts)-1]
                 }
 
-                // Keep txtName as a folder
+                // Keep txtName as a unique folder
                 newParts = append(newParts, txtName)
             } else {
                 newParts = append(newParts, part)
             }
         }
-        parts = newParts
+        relParts = newParts
 
-        // ✅ Build into tree
+        // Walk tree
         current := sysNode
-        for i, part := range parts {
+        for i, part := range relParts {
             if part == "" {
                 continue
             }
-            if i == len(parts)-1 {
-                // Leaf node: actual game
+            if i == len(relParts)-1 {
+                // leaf = game
                 current.Children[part] = &Node{
                     Name:     part,
                     IsFolder: false,
                     Game: &gamesdb.SearchResult{
                         SystemId: f.SystemId,
-                        Name:     filepath.Base(f.Path), // filename only
+                        Name:     filepath.Base(f.Path),
                         Path:     f.Path,
                     },
                 }
