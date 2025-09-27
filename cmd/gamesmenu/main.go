@@ -59,15 +59,13 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             relParts = []string{filepath.Base(f.Path)}
         }
 
-        // ✅ Handle .zip rules
+        // ✅ Collapse .zip folder
         if len(relParts) > 1 && strings.HasSuffix(strings.ToLower(relParts[1]), ".zip") {
             zipName := strings.TrimSuffix(relParts[1], ".zip")
             if strings.EqualFold(zipName, sysId) {
-                // Case: SystemId.zip → collapse completely
-                relParts = relParts[2:]
+                relParts = relParts[2:] // SystemId.zip → drop both
             } else {
-                // Other.zip → treat as folder (remove .zip extension)
-                relParts[1] = zipName
+                relParts = append(relParts[:1], relParts[2:]...) // Other.zip → drop zip only
             }
         } else {
             // Drop the sysId itself, root node already exists
@@ -76,10 +74,13 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             }
         }
 
-        // ✅ Handle .txt folders (convert to folder, keep in tree)
+        // ✅ Collapse .txt folder like .zip → bubble up as new root folder
         for i := 0; i < len(relParts); i++ {
             if strings.HasSuffix(strings.ToLower(relParts[i]), ".txt") {
-                relParts[i] = strings.TrimSuffix(relParts[i], ".txt")
+                txtName := strings.TrimSuffix(relParts[i], ".txt")
+                // Replace everything before with just this txtName
+                relParts = append([]string{txtName}, relParts[i+1:]...)
+                break
             }
         }
 
