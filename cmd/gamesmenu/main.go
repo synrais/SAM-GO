@@ -278,7 +278,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 // Options
 // -------------------------
 func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]*Node, error) {
-    // ✅ Clear the main screen first
+    // ✅ Clear the main screen first so system menu doesn't show behind
     stdscr.Erase()
     stdscr.NoutRefresh()
     _ = gc.Update()
@@ -289,8 +289,8 @@ func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]*N
         DefaultButton: 0,
         ActionButton:  0,
         ShowTotal:     false,
-        Width:         70,
-        Height:        18,
+        Width:         70,  // match system menu
+        Height:        20,  // match system menu
     }, []string{"Update games database..."})
     if err != nil {
         return nil, err
