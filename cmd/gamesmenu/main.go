@@ -76,6 +76,21 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             }
         }
 
+        // ✅ Handle `.txt` folders
+        for i := 0; i < len(relParts); i++ {
+            part := relParts[i]
+            if strings.HasSuffix(strings.ToLower(part), ".txt") {
+                txtName := strings.TrimSuffix(part, ".txt")
+                relParts[i] = txtName
+
+                // Drop "listings" right before
+                if i > 0 && strings.EqualFold(relParts[i-1], "listings") {
+                    relParts = append(relParts[:i-1], relParts[i:]...)
+                    i-- // adjust index
+                }
+            }
+        }
+
         // Walk tree
         current := sysNode
         for i, part := range relParts {
