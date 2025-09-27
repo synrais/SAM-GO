@@ -59,15 +59,13 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             relParts = []string{filepath.Base(f.Path)}
         }
 
-        // ✅ Collapse or skip .zip node
+        // ✅ Collapse .zip folder
         if len(relParts) > 1 && strings.HasSuffix(strings.ToLower(relParts[1]), ".zip") {
             zipName := strings.TrimSuffix(relParts[1], ".zip")
             if strings.EqualFold(zipName, sysId) {
-                // Case: SystemId.zip -> drop both sysId and .zip
-                relParts = relParts[2:]
+                relParts = relParts[2:] // SystemId.zip → drop both
             } else {
-                // Case: Other.zip -> drop .zip but keep sysId
-                relParts = append(relParts[:1], relParts[2:]...)
+                relParts = append(relParts[:1], relParts[2:]...) // Other.zip → drop zip only
             }
         } else {
             // Drop the sysId itself, root node already exists
@@ -76,26 +74,15 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             }
         }
 
-        // ✅ Handle `.txt` folders (each becomes a folder, drop "listings" before it)
-        var newParts []string
+        // ✅ Collapse .txt folder like .zip → bubble up as new root folder
         for i := 0; i < len(relParts); i++ {
-            part := relParts[i]
-
-            if strings.HasSuffix(strings.ToLower(part), ".txt") {
-                txtName := strings.TrimSuffix(part, ".txt")
-
-                // Drop "listings" if immediately before
-                if len(newParts) > 0 && strings.EqualFold(newParts[len(newParts)-1], "listings") {
-                    newParts = newParts[:len(newParts)-1]
-                }
-
-                // Keep txtName as a unique folder
-                newParts = append(newParts, txtName)
-            } else {
-                newParts = append(newParts, part)
+            if strings.HasSuffix(strings.ToLower(relParts[i]), ".txt") {
+                txtName := strings.TrimSuffix(relParts[i], ".txt")
+                // Replace everything before with just this txtName
+                relParts = append([]string{txtName}, relParts[i+1:]...)
+                break
             }
         }
-        relParts = newParts
 
         // Walk tree
         current := sysNode
