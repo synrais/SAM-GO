@@ -254,6 +254,11 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		gc.Nap(100)
 	}
 
+	// ✅ Clear the indexing window once complete
+	win.Erase()
+	win.NoutRefresh()
+	_ = gc.Update()
+
 	if status.Error != nil {
 		return nil, status.Error
 	}
