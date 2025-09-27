@@ -173,7 +173,13 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		_ = os.Remove(config.GamesDb)
 
 		// 🔹 Step 1: Scan games + write incrementally to Bolt
-		files, err := gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
+		// Sort systems by friendly name so progress appears in natural order
+		systems := games.AllSystems()
+		sort.Slice(systems, func(i, j int) bool {
+			return strings.ToLower(systems[i].Name) < strings.ToLower(systems[j].Name)
+		})
+
+		files, err := gamesdb.NewNamesIndex(cfg, systems, func(is gamesdb.IndexStatus) {
 			systemName := is.SystemId
 			if sys, serr := games.GetSystem(is.SystemId); serr == nil {
 				systemName = sys.Name
@@ -257,7 +263,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		gc.Nap(100)
 	}
 
-	// Clear the indexing window once complete
+	// ✅ Clear the indexing window once complete
 	win.Erase()
 	win.NoutRefresh()
 	_ = gc.Update()
