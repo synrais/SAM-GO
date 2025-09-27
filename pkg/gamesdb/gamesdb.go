@@ -250,54 +250,59 @@ type IndexStatus struct {
 
 // NewNamesIndex scans systems sequentially and writes each system immediately.
 func NewNamesIndex(
-	cfg *config.UserConfig,
-	systems []games.System,
-	update func(IndexStatus),
+    cfg *config.UserConfig,
+    systems []games.System,
+    update func(IndexStatus),
 ) ([]FileInfo, error) {
-	status := IndexStatus{Total: len(systems)}
-	var out []FileInfo
+    status := IndexStatus{Total: len(systems)}
+    var out []FileInfo
 
-	db, err := OpenForWrite()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
+    // 🔹 Sort systems by friendly name
+    sort.Slice(systems, func(i, j int) bool {
+        return strings.ToLower(systems[i].Name) < strings.ToLower(systems[j].Name)
+    })
 
-	for i, sys := range systems {
-		paths := games.GetSystemPaths(cfg, []games.System{sys})
+    db, err := OpenForWrite()
+    if err != nil {
+        return nil, err
+    }
+    defer db.Close()
 
-		var sysFiles []FileInfo
-		for _, p := range paths {
-			files, err := games.GetFiles(sys.Id, p.Path)
-			if err != nil {
-				return nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
-			}
-			for _, f := range files {
-				sysFiles = append(sysFiles, FileInfo{SystemId: sys.Id, Path: f})
-			}
-		}
+    for i, sys := range systems {
+        paths := games.GetSystemPaths(cfg, []games.System{sys})
 
-		// Write this system immediately into Bolt
-		if err := updateNames(db, sysFiles); err != nil {
-			return nil, err
-		}
-		if err := writeIndexedSystems(db, []string{sys.Id}); err != nil {
-			return nil, err
-		}
+        var sysFiles []FileInfo
+        for _, p := range paths {
+            files, err := games.GetFiles(sys.Id, p.Path)
+            if err != nil {
+                return nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
+            }
+            for _, f := range files {
+                sysFiles = append(sysFiles, FileInfo{SystemId: sys.Id, Path: f})
+            }
+        }
 
-		out = append(out, sysFiles...)
+        // Write this system immediately into Bolt
+        if err := updateNames(db, sysFiles); err != nil {
+            return nil, err
+        }
+        if err := writeIndexedSystems(db, []string{sys.Id}); err != nil {
+            return nil, err
+        }
 
-		// Report progress
-		status.Step = i + 1
-		status.SystemId = sys.Id
-		status.Files = len(sysFiles)
-		update(status)
-	}
+        out = append(out, sysFiles...)
 
-	// ✅ Final flush
-	_ = db.Sync()
+        // Report progress with friendly name only
+        status.Step = i + 1
+        status.SystemId = sys.Id
+        status.Files = len(sysFiles)
+        update(status)
+    }
 
-	return out, nil
+    // Final flush
+    _ = db.Sync()
+
+    return out, nil
 }
 
 //
