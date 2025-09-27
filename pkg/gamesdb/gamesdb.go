@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	bolt "go.etcd.io/bbolt"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
