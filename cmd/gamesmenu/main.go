@@ -130,6 +130,9 @@ func collectFiles(tree map[string]*Node) []gamesdb.FileInfo {
 // -------------------------
 // Shared DB Indexer
 // -------------------------
+// -------------------------
+// Shared DB Indexer
+// -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]*Node, error) {
 	stdscr.Erase()
 	stdscr.NoutRefresh()
@@ -200,15 +203,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 
 		// 🔹 Step 2: Build menu.db
 		status.DisplayText = "Building menu.db..."
-		var results []gamesdb.SearchResult
-		for _, f := range files {
-			results = append(results, gamesdb.SearchResult{
-				SystemId: f.SystemId,
-				Name:     filepath.Base(f.Path),
-				Path:     f.Path,
-			})
-		}
-		tree := buildTree(results)
+		tree := buildTree(files)
 
 		if f, ferr := os.Create(menuPath); ferr == nil {
 			_ = gob.NewEncoder(f).Encode(tree)
@@ -223,7 +218,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			status.Complete = true
 			return
 		}
-		// we already wrote in NewNamesIndex, just sync
 		_ = db.Sync()
 		db.Close()
 
