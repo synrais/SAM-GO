@@ -60,7 +60,7 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
                     IsFolder: false,
                     Game: &gamesdb.SearchResult{
                         SystemId: f.SystemId,
-                        Name:     f.Name, // keep it consistent with Bolt’s key
+                        Name:     filepath.Base(f.Path), // filename only
                         Path:     f.Path,
                     },
                 }
