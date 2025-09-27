@@ -45,60 +45,63 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             systems[sysId] = sysNode
         }
 
-        parts := strings.Split(f.Path, string(filepath.Separator))
+        // break path into parts after system root
+        rel := f.Path
+        relParts := strings.Split(rel, string(filepath.Separator))
 
-        // Find SystemId in path
-        var relParts []string
-        for i, p := range parts {
+        // find the index of systemId in path and start from there
+        startIdx := -1
+        for i, p := range relParts {
             if strings.EqualFold(p, sysId) {
-                relParts = parts[i:]
+                startIdx = i
                 break
             }
         }
-        if len(relParts) == 0 {
-            relParts = []string{filepath.Base(f.Path)}
+        if startIdx >= 0 {
+            relParts = relParts[startIdx:]
         }
 
-        // ✅ Collapse or skip .zip node
-        if len(relParts) > 1 && strings.HasSuffix(strings.ToLower(relParts[1]), ".zip") {
-            zipName := strings.TrimSuffix(relParts[1], ".zip")
-            if strings.EqualFold(zipName, sysId) {
-                // Case: SystemId.zip -> drop both sysId and .zip
-                relParts = relParts[2:]
-            } else {
-                // Case: Other.zip -> drop .zip but keep sysId
-                relParts = append(relParts[:1], relParts[2:]...)
-            }
-        } else {
-            // Drop the sysId itself, root node already exists
-            if len(relParts) > 0 && strings.EqualFold(relParts[0], sysId) {
-                relParts = relParts[1:]
-            }
-        }
-
-        // ✅ Handle `.txt` folders (convert to folder, drop "listings" before it)
-        for i := 0; i < len(relParts)-1; i++ {
+        // ✅ Collapse zips if same name as systemId
+        var newParts []string
+        for i := 0; i < len(relParts); i++ {
             part := relParts[i]
+            if strings.EqualFold(part, sysId+".zip") {
+                // collapse systemId.zip away
+                continue
+            }
+            newParts = append(newParts, part)
+        }
+        relParts = newParts
+
+        // ✅ Handle .txt-based folder names (turn into real folders)
+        newParts = nil
+        for i := 0; i < len(relParts); i++ {
+            part := relParts[i]
+
             if strings.HasSuffix(strings.ToLower(part), ".txt") {
                 txtName := strings.TrimSuffix(part, ".txt")
-                relParts[i] = txtName // keep as folder
 
-                // Drop "listings" if it’s right before
-                if i > 0 && strings.EqualFold(relParts[i-1], "listings") {
-                    relParts = append(relParts[:i-1], relParts[i:]...)
-                    i-- // adjust index
+                // Drop "listings" if it’s immediately before
+                if len(newParts) > 0 && strings.EqualFold(newParts[len(newParts)-1], "listings") {
+                    newParts = newParts[:len(newParts)-1]
                 }
+
+                // Keep txtName as a folder
+                newParts = append(newParts, txtName)
+            } else {
+                newParts = append(newParts, part)
             }
         }
+        relParts = newParts
 
-        // Walk tree
+        // ✅ Build into tree
         current := sysNode
         for i, part := range relParts {
             if part == "" {
                 continue
             }
             if i == len(relParts)-1 {
-                // leaf = game
+                // leaf = game file
                 current.Children[part] = &Node{
                     Name:     part,
                     IsFolder: false,
