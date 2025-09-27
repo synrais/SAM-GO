@@ -48,7 +48,7 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
         // Split full path
         parts := strings.Split(f.Path, string(filepath.Separator))
 
-        // Find where SystemId occurs in the path
+        // Find SystemId in path
         var relParts []string
         for i, p := range parts {
             if strings.EqualFold(p, sysId) {
@@ -56,11 +56,13 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
                 break
             }
         }
+
+        // ✅ Correct fallback: if SystemId not found, keep full path
         if len(relParts) == 0 {
-            relParts = []string{filepath.Base(f.Path)}
+            relParts = parts
         }
 
-        // Walk the tree with raw folder/file names
+        // Walk the tree
         current := sysNode
         for i, part := range relParts {
             if part == "" {
@@ -73,7 +75,7 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
                     IsFolder: false,
                     Game: &gamesdb.SearchResult{
                         SystemId: f.SystemId,
-                        Name:     filepath.Base(f.Path), // clean file name
+                        Name:     filepath.Base(f.Path),
                         Path:     f.Path,
                     },
                 }
