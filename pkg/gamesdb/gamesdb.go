@@ -29,19 +29,19 @@ func NameKey(systemId string, name string) string {
 
 // Check if the search.db exists on disk.
 func DbExists() bool {
-	_, err := os.Stat(config.SearchDB)
+	_, err := os.Stat(config.SearchDb)
 	return err == nil
 }
 
 // Open the search.db with the given options. If the database does not exist it
 // will be created and the buckets will be initialized.
 func open(options *bolt.Options) (*bolt.DB, error) {
-	err := os.MkdirAll(filepath.Dir(config.SearchDB), 0755)
+	err := os.MkdirAll(filepath.Dir(config.SearchDb), 0755)
 	if err != nil {
 		return nil, err
 	}
 
-	db, err := bolt.Open(config.SearchDB, 0600, options)
+	db, err := bolt.Open(config.SearchDb, 0600, options)
 	if err != nil {
 		return nil, err
 	}
