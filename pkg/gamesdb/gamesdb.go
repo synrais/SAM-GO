@@ -140,30 +140,6 @@ func updateNames(db *bolt.DB, files []FileInfo) error {
 	})
 }
 
-// Exported: batch update after menu rebuild (kept for compatibility).
-func UpdateNames(db *bolt.DB, files []FileInfo) error {
-	if len(files) == 0 {
-		return nil
-	}
-	if err := updateNames(db, files); err != nil {
-		return err
-	}
-
-	// Track indexed systems
-	systemIds := make([]string, 0, len(files))
-	for _, f := range files {
-		if !utils.Contains(systemIds, f.SystemId) {
-			systemIds = append(systemIds, f.SystemId)
-		}
-	}
-	if err := writeIndexedSystems(db, systemIds); err != nil {
-		return err
-	}
-
-	// ✅ Force flush once at the end
-	return db.Sync()
-}
-
 //
 // ---------------------------------------------------
 // Search
