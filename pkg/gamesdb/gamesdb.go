@@ -7,10 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 
 	bolt "go.etcd.io/bbolt"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
@@ -263,7 +261,7 @@ func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, er
 
 //
 // ---------------------------------------------------
-// Indexing with progress (Wizzo-style incremental Bolt writes)
+// Indexing with progress (Wizzo-style sequential)
 // ---------------------------------------------------
 //
 
@@ -274,64 +272,40 @@ type IndexStatus struct {
 	Files    int
 }
 
-// NewNamesIndex scans all systems concurrently and reports progress.
+// NewNamesIndex scans all systems sequentially and reports progress.
 func NewNamesIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
 	update func(IndexStatus),
 ) ([]FileInfo, error) {
 	status := IndexStatus{Total: len(systems)}
-	var (
-		mu        sync.Mutex
-		sysResults = make(map[string][]FileInfo)
-		step      int
-	)
+	var out []FileInfo
 
-	g := new(errgroup.Group)
+	for step, sys := range systems {
+		paths := games.GetSystemPaths(cfg, []games.System{sys})
 
-	for _, sys := range systems {
-		sys := sys
-		g.Go(func() error {
-			paths := games.GetSystemPaths(cfg, []games.System{sys})
-
-			var sysFiles []FileInfo
-			for _, p := range paths {
-				files, err := games.GetFiles(sys.Id, p.Path)
-				if err != nil {
-					return fmt.Errorf("error getting files for %s: %w", sys.Id, err)
-				}
-				for _, f := range files {
-					sysFiles = append(sysFiles, FileInfo{SystemId: sys.Id, Path: f})
-				}
+		var sysFiles []FileInfo
+		for _, p := range paths {
+			files, err := games.GetFiles(sys.Id, p.Path)
+			if err != nil {
+				return nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
 			}
-
-			// Save results for this system
-			mu.Lock()
-			sysResults[sys.Id] = sysFiles
-			step++
-			status.Step = step
-			status.SystemId = sys.Id
-			status.Files = len(sysFiles)
-			update(status)
-			mu.Unlock()
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-
-	// Preserve original system order (like Wizzo’s)
-	var ordered []FileInfo
-	for _, sys := range systems {
-		if files, ok := sysResults[sys.Id]; ok {
-			ordered = append(ordered, files...)
+			for _, f := range files {
+				sysFiles = append(sysFiles, FileInfo{SystemId: sys.Id, Path: f})
+			}
 		}
+
+		// Append results in order
+		out = append(out, sysFiles...)
+
+		// Update progress
+		status.Step = step + 1
+		status.SystemId = sys.Id
+		status.Files = len(sysFiles)
+		update(status)
 	}
 
-	return ordered, nil
+	return out, nil
 }
 
 //
