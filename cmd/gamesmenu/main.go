@@ -45,32 +45,9 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             systems[sysId] = sysNode
         }
 
+        // ✅ Always use the stored path directly
         rel := f.Path
-        var parts []string
-
-        if idx := strings.Index(rel, ".zip"+string(filepath.Separator)); idx != -1 {
-            inside := rel[idx+len(".zip"+string(filepath.Separator)):]
-            parts = strings.Split(inside, string(filepath.Separator))
-        } else {
-            system, err := games.GetSystem(sysId)
-            if err == nil {
-                for _, sysFolder := range system.Folder {
-                    marker := sysFolder + string(filepath.Separator)
-                    if idx := strings.Index(strings.ToLower(rel), strings.ToLower(marker)); idx != -1 {
-                        inside := rel[idx+len(marker):]
-                        folderParts := strings.Split(sysFolder, string(filepath.Separator))
-                        if len(folderParts) > 0 && folderParts[0] == "" {
-                            folderParts = folderParts[1:]
-                        }
-                        parts = append(folderParts, strings.Split(inside, string(filepath.Separator))...)
-                        break
-                    }
-                }
-            }
-            if len(parts) == 0 {
-                parts = []string{filepath.Base(rel)}
-            }
-        }
+        parts := strings.Split(rel, string(filepath.Separator))
 
         current := sysNode
         for i, part := range parts {
@@ -78,6 +55,7 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
                 continue
             }
             if i == len(parts)-1 {
+                // leaf = actual file
                 current.Children[part] = &Node{
                     Name:     part,
                     IsFolder: false,
