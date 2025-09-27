@@ -167,6 +167,11 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 	}{}
 
 	go func() {
+		// 🔹 Step 0: Ensure fresh DBs
+		menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
+		_ = os.Remove(menuPath)
+		_ = os.Remove(config.GamesDb)
+
 		// 🔹 Step 1: Scan games + write incrementally to Bolt
 		files, err := gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
 			systemName := is.SystemId
@@ -204,8 +209,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			return res
 		}())
 
-		menuPath := filepath.Join(filepath.Dir(config.GamesDb), "menu.db")
-		_ = os.Remove(menuPath) // ensure fresh
 		if f, ferr := os.Create(menuPath); ferr == nil {
 			_ = gob.NewEncoder(f).Encode(tree)
 			f.Close()
@@ -254,7 +257,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		gc.Nap(100)
 	}
 
-	// ✅ Clear the indexing window once complete
+	// Clear the indexing window once complete
 	win.Erase()
 	win.NoutRefresh()
 	_ = gc.Update()
