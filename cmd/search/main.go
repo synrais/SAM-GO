@@ -150,7 +150,8 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 
 	searchTitle := "Search"
 	searchButtons := []string{"Options", "Search", "Exit"}
-	button, text, err := curses.OnScreenKeyboard(stdscr, searchTitle, searchButtons, query)
+	button, text, err := curses.OnScreenKeyboard(stdscr, searchTitle, searchButtons, query, 0)
+
 	if err != nil {
 		log.Fatal(err)
 	}
