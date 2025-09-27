@@ -47,7 +47,7 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
 
         parts := strings.Split(f.Path, string(filepath.Separator))
 
-        // find SystemId in path
+        // Find SystemId in path
         var relParts []string
         for i, p := range parts {
             if strings.EqualFold(p, sysId) {
@@ -59,20 +59,24 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             relParts = []string{filepath.Base(f.Path)}
         }
 
-        // ✅ collapse .zip if it comes right after sysId and matches sysId
-        if len(relParts) > 1 {
-            if strings.HasSuffix(strings.ToLower(relParts[1]), ".zip") {
-                zipName := strings.TrimSuffix(relParts[1], ".zip")
-                if strings.EqualFold(zipName, sysId) {
-                    // collapse completely
-                    relParts = append(relParts[:1], relParts[2:]...)
-                } else {
-                    // skip showing the .zip node but keep children
-                    relParts = append(relParts[:1], relParts[2:]...)
-                }
+        // ✅ Collapse or skip .zip node
+        if len(relParts) > 1 && strings.HasSuffix(strings.ToLower(relParts[1]), ".zip") {
+            zipName := strings.TrimSuffix(relParts[1], ".zip")
+            if strings.EqualFold(zipName, sysId) {
+                // Case: SystemId.zip -> drop both sysId and .zip
+                relParts = relParts[2:]
+            } else {
+                // Case: Other.zip -> drop .zip but keep sysId
+                relParts = append(relParts[:1], relParts[2:]...)
+            }
+        } else {
+            // Drop the sysId itself, root node already exists
+            if len(relParts) > 0 && strings.EqualFold(relParts[0], sysId) {
+                relParts = relParts[1:]
             }
         }
 
+        // Walk tree
         current := sysNode
         for i, part := range relParts {
             if part == "" {
