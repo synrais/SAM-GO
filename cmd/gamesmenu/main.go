@@ -30,89 +30,78 @@ type Node struct {
 	Game     *gamesdb.SearchResult
 }
 
-func buildTree(results []gamesdb.SearchResult) map[string]*Node {
-	systems := make(map[string]*Node)
+func buildTree(files []gamesdb.FileInfo) map[string]*Node {
+    systems := make(map[string]*Node)
 
-	for _, result := range results {
-		sysId := result.SystemId
-		sysNode, ok := systems[sysId]
-		if !ok {
-			sysNode = &Node{
-				Name:     sysId,
-				IsFolder: true,
-				Children: make(map[string]*Node),
-			}
-			systems[sysId] = sysNode
-		}
+    for _, f := range files {
+        sysId := f.SystemId
+        sysNode, ok := systems[sysId]
+        if !ok {
+            sysNode = &Node{
+                Name:     sysId,
+                IsFolder: true,
+                Children: make(map[string]*Node),
+            }
+            systems[sysId] = sysNode
+        }
 
-		rel := result.Path
-		var parts []string
+        rel := f.Path
+        var parts []string
 
-		// -------------------------
-		// Case 1: Game inside a ZIP
-		// -------------------------
-		if idx := strings.Index(rel, ".zip"+string(filepath.Separator)); idx != -1 {
-			inside := rel[idx+len(".zip"+string(filepath.Separator)):]
-			parts = strings.Split(inside, string(filepath.Separator))
+        if idx := strings.Index(rel, ".zip"+string(filepath.Separator)); idx != -1 {
+            inside := rel[idx+len(".zip"+string(filepath.Separator)):]
+            parts = strings.Split(inside, string(filepath.Separator))
+        } else {
+            system, err := games.GetSystem(sysId)
+            if err == nil {
+                for _, sysFolder := range system.Folder {
+                    marker := sysFolder + string(filepath.Separator)
+                    if idx := strings.Index(strings.ToLower(rel), strings.ToLower(marker)); idx != -1 {
+                        inside := rel[idx+len(marker):]
+                        folderParts := strings.Split(sysFolder, string(filepath.Separator))
+                        if len(folderParts) > 0 && folderParts[0] == "" {
+                            folderParts = folderParts[1:]
+                        }
+                        parts = append(folderParts, strings.Split(inside, string(filepath.Separator))...)
+                        break
+                    }
+                }
+            }
+            if len(parts) == 0 {
+                parts = []string{filepath.Base(rel)}
+            }
+        }
 
-		} else {
-			// -------------------------
-			// Case 2: Normal folder layout
-			// -------------------------
-			system, err := games.GetSystem(sysId)
-			if err == nil {
-				for _, sysFolder := range system.Folder {
-					// Normalize case for comparison
-					marker := strings.ToLower(sysFolder) + string(filepath.Separator)
-					relLower := strings.ToLower(rel)
-
-					if idx := strings.Index(relLower, marker); idx != -1 {
-						// Strip the system folder prefix
-						inside := rel[idx+len(marker):]
-						parts = strings.Split(inside, string(filepath.Separator))
-						break
-					}
-				}
-			}
-
-			// Fallback: just use the file name if no folder matched
-			if len(parts) == 0 {
-				parts = []string{filepath.Base(rel)}
-			}
-		}
-
-		// -------------------------
-		// Build tree nodes
-		// -------------------------
-		current := sysNode
-		for i, part := range parts {
-			if part == "" {
-				continue
-			}
-			if i == len(parts)-1 {
-				// Leaf = game
-				res := result
-				current.Children[part] = &Node{
-					Name:     part,
-					IsFolder: false,
-					Game:     &res,
-				}
-			} else {
-				// Intermediate = folder
-				child, ok := current.Children[part]
-				if !ok {
-					child = &Node{
-						Name:     part,
-						IsFolder: true,
-						Children: make(map[string]*Node),
-					}
-					current.Children[part] = child
-				}
-				current = child
-			}
-		}
-	}
-	return systems
+        current := sysNode
+        for i, part := range parts {
+            if part == "" {
+                continue
+            }
+            if i == len(parts)-1 {
+                current.Children[part] = &Node{
+                    Name:     part,
+                    IsFolder: false,
+                    Game: &gamesdb.SearchResult{
+                        SystemId: f.SystemId,
+                        Name:     filepath.Base(f.Path),
+                        Path:     f.Path,
+                    },
+                }
+            } else {
+                child, ok := current.Children[part]
+                if !ok {
+                    child = &Node{
+                        Name:     part,
+                        IsFolder: true,
+                        Children: make(map[string]*Node),
+                    }
+                    current.Children[part] = child
+                }
+                current = child
+            }
+        }
+    }
+    return systems
 }
 
 // Flatten tree into []FileInfo for gamesdb.UpdateNames
@@ -187,13 +176,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		_ = os.Remove(config.GamesDb)
 
 		// 🔹 Step 1: Scan games + write incrementally to Bolt
-		// Sort systems by friendly name so progress appears in natural order
-		systems := games.AllSystems()
-		sort.Slice(systems, func(i, j int) bool {
-			return strings.ToLower(systems[i].Name) < strings.ToLower(systems[j].Name)
-		})
-
-		files, err := gamesdb.NewNamesIndex(cfg, systems, func(is gamesdb.IndexStatus) {
+		files, err := gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
 			systemName := is.SystemId
 			if sys, serr := games.GetSystem(is.SystemId); serr == nil {
 				systemName = sys.Name
@@ -215,19 +198,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			return
 		}
 
-		// 🔹 Step 2: Build menu.db
+		// 🔹 Step 2: Build menu.db from same FileInfo list
 		status.DisplayText = "Building menu.db..."
-		tree := buildTree(func() []gamesdb.SearchResult {
-			var res []gamesdb.SearchResult
-			for _, f := range files {
-				res = append(res, gamesdb.SearchResult{
-					SystemId: f.SystemId,
-					Name:     filepath.Base(f.Path),
-					Path:     f.Path,
-				})
-			}
-			return res
-		}())
+		tree := buildTree(files)
 
 		if f, ferr := os.Create(menuPath); ferr == nil {
 			_ = gob.NewEncoder(f).Encode(tree)
