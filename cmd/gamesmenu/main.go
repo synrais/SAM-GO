@@ -45,22 +45,35 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             systems[sysId] = sysNode
         }
 
-        // ✅ Use the path from FileInfo directly
+        // Split path and trim everything before sysId
         parts := strings.Split(f.Path, string(filepath.Separator))
 
+        var relParts []string
+        for i, p := range parts {
+            if strings.EqualFold(p, sysId) {
+                relParts = parts[i:] // keep sysId and everything after
+                break
+            }
+        }
+        if len(relParts) == 0 {
+            // fallback: only use filename if sysId not in path
+            relParts = []string{filepath.Base(f.Path)}
+        }
+
+        // Walk tree
         current := sysNode
-        for i, part := range parts {
+        for i, part := range relParts {
             if part == "" {
                 continue
             }
-            if i == len(parts)-1 {
-                // Leaf node: actual game
+            if i == len(relParts)-1 {
+                // Leaf node = game
                 current.Children[part] = &Node{
                     Name:     part,
                     IsFolder: false,
                     Game: &gamesdb.SearchResult{
                         SystemId: f.SystemId,
-                        Name:     filepath.Base(f.Path), // filename only
+                        Name:     filepath.Base(f.Path),
                         Path:     f.Path,
                     },
                 }
