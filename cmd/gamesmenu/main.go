@@ -31,81 +31,91 @@ type Node struct {
 }
 
 func buildTree(results []gamesdb.SearchResult) map[string]*Node {
-    systems := make(map[string]*Node)
+	systems := make(map[string]*Node)
 
-    for _, result := range results {
-        sysId := result.SystemId
-        sysNode, ok := systems[sysId]
-        if !ok {
-            sysNode = &Node{
-                Name:     sysId,
-                IsFolder: true,
-                Children: make(map[string]*Node),
-            }
-            systems[sysId] = sysNode
-        }
+	for _, result := range results {
+		sysId := result.SystemId
+		sysNode, ok := systems[sysId]
+		if !ok {
+			sysNode = &Node{
+				Name:     sysId,
+				IsFolder: true,
+				Children: make(map[string]*Node),
+			}
+			systems[sysId] = sysNode
+		}
 
-        rel := result.Path
-        var parts []string
+		rel := result.Path
+		var parts []string
 
-        if idx := strings.Index(rel, ".zip"+string(filepath.Separator)); idx != -1 {
-            inside := rel[idx+len(".zip"+string(filepath.Separator)):]
-            parts = strings.Split(inside, string(filepath.Separator))
-        } else {
-            system, err := games.GetSystem(sysId)
-            if err == nil {
-                for _, sysFolder := range system.Folder {
-                    marker := sysFolder + string(filepath.Separator)
-                    if idx := strings.Index(strings.ToLower(rel), strings.ToLower(marker)); idx != -1 {
-                        inside := rel[idx+len(marker):]
-                        folderParts := strings.Split(sysFolder, string(filepath.Separator))
-                        if len(folderParts) > 0 && folderParts[0] == "" {
-                            folderParts = folderParts[1:]
-                        }
+		// -------------------------
+		// Case 1: Game inside a ZIP
+		// -------------------------
+		if idx := strings.Index(rel, ".zip"+string(filepath.Separator)); idx != -1 {
+			inside := rel[idx+len(".zip"+string(filepath.Separator)):]
+			parts = strings.Split(inside, string(filepath.Separator))
 
-                        // 🔹 skip the first folder, start from its children
-                        splitInside := strings.Split(inside, string(filepath.Separator))
-                        if len(splitInside) > 1 {
-                            parts = append(folderParts, splitInside[1:]...)
-                        } else {
-                            parts = append(folderParts, splitInside...)
-                        }
-                        break
-                    }
-                }
-            }
-            if len(parts) == 0 {
-                parts = []string{filepath.Base(rel)}
-            }
-        }
+		} else {
+			// -------------------------
+			// Case 2: Normal folder layout
+			// -------------------------
+			system, err := games.GetSystem(sysId)
+			if err == nil {
+				for _, sysFolder := range system.Folder {
+					marker := sysFolder + string(filepath.Separator)
+					if idx := strings.Index(strings.ToLower(rel), strings.ToLower(marker)); idx != -1 {
+						inside := rel[idx+len(marker):]
+						folderParts := strings.Split(inside, string(filepath.Separator))
 
-        current := sysNode
-        for i, part := range parts {
-            if part == "" {
-                continue
-            }
-            if i == len(parts)-1 {
-                res := result
-                current.Children[part] = &Node{
-                    Name:     part,
-                    IsFolder: false,
-                    Game:     &res,
-                }
-            } else {
-                child, ok := current.Children[part]
-                if !ok {
-                    child = &Node{
-                        Name:     part,
-                        IsFolder: true,
-                        Children: make(map[string]*Node),
-                    }
-                    current.Children[part] = child
-                }
-                current = child
-            }
-        }
-    }
-    return systems
+						// ✅ Skip the first folder (fixes Amiga/Amiga)
+						if len(folderParts) > 1 {
+							parts = folderParts[1:]
+						} else {
+							parts = folderParts
+						}
+						break
+					}
+				}
+			}
+
+			// Fallback: just use the file name
+			if len(parts) == 0 {
+				parts = []string{filepath.Base(rel)}
+			}
+		}
+
+		// -------------------------
+		// Build tree nodes
+		// -------------------------
+		current := sysNode
+		for i, part := range parts {
+			if part == "" {
+				continue
+			}
+			if i == len(parts)-1 {
+				// Leaf = game
+				res := result
+				current.Children[part] = &Node{
+					Name:     part,
+					IsFolder: false,
+					Game:     &res,
+				}
+			} else {
+				// Intermediate = folder
+				child, ok := current.Children[part]
+				if !ok {
+					child = &Node{
+						Name:     part,
+						IsFolder: true,
+						Children: make(map[string]*Node),
+					}
+					current.Children[part] = child
+				}
+				current = child
+			}
+		}
+	}
+	return systems
 }
 
 // Flatten tree into []FileInfo for gamesdb.UpdateNames
