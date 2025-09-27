@@ -2,6 +2,7 @@ package gamesdb
 
 import (
 	"bytes"
+	"encoding/gob"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -101,9 +102,13 @@ func writeIndexedSystems(db *bolt.DB, systems []string) error {
 	})
 }
 
+// Enriched file information.
 type fileInfo struct {
-	SystemId string
-	Path     string
+	SystemId   string
+	Name       string // base name without extension
+	NameExt    string // filename with extension
+	Path       string // full path
+	FolderName string // parent folder name
 }
 
 // Update the names index with the given files.
@@ -112,10 +117,7 @@ func updateNames(db *bolt.DB, files []fileInfo) error {
 		bns := tx.Bucket([]byte(BucketNames))
 
 		for _, file := range files {
-			base := filepath.Base(file.Path)
-			name := strings.TrimSuffix(base, filepath.Ext(base))
-
-			nk := NameKey(file.SystemId, name)
+			nk := NameKey(file.SystemId, file.Name)
 			err := bns.Put([]byte(nk), []byte(file.Path))
 			if err != nil {
 				return err
@@ -136,11 +138,6 @@ type IndexStatus struct {
 // Given a list of systems, index all valid game files on disk and write a
 // names index to the DB. Overwrites any existing names index, but does not
 // clean up old missing files.
-//
-// Takes a function which will be called with the current status of the index
-// during key steps.
-//
-// Returns the total number of files indexed.
 func NewNamesIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
@@ -163,6 +160,7 @@ func NewNamesIndex(
 		systemPaths[v.System.Id] = append(systemPaths[v.System.Id], v.Path)
 	}
 
+	var allFiles []fileInfo
 	g := new(errgroup.Group)
 
 	for _, k := range utils.AlphaMapKeys(systemPaths) {
@@ -182,8 +180,19 @@ func NewNamesIndex(
 				continue
 			}
 
-			for pf := range pathFiles {
-				files = append(files, fileInfo{SystemId: k, Path: pathFiles[pf]})
+			for _, fullPath := range pathFiles {
+				base := filepath.Base(fullPath)
+				ext := filepath.Ext(base)
+				name := strings.TrimSuffix(base, ext)
+				folder := filepath.Base(filepath.Dir(fullPath))
+
+				files = append(files, fileInfo{
+					SystemId:   k,
+					Name:       name,
+					NameExt:    base,
+					Path:       fullPath,
+					FolderName: folder,
+				})
 			}
 		}
 
@@ -192,6 +201,7 @@ func NewNamesIndex(
 		}
 
 		status.Files += len(files)
+		allFiles = append(allFiles, files...)
 
 		g.Go(func() error {
 			return updateNames(db, files)
@@ -215,6 +225,18 @@ func NewNamesIndex(
 	err = db.Sync()
 	if err != nil {
 		return status.Files, fmt.Errorf("error syncing database: %s", err)
+	}
+
+	// --- Write enriched GOB file alongside Bolt ---
+	gobFile, err := os.Create(config.GamesDb)
+	if err != nil {
+		return status.Files, fmt.Errorf("error creating gob file: %s", err)
+	}
+	defer gobFile.Close()
+
+	encoder := gob.NewEncoder(gobFile)
+	if err := encoder.Encode(allFiles); err != nil {
+		return status.Files, fmt.Errorf("error writing gob file: %s", err)
 	}
 
 	return status.Files, nil
