@@ -26,21 +26,21 @@ func NameKey(systemId string, name string) string {
 	return systemId + ":" + name
 }
 
-// Check if the gamesdb exists on disk.
+// Check if the search.db exists on disk.
 func DbExists() bool {
-	_, err := os.Stat(config.GamesDb)
+	_, err := os.Stat(config.SearchDB)
 	return err == nil
 }
 
-// Open the gamesdb with the given options. If the database does not exist it
+// Open the search.db with the given options. If the database does not exist it
 // will be created and the buckets will be initialized.
 func open(options *bolt.Options) (*bolt.DB, error) {
-	err := os.MkdirAll(filepath.Dir(config.GamesDb), 0755)
+	err := os.MkdirAll(filepath.Dir(config.SearchDB), 0755)
 	if err != nil {
 		return nil, err
 	}
 
-	db, err := bolt.Open(config.GamesDb, 0600, options)
+	db, err := bolt.Open(config.SearchDB, 0600, options)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func open(options *bolt.Options) (*bolt.DB, error) {
 	return db, nil
 }
 
-// Open the gamesdb with default options for generating names index.
+// Open the search.db with default options for generating names index.
 func openNames() (*bolt.DB, error) {
 	return open(&bolt.Options{
 		NoSync:         true,
@@ -153,7 +153,7 @@ func NewNamesIndex(
 
 	db, err := openNames()
 	if err != nil {
-		return status.Files, fmt.Errorf("error opening gamesdb: %s", err)
+		return status.Files, fmt.Errorf("error opening search.db: %s", err)
 	}
 	defer db.Close()
 
@@ -233,7 +233,7 @@ func searchNamesGeneric(
 	test func(string, string) bool,
 ) ([]SearchResult, error) {
 	if !DbExists() {
-		return nil, fmt.Errorf("gamesdb does not exist")
+		return nil, fmt.Errorf("search.db does not exist")
 	}
 
 	db, err := open(&bolt.Options{ReadOnly: true})
@@ -316,7 +316,7 @@ func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, er
 	})
 }
 
-// Return true if a specific system is indexed in the gamesdb
+// Return true if a specific system is indexed in the search.db
 func SystemIndexed(system games.System) bool {
 	if !DbExists() {
 		return false
@@ -336,10 +336,10 @@ func SystemIndexed(system games.System) bool {
 	return utils.Contains(systems, system.Id)
 }
 
-// Return all systems indexed in the gamesdb
+// Return all systems indexed in the search.db
 func IndexedSystems() ([]string, error) {
 	if !DbExists() {
-		return nil, fmt.Errorf("gamesdb does not exist")
+		return nil, fmt.Errorf("search.db does not exist")
 	}
 
 	db, err := open(&bolt.Options{ReadOnly: true})
