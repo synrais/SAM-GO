@@ -499,15 +499,36 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 			sysIds = append(sysIds, sys)
 		}
 
-		sort.Slice(sysIds, func(i, j int) bool {
-			if strings.EqualFold(sysIds[i], "ao486") {
+		// Build display names for sorting + showing
+		type sysEntry struct {
+			ID   string
+			Name string
+		}
+		var entries []sysEntry
+		for _, id := range sysIds {
+			name := id
+			if sys, err := games.GetSystem(id); err == nil {
+				name = sys.Name
+			}
+			entries = append(entries, sysEntry{ID: id, Name: name})
+		}
+
+		// Sort by friendly name, with ao486 pinned at the top
+		sort.Slice(entries, func(i, j int) bool {
+			if strings.EqualFold(entries[i].ID, "ao486") {
 				return true
 			}
-			if strings.EqualFold(sysIds[j], "ao486") {
+			if strings.EqualFold(entries[j].ID, "ao486") {
 				return false
 			}
-			return strings.ToLower(sysIds[i]) < strings.ToLower(sysIds[j])
+			return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
 		})
+
+		// Extract friendly names for the picker
+		var displayNames []string
+		for _, e := range entries {
+			displayNames = append(displayNames, e.Name)
+		}
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         "Systems",
@@ -520,7 +541,7 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 			DynamicActionLabel: func(idx int) string {
 				return "Open"
 			},
-		}, sysIds)
+		}, displayNames)
 		if err != nil {
 			return err
 		}
@@ -539,7 +560,8 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 			return nil
 		}
 		if button == 2 {
-			sysId := sysIds[selected]
+			// Use the ID from the sorted entries
+			sysId := entries[selected].ID
 			system, err := games.GetSystem(sysId)
 			if err != nil {
 				return err
