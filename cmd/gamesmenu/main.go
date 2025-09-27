@@ -278,29 +278,34 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 // Options
 // -------------------------
 func mainOptionsWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]*Node, error) {
-	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-		Title:         "Options",
-		Buttons:       []string{"Select", "Back"},
-		DefaultButton: 0,
-		ActionButton:  0,
-		ShowTotal:     false,
-		Width:         70,
-		Height:        18,
-	}, []string{"Update games database..."})
-	if err != nil {
-		return nil, err
-	}
+    // ✅ Clear the main screen first
+    stdscr.Erase()
+    stdscr.NoutRefresh()
+    _ = gc.Update()
 
-	if button == 0 && selected == 0 {
-		tree, err := generateIndexWindow(cfg, stdscr)
-		if err != nil {
-			return nil, err
-		}
-		cachedTree = tree
-		return tree, nil
-	}
+    button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+        Title:         "Options",
+        Buttons:       []string{"Select", "Back"},
+        DefaultButton: 0,
+        ActionButton:  0,
+        ShowTotal:     false,
+        Width:         70,
+        Height:        18,
+    }, []string{"Update games database..."})
+    if err != nil {
+        return nil, err
+    }
 
-	return nil, nil
+    if button == 0 && selected == 0 {
+        tree, err := generateIndexWindow(cfg, stdscr)
+        if err != nil {
+            return nil, err
+        }
+        cachedTree = tree
+        return tree, nil
+    }
+
+    return nil, nil
 }
 
 // -------------------------
