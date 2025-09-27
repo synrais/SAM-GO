@@ -45,9 +45,8 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             systems[sysId] = sysNode
         }
 
-        // ✅ Always use the stored path directly
-        rel := f.Path
-        parts := strings.Split(rel, string(filepath.Separator))
+        // ✅ Use the path from FileInfo directly
+        parts := strings.Split(f.Path, string(filepath.Separator))
 
         current := sysNode
         for i, part := range parts {
@@ -55,13 +54,13 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
                 continue
             }
             if i == len(parts)-1 {
-                // leaf = actual file
+                // Leaf node: actual game
                 current.Children[part] = &Node{
                     Name:     part,
                     IsFolder: false,
                     Game: &gamesdb.SearchResult{
                         SystemId: f.SystemId,
-                        Name:     filepath.Base(f.Path),
+                        Name:     f.Name, // keep it consistent with Bolt’s key
                         Path:     f.Path,
                     },
                 }
