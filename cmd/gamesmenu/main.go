@@ -198,9 +198,17 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			return
 		}
 
-		// 🔹 Step 2: Build menu.db from same FileInfo list
+		// 🔹 Step 2: Build menu.db from the *same files we wrote to Bolt*
 		status.DisplayText = "Building menu.db..."
-		tree := buildTree(files)
+		var results []gamesdb.SearchResult
+		for _, f := range files {
+			results = append(results, gamesdb.SearchResult{
+				SystemId: f.SystemId,
+				Name:     filepath.Base(f.Path),
+				Path:     f.Path,
+			})
+		}
+		tree := buildTree(results)
 
 		if f, ferr := os.Create(menuPath); ferr == nil {
 			_ = gob.NewEncoder(f).Encode(tree)
@@ -215,7 +223,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 			status.Complete = true
 			return
 		}
-		// we already wrote in NewNamesIndex, just sync
 		_ = db.Sync()
 		db.Close()
 
@@ -250,7 +257,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (map[string]
 		gc.Nap(100)
 	}
 
-	// ✅ Clear the indexing window once complete
+	// ✅ Clear window once complete
 	win.Erase()
 	win.NoutRefresh()
 	_ = gc.Update()
