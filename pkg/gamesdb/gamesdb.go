@@ -274,28 +274,17 @@ type IndexStatus struct {
 	Files    int
 }
 
-// NewNamesIndex scans all systems, writes to Bolt as it goes,
-// and reports progress per system.
+// NewNamesIndex scans all systems concurrently and reports progress.
 func NewNamesIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
 	update func(IndexStatus),
 ) ([]FileInfo, error) {
 	status := IndexStatus{Total: len(systems)}
-
-	// Ensure old DB is removed
-	_ = os.Remove(config.GamesDb)
-
-	db, err := OpenForWrite()
-	if err != nil {
-		return nil, fmt.Errorf("error opening gamesdb: %w", err)
-	}
-	defer db.Close()
-
 	var (
-		mu   sync.Mutex
-		out  []FileInfo
-		step int
+		mu        sync.Mutex
+		sysResults = make(map[string][]FileInfo)
+		step      int
 	)
 
 	g := new(errgroup.Group)
@@ -316,16 +305,9 @@ func NewNamesIndex(
 				}
 			}
 
-			// Write directly to Bolt
-			if len(sysFiles) > 0 {
-				if err := updateNames(db, sysFiles); err != nil {
-					return fmt.Errorf("error updating names for %s: %w", sys.Id, err)
-				}
-			}
-
-			// Report progress
+			// Save results for this system
 			mu.Lock()
-			out = append(out, sysFiles...)
+			sysResults[sys.Id] = sysFiles
 			step++
 			status.Step = step
 			status.SystemId = sys.Id
@@ -341,19 +323,15 @@ func NewNamesIndex(
 		return nil, err
 	}
 
-	// Write all indexed systems once at the end
-	systemIds := make([]string, 0, len(systems))
+	// Preserve original system order (like Wizzo’s)
+	var ordered []FileInfo
 	for _, sys := range systems {
-		systemIds = append(systemIds, sys.Id)
-	}
-	if err := writeIndexedSystems(db, systemIds); err != nil {
-		return nil, fmt.Errorf("error writing indexed systems: %w", err)
+		if files, ok := sysResults[sys.Id]; ok {
+			ordered = append(ordered, files...)
+		}
 	}
 
-	// ✅ Ensure Bolt flushes everything
-	_ = db.Sync()
-
-	return out, nil
+	return ordered, nil
 }
 
 //
