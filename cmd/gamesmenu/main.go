@@ -45,11 +45,10 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             systems[sysId] = sysNode
         }
 
-        // break path into parts after system root
-        rel := f.Path
-        relParts := strings.Split(rel, string(filepath.Separator))
+        // break path into parts
+        relParts := strings.Split(f.Path, string(filepath.Separator))
 
-        // find the index of systemId in path and start from there
+        // ✅ 1. Start from SystemId
         startIdx := -1
         for i, p := range relParts {
             if strings.EqualFold(p, sysId) {
@@ -61,47 +60,44 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             relParts = relParts[startIdx:]
         }
 
-        // ✅ Collapse zips if same name as systemId
-        var newParts []string
-        for i := 0; i < len(relParts); i++ {
-            part := relParts[i]
-            if strings.EqualFold(part, sysId+".zip") {
-                // collapse systemId.zip away
-                continue
-            }
-            newParts = append(newParts, part)
-        }
-        relParts = newParts
-
-        // ✅ Handle .txt-based folder names (turn into real folders)
-        newParts = nil
-        for i := 0; i < len(relParts); i++ {
-            part := relParts[i]
-
-            if strings.HasSuffix(strings.ToLower(part), ".txt") {
-                txtName := strings.TrimSuffix(part, ".txt")
-
-                // Drop "listings" if it’s immediately before
-                if len(newParts) > 0 && strings.EqualFold(newParts[len(newParts)-1], "listings") {
-                    newParts = newParts[:len(newParts)-1]
+        // ✅ 2. Collapse SystemId.zip
+        {
+            var tmp []string
+            for _, p := range relParts {
+                if strings.EqualFold(p, sysId+".zip") {
+                    continue // drop it
                 }
-
-                // Keep txtName as a folder
-                newParts = append(newParts, txtName)
-            } else {
-                newParts = append(newParts, part)
+                tmp = append(tmp, p)
             }
+            relParts = tmp
         }
-        relParts = newParts
 
-        // ✅ Build into tree
+        // ✅ 3. Handle .txt “folders”
+        {
+            var tmp []string
+            for i := 0; i < len(relParts); i++ {
+                part := relParts[i]
+                if strings.HasSuffix(strings.ToLower(part), ".txt") {
+                    txtName := strings.TrimSuffix(part, ".txt")
+                    // drop "listings" if it’s right before
+                    if len(tmp) > 0 && strings.EqualFold(tmp[len(tmp)-1], "listings") {
+                        tmp = tmp[:len(tmp)-1]
+                    }
+                    tmp = append(tmp, txtName)
+                } else {
+                    tmp = append(tmp, part)
+                }
+            }
+            relParts = tmp
+        }
+
+        // ✅ 4. Build tree from cleaned relParts
         current := sysNode
         for i, part := range relParts {
             if part == "" {
                 continue
             }
             if i == len(relParts)-1 {
-                // leaf = game file
                 current.Children[part] = &Node{
                     Name:     part,
                     IsFolder: false,
