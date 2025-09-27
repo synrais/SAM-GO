@@ -494,42 +494,45 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, query string, launc
 // -------------------------
 func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*Node) error {
 	for {
+		// Build slice of system IDs and friendly names
 		var sysIds []string
+		var sysNames []string
 		for sys := range systems {
 			sysIds = append(sysIds, sys)
+			if s, err := games.GetSystem(sys); err == nil {
+				sysNames = append(sysNames, s.Name)
+			} else {
+				sysNames = append(sysNames, sys) // fallback to ID
+			}
 		}
 
-		// Build display names for sorting + showing
-		type sysEntry struct {
-			ID   string
-			Name string
-		}
-		var entries []sysEntry
-		for _, id := range sysIds {
-			name := id
-			if sys, err := games.GetSystem(id); err == nil {
-				name = sys.Name
+		// Sort by friendly name
+		sort.SliceStable(sysIds, func(i, j int) bool {
+			var nameI, nameJ string
+			if s, err := games.GetSystem(sysIds[i]); err == nil {
+				nameI = s.Name
+			} else {
+				nameI = sysIds[i]
 			}
-			entries = append(entries, sysEntry{ID: id, Name: name})
-		}
-
-		// Sort by friendly name, with ao486 pinned at the top
-		sort.Slice(entries, func(i, j int) bool {
-			if strings.EqualFold(entries[i].ID, "ao486") {
-				return true
+			if s, err := games.GetSystem(sysIds[j]); err == nil {
+				nameJ = s.Name
+			} else {
+				nameJ = sysIds[j]
 			}
-			if strings.EqualFold(entries[j].ID, "ao486") {
-				return false
-			}
-			return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
+			return strings.ToLower(nameI) < strings.ToLower(nameJ)
 		})
 
-		// Extract friendly names for the picker
-		var displayNames []string
-		for _, e := range entries {
-			displayNames = append(displayNames, e.Name)
+		// Build names list in the same order as sysIds
+		var sysDisplay []string
+		for _, sysId := range sysIds {
+			if s, err := games.GetSystem(sysId); err == nil {
+				sysDisplay = append(sysDisplay, s.Name)
+			} else {
+				sysDisplay = append(sysDisplay, sysId)
+			}
 		}
 
+		// Draw menu
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         "Systems",
 			Buttons:       []string{"PgUp", "PgDn", "", "Search", "Options", "Exit"},
@@ -541,7 +544,7 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 			DynamicActionLabel: func(idx int) string {
 				return "Open"
 			},
-		}, displayNames)
+		}, sysDisplay)
 		if err != nil {
 			return err
 		}
@@ -560,8 +563,7 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, systems map[string]*N
 			return nil
 		}
 		if button == 2 {
-			// Use the ID from the sorted entries
-			sysId := entries[selected].ID
+			sysId := sysIds[selected]
 			system, err := games.GetSystem(sysId)
 			if err != nil {
 				return err
