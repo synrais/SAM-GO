@@ -26,11 +26,6 @@ func NameKey(systemId string, name string) string {
 	return systemId + ":" + name
 }
 
-// CleanGameName extracts the name+ext from a game file path.
-func CleanGameName(path string) string {
-    return filepath.Base(path)
-}
-
 // Check if the gamesdb exists on disk.
 func DbExists() bool {
 	_, err := os.Stat(config.GamesDb)
@@ -117,10 +112,10 @@ func updateNames(db *bolt.DB, files []fileInfo) error {
 		bns := tx.Bucket([]byte(BucketNames))
 
 		for _, file := range files {
-			// Keep the extension in the key
 			base := filepath.Base(file.Path)
+			name := strings.TrimSuffix(base, filepath.Ext(base))
 
-			nk := NameKey(file.SystemId, base)
+			nk := NameKey(file.SystemId, name)
 			err := bns.Put([]byte(nk), []byte(file.Path))
 			if err != nil {
 				return err
