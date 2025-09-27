@@ -76,8 +76,8 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
             }
         }
 
-        // ✅ Handle `.txt` folders
-        for i := 0; i < len(relParts); i++ {
+        // ✅ Handle `.txt` folders (only in middle of path, not final file)
+        for i := 0; i < len(relParts)-1; i++ {
             part := relParts[i]
             if strings.HasSuffix(strings.ToLower(part), ".txt") {
                 txtName := strings.TrimSuffix(part, ".txt")
@@ -86,7 +86,7 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
                 // Drop "listings" right before
                 if i > 0 && strings.EqualFold(relParts[i-1], "listings") {
                     relParts = append(relParts[:i-1], relParts[i:]...)
-                    i-- // adjust index
+                    i-- // adjust index after removal
                 }
             }
         }
@@ -98,6 +98,7 @@ func buildTree(files []gamesdb.FileInfo) map[string]*Node {
                 continue
             }
             if i == len(relParts)-1 {
+                // leaf = game
                 current.Children[part] = &Node{
                     Name:     part,
                     IsFolder: false,
