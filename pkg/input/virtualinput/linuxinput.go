@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	DeviceName     = "Zaparoo"
+	DeviceName     = "SAM"
 	DefaultTimeout = 40 * time.Millisecond
 	uinputDev      = "/dev/uinput"
 )
