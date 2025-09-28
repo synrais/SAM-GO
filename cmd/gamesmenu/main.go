@@ -402,39 +402,14 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 			continue
 		}
 
-		// --- Group results by system ---
-		grouped := make(map[string][]gamesdb.SearchResult)
-		for _, r := range results {
-			sysName := r.SystemId
-			if sys, err := games.GetSystem(r.SystemId); err == nil {
-				sysName = sys.Name
-			}
-			grouped[sysName] = append(grouped[sysName], r)
-		}
-
-		// Sort system groups alphabetically
-		var systemNames []string
-		for name := range grouped {
-			systemNames = append(systemNames, name)
-		}
-		sort.Strings(systemNames)
-
-		// Flatten into items[] with headers
+		// Build results list
 		var items []string
-		var isHeader []bool
-		var flatResults []gamesdb.SearchResult
-
-		for _, sysName := range systemNames {
-			// Header line
-			items = append(items, fmt.Sprintf("= %s =", sysName))
-			isHeader = append(isHeader, true)
-
-			// Game lines
-			for _, r := range grouped[sysName] {
-				items = append(items, r.Name)
-				isHeader = append(isHeader, false)
-				flatResults = append(flatResults, r)
+		for _, r := range results {
+			systemName := r.SystemId
+			if sys, err := games.GetSystem(r.SystemId); err == nil {
+				systemName = sys.Name
 			}
+			items = append(items, fmt.Sprintf("[%s] %s", systemName, r.Name))
 		}
 
 		// loop inside results picker so launching doesn’t exit search
@@ -450,23 +425,12 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 				ShowTotal:     true,
 				Width:         70,
 				Height:        20,
-				DynamicActionLabel: func(idx int) string {
-					if isHeader[idx] {
-						return "" // headers have no actions
-					}
-					return "Launch"
-				},
 			}, items)
 			if err != nil {
 				return err
 			}
-
-			if button == 2 { // Launch
-				if isHeader[selected] {
-					// Skip headers entirely
-					continue
-				}
-				game := flatResults[selected-countHeadersBefore(selected, isHeader)]
+			if button == 2 {
+				game := results[selected]
 				sys, _ := games.GetSystem(game.SystemId)
 				if err := mister.LaunchGame(cfg, *sys, game.Path); err != nil {
 					return err
@@ -481,17 +445,6 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 			}
 		}
 	}
-}
-
-// helper: count number of header entries before a given index
-func countHeadersBefore(idx int, isHeader []bool) int {
-	count := 0
-	for i := 0; i < idx; i++ {
-		if isHeader[i] {
-			count++
-		}
-	}
-	return count
 }
 
 // -------------------------
