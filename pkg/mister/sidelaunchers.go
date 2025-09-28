@@ -382,62 +382,42 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 // FDS
 // --------------------------------------------------
 func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
-    logFile := "/tmp/fds_sidelauncher.log"
-    f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_TRUNC, 0644)
-    var useStdout bool
-    if err != nil {
-        fmt.Println("[FDS] Failed to open log file, falling back to stdout:", err)
-        useStdout = true
-    }
-    log := func(msg string) {
-        ts := time.Now().Format("2006-01-02 15:04:05")
-        line := fmt.Sprintf("[%s] %s\n", ts, msg)
-        if useStdout {
-            fmt.Print(line)
-        } else {
-            f.WriteString(line)
-        }
-    }
-    if f != nil {
-        defer f.Close()
-    }
+	// --- Logging helper ---
+	logFile := "/tmp/fds_sidelauncher.log"
+	appendLog := func(msg string) {
+		ts := time.Now().Format("2006-01-02 15:04:05")
+		_ = os.WriteFile(logFile, []byte(fmt.Sprintf("[%s] %s\n", ts, msg)), 0644|os.O_APPEND)
+	}
 
-    log(fmt.Sprintf("Launching FDS title: %s", path))
+	appendLog(fmt.Sprintf("Launching FDS title: %s", path))
 
-    // Launch the game normally
-    if err := LaunchGame(cfg, system, path); err != nil {
-        log(fmt.Sprintf("ERROR: failed to launch FDS game: %v", err))
-        return fmt.Errorf("failed to launch FDS game: %w", err)
-    }
+	// Launch game without recursion (direct MGL launch)
+	if err := launchTempMgl(cfg, &system, path); err != nil {
+		appendLog(fmt.Sprintf("ERROR: failed to launch FDS game: %v", err))
+		return fmt.Errorf("failed to launch FDS game: %w", err)
+	}
 
-    log("FDS game launched, starting goroutine for BIOS skip…")
+	// Background goroutine to press Button 1 after 10s
+	go func() {
+		appendLog("Creating virtual gamepad...")
+		gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
+		if err != nil {
+			appendLog(fmt.Sprintf("ERROR: failed to create gamepad: %v", err))
+			return
+		}
+		defer gpd.Close()
 
-    go func() {
-        gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
-        if err != nil {
-            log(fmt.Sprintf("Failed to create virtual gamepad: %v", err))
-            return
-        }
-        defer func() {
-            if err := gpd.Close(); err != nil {
-                log(fmt.Sprintf("Failed to close gamepad: %v", err))
-            }
-        }()
+		appendLog("Waiting 10 seconds before pressing Button 1...")
+		time.Sleep(10 * time.Second)
 
-        log("Waiting 10s before pressing button 1…")
-        time.Sleep(10 * time.Second)
+		if err := gpd.Press(uinput.ButtonEast); err != nil {
+			appendLog(fmt.Sprintf("ERROR: failed to press Button 1: %v", err))
+			return
+		}
 
-        if code, ok := virtualinput.ToGamepadCode("A"); ok {
-            if err := gpd.Press(code); err != nil {
-                log(fmt.Sprintf("Error pressing button 1: %v", err))
-            } else {
-                log("Successfully pressed button 1 to skip BIOS")
-            }
-        } else {
-            log("No mapping found for button 1 (A)")
-        }
-    }()
+		appendLog("Successfully pressed Button 1 to skip BIOS.")
+	}()
 
-    return nil
+	return nil
 }
 
