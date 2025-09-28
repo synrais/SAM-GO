@@ -36,13 +36,13 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 	viewWidth := opts.Width - 4
 	pgAmount := viewHeight - 1
 
-	// 🔹 Proper scrollbar fix: calculate viewStart so InitialIndex is visible
+	// ensure InitialIndex is visible
 	viewStart := 0
 	if selectedItem >= viewHeight {
 		if selectedItem > len(items)-viewHeight {
 			viewStart = len(items) - viewHeight
 		} else {
-			viewStart = selectedItem - (viewHeight / 2) // center the highlight
+			viewStart = selectedItem - (viewHeight / 2)
 			if viewStart < 0 {
 				viewStart = 0
 			}
@@ -120,7 +120,6 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 
 			if len(item) > viewWidth {
 				if viewStart+i == selectedItem {
-					// build marquee string with gap
 					marquee := item + "   "
 					marquee = marquee + marquee
 					offset := scrollOffset % (len(item) + 3)
@@ -152,6 +151,13 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 			totalStatus := fmt.Sprintf("%*d/%d", len(fmt.Sprint(len(items))), selectedItem+1, len(items))
 			win.MovePrint(0, 2, totalStatus)
 		}
+
+		// scrollbar body
+		for y := 1; y < height-3; y++ {
+			win.MoveAddChar(y, width-3, gc.ACS_VLINE)
+		}
+
+		// arrows
 		if viewStart > 0 {
 			win.MoveAddChar(0, width-3, gc.ACS_UARROW)
 		} else {
