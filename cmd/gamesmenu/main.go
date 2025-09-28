@@ -21,9 +21,6 @@ import (
 
 const appName = "gamesmenu"
 
-// -------------------------
-// Local struct for menu.db
-// -------------------------
 type MenuFile struct {
 	SystemId     string
 	SystemName   string
@@ -35,9 +32,6 @@ type MenuFile struct {
 	MenuPath     string
 }
 
-// -------------------------
-// Load Gob from menu.db
-// -------------------------
 func loadMenuDb() ([]MenuFile, error) {
 	f, err := os.Open(config.MenuDb)
 	if err != nil {
@@ -53,9 +47,6 @@ func loadMenuDb() ([]MenuFile, error) {
 	return files, nil
 }
 
-// -------------------------
-// Shared DB Indexer
-// -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
 	_ = os.Remove(config.MenuDb)
 	_ = os.Remove(config.GamesDb)
@@ -143,9 +134,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 	return loadingWindow(stdscr, loadMenuDb)
 }
 
-// -------------------------
-// Options Menu
-// -------------------------
 func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
 	stdscr.Clear()
 	stdscr.Refresh()
@@ -158,6 +146,7 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) 
 		ShowTotal:     false,
 		Width:         60,
 		Height:        10,
+		InitialIndex:  0,
 	}, []string{"Rebuild games database..."})
 	if err != nil {
 		return nil, err
@@ -169,9 +158,6 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) 
 	return nil, nil
 }
 
-// -------------------------
-// Tree structure
-// -------------------------
 type Node struct {
 	Name     string
 	Files    []MenuFile
@@ -197,9 +183,6 @@ func buildTree(files []MenuFile) *Node {
 	return root
 }
 
-// -------------------------
-// Browse inside folders
-// -------------------------
 func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startIndex int) (int, error) {
 	currentIndex := startIndex
 
@@ -234,6 +217,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 			ShowTotal:     true,
 			Width:         70,
 			Height:        20,
+			InitialIndex:  currentIndex, // 🔹 restore highlight
 			DynamicActionLabel: func(idx int) string {
 				if idx < len(folders) {
 					return "Open"
@@ -254,14 +238,13 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 				if err != nil {
 					return currentIndex, err
 				}
-				// restore parent highlight to the folder
-				currentIndex = selected
+				currentIndex = selected // back → stay on folder
 				_ = childIdx
 			} else {
 				file := node.Files[selected-len(folders)]
 				sys, _ := games.GetSystem(file.SystemId)
 				_ = mister.LaunchGame(cfg, *sys, file.Path)
-				// stay on same file after launch
+				// stay on same file
 			}
 		case 3: // Back
 			return currentIndex, nil
@@ -269,9 +252,6 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 	}
 }
 
-// -------------------------
-// Main Menu (systems)
-// -------------------------
 func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error {
 	tree := buildTree(files)
 
@@ -298,6 +278,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			ShowTotal:     true,
 			Width:         70,
 			Height:        20,
+			InitialIndex:  startIndex, // 🔹 persist highlight
 			DynamicActionLabel: func(idx int) string {
 				return "Open"
 			},
@@ -314,14 +295,12 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			if err != nil {
 				return err
 			}
-
 		case 3: // Search
 			if err := searchWindow(cfg, stdscr); err != nil {
 				return err
 			}
 			stdscr.Clear()
 			stdscr.Refresh()
-
 		case 4: // Options
 			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
 				return err
@@ -340,16 +319,12 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 				stdscr.Clear()
 				stdscr.Refresh()
 			}
-
 		case 5: // Exit
 			return nil
 		}
 	}
 }
 
-// -------------------------
-// Search Menu
-// -------------------------
 func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	stdscr.Clear()
 	stdscr.Refresh()
@@ -428,6 +403,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 				ShowTotal:     true,
 				Width:         70,
 				Height:        20,
+				InitialIndex:  startIndex, // 🔹 persist highlight
 			}, items)
 			if err != nil {
 				return err
@@ -437,7 +413,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 				game := results[selected]
 				sys, _ := games.GetSystem(game.SystemId)
 				_ = mister.LaunchGame(cfg, *sys, game.Path)
-				continue // stay highlighted
+				continue
 			}
 			if button == 3 {
 				stdscr.Clear()
@@ -448,9 +424,6 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	}
 }
 
-// -------------------------
-// Startup Loading Spinner
-// -------------------------
 func loadingWindow(stdscr *gc.Window, loadFn func() ([]MenuFile, error)) ([]MenuFile, error) {
 	status := struct {
 		Done   bool
@@ -485,9 +458,6 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]MenuFile, error)) ([]Menu
 	return status.Result, nil
 }
 
-// -------------------------
-// Main
-// -------------------------
 func main() {
 	printPtr := flag.Bool("print", false, "Print game path instead of launching")
 	flag.Parse()
