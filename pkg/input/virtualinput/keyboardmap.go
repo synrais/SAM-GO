@@ -105,10 +105,10 @@ var KeyboardMap = map[string]int{
 	"{insert}":     110,
 	"{del}":        111,
 	"{delete}":     111,
-	"{volup}":      115,
-	"{volumeup}":   115,
 	"{voldn}":      114,
 	"{volumedown}": 114,
+	"{volup}":      115,
+	"{volumeup}":   115,
 	// shift
 	"~":      -41,
 	"!":      -2,
