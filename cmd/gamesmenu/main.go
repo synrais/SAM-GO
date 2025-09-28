@@ -31,6 +31,7 @@ type MenuFile struct {
 	NameExt      string
 	Path         string
 	FolderName   string
+	MenuPath     string
 }
 
 // -------------------------
@@ -93,7 +94,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 	go func() {
 		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
 			systemName := is.SystemId
-			if sys, err := games.GetSystem(is.SystemId); err == nil {
+			if sys, ok := games.GetSystem(is.SystemId); ok {
 				systemName = sys.Name
 			}
 			text := fmt.Sprintf("Indexing %s... (%d files)", systemName, is.Files)
@@ -161,51 +162,41 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) 
 }
 
 // -------------------------
-// System Menu
+// Main Menu (flat by MenuPath)
 // -------------------------
-func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error {
-	// group by system
-	sysMap := make(map[string][]MenuFile)
-	sysNames := make(map[string]string)
-	for _, f := range files {
-		sysMap[f.SystemId] = append(sysMap[f.SystemId], f)
-		sysNames[f.SystemId] = f.SystemName
-	}
-
-	// stable order by friendly name
-	var sysIds []string
-	for id := range sysMap {
-		sysIds = append(sysIds, id)
-	}
-	sort.Slice(sysIds, func(i, j int) bool {
-		return strings.ToLower(sysNames[sysIds[i]]) < strings.ToLower(sysNames[sysIds[j]])
-	})
-
+func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error {
 	for {
-		var display []string
-		for _, id := range sysIds {
-			display = append(display, sysNames[id])
+		stdscr.Clear()
+		stdscr.Refresh()
+
+		// sort all files by MenuPath
+		sort.Slice(files, func(i, j int) bool {
+			return strings.ToLower(files[i].MenuPath) < strings.ToLower(files[j].MenuPath)
+		})
+
+		var items []string
+		for _, f := range files {
+			items = append(items, f.MenuPath)
 		}
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-			Title:         "Systems",
-			Buttons:       []string{"PgUp", "PgDn", "Open", "Search", "Options", "Exit"},
+			Title:         "Games",
+			Buttons:       []string{"PgUp", "PgDn", "Launch", "Search", "Options", "Exit"},
 			ActionButton:  2,
 			DefaultButton: 2,
 			ShowTotal:     true,
-			Width:         70,
-			Height:        20,
-		}, display)
+			Width:         80,
+			Height:        22,
+		}, items)
 		if err != nil {
 			return err
 		}
 
 		switch button {
-		case 2: // Open
-			sysId := sysIds[selected]
-			if err := browseSystem(cfg, stdscr, sysNames[sysId], sysMap[sysId]); err != nil {
-				return err
-			}
+		case 2: // Launch
+			game := files[selected]
+			sys, _ := games.GetSystem(game.SystemId)
+			return mister.LaunchGame(cfg, *sys, game.Path)
 		case 3: // Search
 			if err := searchWindow(cfg, stdscr); err != nil {
 				return err
@@ -214,51 +205,12 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) err
 			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
 				return err
 			} else if newFiles != nil {
-				// reload systems after rebuild
-				return systemMenu(cfg, stdscr, newFiles)
+				files = newFiles
 			}
 		case 5: // Exit
 			return nil
 		}
 	}
-}
-
-// -------------------------
-// Browse a single system
-// -------------------------
-func browseSystem(cfg *config.UserConfig, stdscr *gc.Window, sysName string, files []MenuFile) error {
-	stdscr.Clear()
-	stdscr.Refresh()
-
-	// sort by game name
-	sort.Slice(files, func(i, j int) bool {
-		return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
-	})
-
-	var items []string
-	for _, f := range files {
-		items = append(items, f.NameExt)
-	}
-
-	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-		Title:         sysName,
-		Buttons:       []string{"PgUp", "PgDn", "Launch", "Back"},
-		ActionButton:  2,
-		DefaultButton: 2,
-		ShowTotal:     true,
-		Width:         70,
-		Height:        20,
-	}, items)
-	if err != nil {
-		return err
-	}
-
-	if button == 2 {
-		game := files[selected]
-		sys, _ := games.GetSystem(game.SystemId)
-		return mister.LaunchGame(cfg, *sys, game.Path)
-	}
-	return nil
 }
 
 // -------------------------
@@ -286,7 +238,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	var items []string
 	for _, r := range results {
 		systemName := r.SystemId
-		if sys, err := games.GetSystem(r.SystemId); err == nil {
+		if sys, ok := games.GetSystem(r.SystemId); ok {
 			systemName = sys.Name
 		}
 		items = append(items, fmt.Sprintf("[%s] %s", systemName, r.Name))
@@ -341,12 +293,12 @@ func main() {
 	}
 
 	if launchGame {
-		if err := systemMenu(cfg, stdscr, files); err != nil {
+		if err := mainMenu(cfg, stdscr, files); err != nil {
 			log.Fatal(err)
 		}
 	} else {
 		for _, f := range files {
-			fmt.Printf("[%s] %s\n", f.SystemName, f.NameExt)
+			fmt.Println(f.MenuPath)
 		}
 	}
 }
