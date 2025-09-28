@@ -234,8 +234,13 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 		case gc.KEY_ENTER, 10, 13:
 			if selectedButton == opts.ActionButton {
 				return selectedButton, selectedItem, nil
+			} else if selectedButton < len(opts.Buttons) && opts.Buttons[selectedButton] == "PgUp" {
+				pageUp()
+			} else if selectedButton < len(opts.Buttons) && opts.Buttons[selectedButton] == "PgDn" {
+				pageDown()
+			} else {
+				return selectedButton, -1, nil
 			}
-			return selectedButton, -1, nil
 		}
 	}
 
