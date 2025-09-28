@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/input"
+	"github.com/bendahl/uinput"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,11 +34,7 @@ func IsScriptRunning() bool {
 		return false
 	}
 
-	if len(out) > 0 {
-		return true
-	} else {
-		return false
-	}
+	return len(out) > 0
 }
 
 func KillActiveScript() error {
@@ -46,21 +43,14 @@ func KillActiveScript() error {
 	}
 
 	// TODO: this doesn't actually work right now. it just orphans the launched script process
-	// one good idea is to launch scripts with and env variable that contains the pid of the menu
+	// one good idea is to launch scripts with an env variable that contains the pid of the menu
 	// so it will get picked up in the grep. it's not urgent though
-
 	cmd := "ps ax | grep /tmp/script | grep -v grep | awk '{print $1}' | xargs kill"
 	return exec.Command("sh", "-c", cmd).Run()
 }
 
 func ScriptCanLaunch() bool {
-	scriptRunning := IsScriptRunning()
-
-	if IsMenuRunning() && !scriptRunning {
-		return true
-	} else {
-		return false
-	}
+	return IsMenuRunning() && !IsScriptRunning()
 }
 
 func OpenConsole(kbd input.VirtualKeyboard) error {
@@ -82,27 +72,21 @@ func OpenConsole(kbd input.VirtualKeyboard) error {
 		return strings.TrimSpace(string(tty)), nil
 	}
 
-	// we use the F9 key as a means to disable main's usage of the framebuffer and allow scripts to run
-	// unfortunately when the menu "sleeps", any key press will be eaten by main and not trigger the console switch
-	// there's also no simple way to tell if mister has switched to the console
-	// so what we do is switch to tty3, which is unused by mister, then attempt to switch to console,
-	// which sets tty to 1 on success, then check in a loop if it actually did change to 1 and keep pressing F9
-	// until it's switched
-
-	err := exec.Command("chvt", "3").Run()
-	if err != nil {
+	// Switch to tty3, then try to trigger console with F9 until tty1 is active
+	if err := exec.Command("chvt", "3").Run(); err != nil {
 		return err
 	}
 
 	tries := 0
-	tty := ""
 	for {
 		if tries > 20 {
 			return fmt.Errorf("could not switch to tty1")
 		}
-		kbd.Console()
+
+		_ = kbd.Press(uinput.KeyF9) // console toggle
 		time.Sleep(50 * time.Millisecond)
-		tty, err = getTty()
+
+		tty, err := getTty()
 		if err != nil {
 			return err
 		}
@@ -146,24 +130,20 @@ func RunScript(kbd input.VirtualKeyboard, path string) error {
 		return err
 	}
 
-	canLaunch := ScriptCanLaunch()
-	if !canLaunch {
+	if !ScriptCanLaunch() {
 		return fmt.Errorf("script cannot be launched, active core is not menu or script is already running")
 	}
 
-	err := OpenConsole(kbd)
-	if err != nil {
+	if err := OpenConsole(kbd); err != nil {
 		return err
 	}
 
-	// this is just to follow mister's convention, which reserves tty2 for scripts
-	err = exec.Command("chvt", "2").Run()
-	if err != nil {
+	// Reserve tty2 for scripts
+	if err := exec.Command("chvt", "2").Run(); err != nil {
 		return err
 	}
 
-	// this is how mister launches scripts itself
-	// TODO: press any key should be configurable
+	// Script launcher wrapper
 	launcher := fmt.Sprintf(`#!/bin/bash
 export LC_ALL=en_US.UTF-8
 export HOME=/root
@@ -172,32 +152,22 @@ cd $(dirname "%s")
 %s
 `, path, path)
 
-	// TODO: this is no longer functional, if we still even want it, need to find a way to make it wait for
-	//       input but not block in the background like for the random script
-	//echo "Press any key to continue"
-	//read -n 1 -s -r -p ""
-
-	err = os.WriteFile("/tmp/script", []byte(launcher), 0755)
-	if err != nil {
+	if err := os.WriteFile("/tmp/script", []byte(launcher), 0755); err != nil {
 		return err
 	}
 
-	err = exec.Command(
+	if err := exec.Command(
 		"/sbin/agetty",
-		"-a",
-		"root",
-		"-l",
-		"/tmp/script",
+		"-a", "root",
+		"-l", "/tmp/script",
 		"--nohostname",
-		"-L",
-		"tty2",
-		"linux",
-	).Run()
-	if err != nil {
+		"-L", "tty2", "linux",
+	).Run(); err != nil {
 		return err
 	}
 
-	kbd.ExitConsole()
+	// Exit console with F12
+	_ = kbd.Press(uinput.KeyF12)
 
 	return nil
 }
