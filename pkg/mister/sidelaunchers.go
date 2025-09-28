@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"uinput"
 
 	"github.com/synrais/SAM-GO/pkg/assets"
 	"github.com/synrais/SAM-GO/pkg/config"
@@ -390,21 +391,19 @@ func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
 
     // Kick off BIOS skip in background
     go func() {
-        time.Sleep(10 * time.Second)
-
         gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
         if err != nil {
             fmt.Println("[SIDELAUNCHER] FDS: failed to create gamepad:", err)
             return
         }
+        defer gpd.Close()
+
+        // Wait before pressing the button
+        time.Sleep(10 * time.Second)
 
         if err := gpd.Press(uinput.ButtonEast); err != nil {
             fmt.Println("[SIDELAUNCHER] FDS: failed to press button 1:", err)
         }
-
-        // Small delay before closing to ensure the event is flushed
-        time.Sleep(200 * time.Millisecond)
-        _ = gpd.Close()
     }()
 
     return nil
