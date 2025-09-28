@@ -102,7 +102,7 @@ func writeIndexedSystems(db *bolt.DB, systems []string) error {
 }
 
 // Update the names index with the given files.
-func updateNames(db *bolt.DB, files []fileInfo) error {
+func updateNames(db *bolt.DB, files []FileInfo) error {
 	return db.Batch(func(tx *bolt.Tx) error {
 		bns := tx.Bucket([]byte(BucketNames))
 
@@ -129,7 +129,7 @@ type IndexStatus struct {
 // names index to the DB. Overwrites any existing names index, but does not
 // clean up old missing files.
 // Enriched file information.
-type fileInfo struct {
+type FileInfo struct {
 	SystemId     string
 	SystemName   string // friendly system name (e.g. "Arcadia 2001")
 	SystemFolder string // DB-defined system folder
@@ -164,7 +164,7 @@ func NewNamesIndex(
 		systemPaths[v.System.Id] = append(systemPaths[v.System.Id], v.Path)
 	}
 
-	var allFiles []fileInfo
+	var allFiles []FileInfo
 
 	for _, k := range utils.AlphaMapKeys(systemPaths) {
 		status.SystemId = k
@@ -177,7 +177,7 @@ func NewNamesIndex(
 			return status.Files, fmt.Errorf("unknown system: %s", k)
 		}
 
-		files := make([]fileInfo, 0)
+		files := make([]FileInfo, 0)
 
 		for _, path := range systemPaths[k] {
 			pathFiles, err := games.GetFiles(k, path)
@@ -195,7 +195,7 @@ func NewNamesIndex(
 				name := strings.TrimSuffix(base, ext)
 				parentFolder := filepath.Base(filepath.Dir(fullPath))
 
-				files = append(files, fileInfo{
+				files = append(files, FileInfo{
 					SystemId:     sys.Id,
 					SystemName:   sys.Name,
 					SystemFolder: sys.Folder[0], // first configured folder
