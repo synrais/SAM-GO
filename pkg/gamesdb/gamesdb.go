@@ -209,7 +209,25 @@ func NewNamesIndex(
                 if idx := strings.Index(fullPath, sys.Folder[0]); idx != -1 {
                     rel := fullPath[idx+len(sys.Folder[0]):] // strip system folder prefix
                     rel = strings.TrimPrefix(rel, string(os.PathSeparator))
-                    menuPath = filepath.ToSlash(filepath.Join(sys.Name, rel))
+
+                    parts := strings.Split(rel, string(os.PathSeparator))
+                    if len(parts) > 0 {
+                        // Case 1: collapse fake .zip folder
+                        if strings.HasSuffix(parts[0], ".zip") {
+                            parts = parts[1:]
+                        }
+
+                        // Case 2: listings/*.txt collapse to label
+                        if len(parts) > 1 && parts[0] == "listings" && strings.HasSuffix(parts[1], ".txt") {
+                            label := strings.TrimSuffix(parts[1], ".txt")
+                            if len(label) > 0 {
+                                label = strings.ToUpper(label[:1]) + label[1:]
+                            }
+                            parts = append([]string{label}, parts[2:]...)
+                        }
+                    }
+
+                    menuPath = filepath.ToSlash(filepath.Join(append([]string{sys.Name}, parts...)...))
                 } else {
                     // fallback: just FriendlyName + filename
                     menuPath = filepath.ToSlash(filepath.Join(sys.Name, base))
