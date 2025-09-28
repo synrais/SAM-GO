@@ -321,13 +321,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
 				return err
 			} else if newFiles != nil {
-				// Wrap newFiles in loadingWindow so spinner shows while applying
-				files, err := loadingWindow(stdscr, func() ([]MenuFile, error) {
-					return newFiles, nil
-				})
-				if err != nil {
-					return err
-				}
+				files := newFiles
 
 				// Rebuild tree and menu lists
 				tree = buildTree(files)
