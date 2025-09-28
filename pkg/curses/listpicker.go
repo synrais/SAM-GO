@@ -3,6 +3,7 @@ package curses
 import (
 	"fmt"
 	s "strings"
+
 	gc "github.com/rthornton128/goncurses"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
@@ -33,7 +34,7 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 	viewWidth := width - 4
 	pgAmount := viewHeight - 1
 
-	// offset for horizontal scroll
+	// scrolling state
 	scrollOffset := 0
 	lastSelected := -1
 
@@ -50,12 +51,11 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 		if selectedItem >= len(items) {
 			selectedItem = len(items) - 1
 		}
-		scrollOffset = 0
 	}
 
 	pageDown := func() {
 		if len(items) <= viewHeight {
-			return // nothing to page
+			return
 		}
 		if viewStart+viewHeight >= len(items) {
 			selectedItem = len(items) - 1
@@ -69,7 +69,6 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 		if selectedItem >= len(items) {
 			selectedItem = len(items) - 1
 		}
-		scrollOffset = 0
 	}
 
 	win, err := NewWindow(stdscr, height, width, opts.Title, -1)
@@ -78,42 +77,45 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 	}
 	defer win.Delete()
 
+	// 🔹 Make input non-blocking with ~120ms tick
+	win.Timeout(120)
+
 	var ch gc.Key
-
 	for ch != gc.KEY_ESC {
-		// reset scroll when selection changes
-		if selectedItem != lastSelected {
-			scrollOffset = 0
-			lastSelected = selectedItem
-		}
-
 		// list items
 		max := utils.Min([]int{len(items), viewHeight})
+
 		for i := 0; i < max; i++ {
 			item := items[viewStart+i]
 			display := item
 
-			if viewStart+i == selectedItem {
-				// Highlighted → scroll horizontally if too long
-				if len(item) > viewWidth {
+			// reset scroll if selection changed
+			if viewStart+i == selectedItem && selectedItem != lastSelected {
+				scrollOffset = 0
+				lastSelected = selectedItem
+			}
+
+			if len(item) > viewWidth {
+				if viewStart+i == selectedItem {
+					// 🔹 auto-scroll highlighted item
+					if scrollOffset+viewWidth <= len(item) {
+						display = item[scrollOffset : scrollOffset+viewWidth]
+					} else {
+						display = item[len(item)-viewWidth:]
+					}
+					scrollOffset++
 					if scrollOffset > len(item)-viewWidth {
 						scrollOffset = 0
 					}
-					end := scrollOffset + viewWidth
-					if end > len(item) {
-						end = len(item)
-					}
-					display = item[scrollOffset:end]
-					scrollOffset++
-				}
-				win.ColorOn(1)
-			} else {
-				// Not selected → truncate with "..."
-				if len(item) > viewWidth {
+				} else {
+					// truncate non-highlighted
 					display = item[:viewWidth-3] + "..."
 				}
 			}
 
+			if viewStart+i == selectedItem {
+				win.ColorOn(1)
+			}
 			win.MovePrint(i+1, 2, s.Repeat(" ", viewWidth))
 			win.MovePrint(i+1, 2, display)
 			win.ColorOff(1)
@@ -154,6 +156,7 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 		if opts.DynamicActionLabel != nil && len(buttons) > opts.ActionButton {
 			buttons[opts.ActionButton] = opts.DynamicActionLabel(selectedItem)
 		}
+
 		DrawActionButtons(win, buttons, selectedButton, 4)
 		win.NoutRefresh()
 
@@ -168,20 +171,24 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 		} else {
 			win.MoveAddChar(0, width-3, gc.ACS_HLINE)
 		}
+
 		if viewStart+viewHeight < len(items) {
 			win.MoveAddChar(height-3, width-3, gc.ACS_DARROW)
 		} else {
 			win.MoveAddChar(height-3, width-3, gc.ACS_HLINE)
 		}
 
+		win.Move(viewStart+selectedItem+1, width-3)
+
 		win.NoutRefresh()
 		gc.Update()
 
-		// slow the scroll a bit
-		gc.Nap(120)
-
 		ch = win.GetChar()
+		if ch == -1 {
+			continue // 🔹 no key → keep auto-scrolling
+		}
 
+		// --- Key handling ---
 		switch ch {
 		case gc.KEY_DOWN:
 			if selectedItem < len(items)-1 {
