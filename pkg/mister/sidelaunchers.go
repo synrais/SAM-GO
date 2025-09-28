@@ -29,6 +29,7 @@ func registerSideLauncher(id string, fn func(*config.UserConfig, games.System, s
 func init() {
 	registerSideLauncher("AmigaVision", LaunchAmigaVision)
 	registerSideLauncher("AmigaCD32", LaunchCD32)
+	registerSideLauncher("FDS", LaunchFDS)
 }
 
 // SideLaunchers checks if system.Id has a sidelauncher
@@ -375,4 +376,29 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	}
 
 	return launchFile(tmpMgl)
+}
+
+// --------------------------------------------------
+// FDS
+// --------------------------------------------------
+
+func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
+	// Launch the game normally
+	if err := LaunchGame(cfg, system, path); err != nil {
+		return err
+	}
+
+	// After 10s, press gamepad button 1
+	go func() {
+		gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
+		if err != nil {
+			return
+		}
+		defer gpd.Close()
+
+		time.Sleep(10 * time.Second)
+		_ = gpd.Press(1) // button 1
+	}()
+
+	return nil
 }
