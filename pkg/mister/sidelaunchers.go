@@ -357,17 +357,22 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	tmpMgl := config.LastLaunchFile
 	_ = os.WriteFile(tmpMgl, []byte(mgl), 0644)
 
-	// Handle Winboot auto-keypress
+	// Handle Winboot auto-keypress with new linuxinput
 	if hdfToUse == "CD32Winboot.hdf" {
 		go func() {
-			if vk, err := input.NewVirtualKeyboard(); err == nil {
-				defer vk.Close()
-				time.Sleep(10 * time.Second)
-				_ = vk.TypeRune('b')
+			kbd, err := linuxinput.NewKeyboard(40 * time.Millisecond)
+			if err != nil {
+				return
+			}
+			defer kbd.Close()
+
+			time.Sleep(10 * time.Second)
+
+			if code, ok := linuxinput.ToKeyboardCode("b"); ok {
+				_ = kbd.Press(code)
 			}
 		}()
 	}
 
 	return launchFile(tmpMgl)
 }
-
