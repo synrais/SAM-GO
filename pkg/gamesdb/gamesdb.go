@@ -209,7 +209,7 @@ func NewNamesIndex(
 
 	// --- Finalize Bolt ---
 	status.Step++
-	status.SystemId = filepath.Base(config.GamesDb) // show "games.db"
+	status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.GamesDb)) // show "games.db"
 	update(status)
 
 	if err := writeIndexedSystems(db, utils.AlphaMapKeys(systemPaths)); err != nil {
@@ -222,7 +222,7 @@ func NewNamesIndex(
 
 	// --- Write enriched Gob file step ---
 	status.Step++
-	status.SystemId = filepath.Base(config.MenuDb) // show "menu.db"
+	status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.MenuDb)) // show "menu.db"
 	update(status)
 
 	gobFile, err := os.Create(config.MenuDb)
