@@ -212,18 +212,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 			title = "Games"
 		}
 
-		// Dynamic button text
-		dynamicBtn := "Launch"
-		if len(items) > 0 {
-			if len(node.Children) > 0 && len(items) > 0 {
-				// If currently selected is a folder, label is Open
-				// Otherwise it's Launch
-				// (Fallback default is Launch)
-				dynamicBtn = "Open"
-			}
-		}
-
-		buttons := []string{"PgUp", "PgDn", dynamicBtn, "Back", "Search", "Options", "Exit"}
+		buttons := []string{"PgUp", "PgDn", "", "Back", "Search", "Options", "Exit"}
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         title,
@@ -233,6 +222,15 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 			ShowTotal:     true,
 			Width:         70,
 			Height:        20,
+			DynamicActionLabel: func(idx int) string {
+				if idx < 0 || idx >= len(items) {
+					return "Open"
+				}
+				if idx < len(folders) {
+					return "Open"
+				}
+				return "Launch"
+			},
 		}, items)
 		if err != nil {
 			return err
