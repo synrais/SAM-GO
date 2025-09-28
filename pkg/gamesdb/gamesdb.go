@@ -203,34 +203,40 @@ func NewNamesIndex(
 				parentFolder := filepath.Base(filepath.Dir(fullPath))
 
 				// -------------------------
-				// Build MenuPath (support multiple sys.Folder entries)
+				// Build MenuPath (segment-based matching)
 				// -------------------------
 				menuPath := ""
 				found := false
-				for _, folder := range sys.Folder {
-					if idx := strings.Index(fullPath, folder); idx != -1 {
-						rel := fullPath[idx+len(folder):]
-						rel = strings.TrimPrefix(rel, string(os.PathSeparator))
+				parts := strings.Split(filepath.ToSlash(fullPath), "/")
 
-						parts := strings.Split(rel, string(os.PathSeparator))
-						if len(parts) > 0 {
-							// Case 1: collapse fake .zip folder
-							if strings.HasSuffix(parts[0], ".zip") {
-								parts = parts[1:]
-							}
+				for i, part := range parts {
+					for _, folder := range sys.Folder {
+						if part == folder {
+							// everything after the system folder
+							relParts := parts[i+1:]
 
-							// Case 2: listings/*.txt collapse to label
-							if len(parts) > 1 && parts[0] == "listings" && strings.HasSuffix(parts[1], ".txt") {
-								label := strings.TrimSuffix(parts[1], ".txt")
-								if len(label) > 0 {
-									label = strings.ToUpper(label[:1]) + label[1:]
+							if len(relParts) > 0 {
+								// Case 1: collapse fake .zip folder
+								if strings.HasSuffix(relParts[0], ".zip") {
+									relParts = relParts[1:]
 								}
-								parts = append([]string{label}, parts[2:]...)
-							}
-						}
 
-						menuPath = filepath.ToSlash(filepath.Join(append([]string{sys.Name}, parts...)...))
-						found = true
+								// Case 2: listings/*.txt collapse to label
+								if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
+									label := strings.TrimSuffix(relParts[1], ".txt")
+									if len(label) > 0 {
+										label = strings.ToUpper(label[:1]) + label[1:]
+									}
+									relParts = append([]string{label}, relParts[2:]...)
+								}
+							}
+
+							menuPath = filepath.ToSlash(filepath.Join(append([]string{sys.Name}, relParts...)...))
+							found = true
+							break
+						}
+					}
+					if found {
 						break
 					}
 				}
