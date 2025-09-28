@@ -382,29 +382,39 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 // --------------------------------------------------
 // FDS
 // --------------------------------------------------
-
 func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
     // Launch the game normally
     if err := LaunchGame(cfg, system, path); err != nil {
-        return err
+        return fmt.Errorf("failed to launch FDS game: %w", err)
     }
 
-    // Kick off BIOS skip in background
+    // Start a goroutine to press button 1 after 10 seconds
     go func() {
         gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
         if err != nil {
-            fmt.Println("[SIDELAUNCHER] FDS: failed to create gamepad:", err)
+            fmt.Printf("[FDS] Failed to create virtual gamepad: %v\n", err)
             return
         }
-        defer gpd.Close()
+        defer func() {
+            if err := gpd.Close(); err != nil {
+                fmt.Printf("[FDS] Failed to close gamepad: %v\n", err)
+            }
+        }()
 
-        // Wait before pressing the button
+        fmt.Println("[FDS] Waiting 10s before skipping BIOS...")
         time.Sleep(10 * time.Second)
 
-        if err := gpd.Press(uinput.ButtonEast); err != nil {
-            fmt.Println("[SIDELAUNCHER] FDS: failed to press button 1:", err)
+        if code, ok := virtualinput.ToGamepadCode("A"); ok {
+            if err := gpd.Press(code); err != nil {
+                fmt.Printf("[FDS] Failed to press button 1: %v\n", err)
+            } else {
+                fmt.Println("[FDS] Pressed button 1 to skip BIOS")
+            }
+        } else {
+            fmt.Println("[FDS] Could not find mapping for button 1 (A)")
         }
     }()
 
     return nil
 }
+
