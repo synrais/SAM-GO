@@ -214,9 +214,9 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         title,
-			Buttons:       []string{"PgUp", "PgDn", "Open/Launch", "Back", "Search", "Options", "Exit"},
-			ActionButton:  2,
-			DefaultButton: 2,
+			Buttons:       []string{"PgUp", "PgDn", "Open", "Launch", "Search", "Options", "Back", "Exit"},
+			ActionButton:  3, // "Launch"
+			DefaultButton: 3,
 			ShowTotal:     true,
 			Width:         70,
 			Height:        20,
@@ -226,19 +226,19 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 		}
 
 		switch button {
-		case 2: // Open/Launch
+		case 2: // Open
 			if selected < len(folders) {
 				folderName := folders[selected][:len(folders[selected])-1]
 				if err := browseNode(cfg, stdscr, node.Children[folderName]); err != nil {
 					return err
 				}
-			} else {
+			}
+		case 3: // Launch
+			if selected >= len(folders) {
 				file := node.Files[selected-len(folders)]
 				sys, _ := games.GetSystem(file.SystemId)
 				return mister.LaunchGame(cfg, *sys, file.Path)
 			}
-		case 3: // Back
-			return nil
 		case 4: // Search
 			if err := searchWindow(cfg, stdscr); err != nil {
 				return err
@@ -249,7 +249,9 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 			} else if newFiles != nil {
 				return browseNode(cfg, stdscr, buildTree(newFiles))
 			}
-		case 6: // Exit
+		case 6: // Back
+			return nil
+		case 7: // Exit
 			return nil
 		}
 	}
