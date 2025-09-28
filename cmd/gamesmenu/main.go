@@ -317,19 +317,29 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			stdscr.Clear()
 			stdscr.Refresh()
 		case 4: // Options
-			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
-				return err
-			} else if newFiles != nil {
-				tree = buildTree(newFiles)
-				sysIds = sysIds[:0]
-				items = items[:0]
-				for sysId := range tree.Children {
-					sysIds = append(sysIds, sysId)
-				}
-				sort.Strings(sysIds)
-				for _, sysId := range sysIds {
-					items = append(items, sysId)
-				}
+    		if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
+        		return err
+    		} else if newFiles != nil {
+        		// Show spinner immediately after rebuild
+        		go loadingWindow(stdscr, "Loading…")
+
+        		// Rebuild tree from new DB
+        		tree = buildTree(newFiles)
+
+        		// Stop spinner once ready
+        		stdscr.Clear()
+        		stdscr.Refresh()
+
+        		sysIds = sysIds[:0]
+        		items = items[:0]
+        		for sysId := range tree.Children {
+            		sysIds = append(sysIds, sysId)
+        		}
+        		sort.Strings(sysIds)
+        		for _, sysId := range sysIds {
+            		items = append(items, sysId)
+        		}
+    		}
 				stdscr.Clear()
 				stdscr.Refresh()
 			}
