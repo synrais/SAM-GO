@@ -212,11 +212,24 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 			title = "Games"
 		}
 
+		// Dynamic button text
+		dynamicBtn := "Launch"
+		if len(items) > 0 {
+			if len(node.Children) > 0 && len(items) > 0 {
+				// If currently selected is a folder, label is Open
+				// Otherwise it's Launch
+				// (Fallback default is Launch)
+				dynamicBtn = "Open"
+			}
+		}
+
+		buttons := []string{"PgUp", "PgDn", dynamicBtn, "Back", "Search", "Options", "Exit"}
+
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         title,
-			Buttons:       []string{"PgUp", "PgDn", "Open", "Launch", "Search", "Options", "Back", "Exit"},
-			ActionButton:  3, // "Launch"
-			DefaultButton: 3,
+			Buttons:       buttons,
+			ActionButton:  2,
+			DefaultButton: 2,
 			ShowTotal:     true,
 			Width:         70,
 			Height:        20,
@@ -226,19 +239,19 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 		}
 
 		switch button {
-		case 2: // Open
+		case 2: // Open/Launch
 			if selected < len(folders) {
 				folderName := folders[selected][:len(folders[selected])-1]
 				if err := browseNode(cfg, stdscr, node.Children[folderName]); err != nil {
 					return err
 				}
-			}
-		case 3: // Launch
-			if selected >= len(folders) {
+			} else {
 				file := node.Files[selected-len(folders)]
 				sys, _ := games.GetSystem(file.SystemId)
 				return mister.LaunchGame(cfg, *sys, file.Path)
 			}
+		case 3: // Back
+			return nil
 		case 4: // Search
 			if err := searchWindow(cfg, stdscr); err != nil {
 				return err
@@ -249,9 +262,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 			} else if newFiles != nil {
 				return browseNode(cfg, stdscr, buildTree(newFiles))
 			}
-		case 6: // Back
-			return nil
-		case 7: // Exit
+		case 6: // Exit
 			return nil
 		}
 	}
