@@ -386,7 +386,6 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
     logFile := "/tmp/fds_sidelauncher.log"
 
-    // appendLog helper
     appendLog := func(msg string) {
         f, _ := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
         if f != nil {
@@ -404,34 +403,32 @@ func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
         appendLog(fmt.Sprintf("ERROR: failed to create gamepad: %v", err))
         return err
     }
-    defer gpd.Close()
-
     appendLog("Virtual gamepad created successfully.")
 
     // Launch the game normally
     if err := launchTempMgl(cfg, &system, path); err != nil {
         appendLog(fmt.Sprintf("ERROR: failed to launch FDS game: %v", err))
+        _ = gpd.Close()
         return err
     }
 
     appendLog("Game launched, waiting 10 seconds before skipping BIOS...")
 
     // Run BIOS skip in background
-    go func() {
+    go func(g virtualinput.Gamepad) {
         time.Sleep(10 * time.Second)
         appendLog("Attempting to press Button A (Button 1)...")
 
-        if err := gpd.Press(uinput.ButtonEast); err != nil {
+        if err := g.Press(uinput.ButtonEast); err != nil {
             appendLog(fmt.Sprintf("ERROR: failed to press Button A: %v", err))
-            return
+        } else {
+            appendLog("Successfully pressed Button A to skip BIOS.")
         }
 
-        appendLog("Successfully pressed Button A to skip BIOS.")
-    }()
+        // NOW close the gamepad
+        _ = g.Close()
+    }(gpd)
 
     return nil
 }
 
-func init() {
-    registerSideLauncher("FDS", LaunchFDS)
-}
