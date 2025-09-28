@@ -134,6 +134,33 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 }
 
 // -------------------------
+// Options Menu
+// -------------------------
+func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
+	stdscr.Clear()
+	stdscr.Refresh()
+
+	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+		Title:         "Options",
+		Buttons:       []string{"Select", "Back"},
+		DefaultButton: 0,
+		ActionButton:  0,
+		ShowTotal:     false,
+		Width:         60,
+		Height:        10,
+	}, []string{"Rebuild games database..."})
+	if err != nil {
+		return nil, err
+	}
+
+	if button == 0 && selected == 0 {
+		// trigger rebuild
+		return generateIndexWindow(cfg, stdscr)
+	}
+	return nil, nil
+}
+
+// -------------------------
 // System Menu
 // -------------------------
 func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error {
@@ -162,7 +189,7 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) err
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         "Systems",
-			Buttons:       []string{"PgUp", "PgDn", "Open", "Search", "Rebuild", "Exit"},
+			Buttons:       []string{"PgUp", "PgDn", "Open", "Search", "Options", "Exit"},
 			ActionButton:  2,
 			DefaultButton: 2,
 			ShowTotal:     true,
@@ -183,12 +210,13 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) err
 			if err := searchWindow(cfg, stdscr); err != nil {
 				return err
 			}
-		case 4: // Rebuild
-			newFiles, err := generateIndexWindow(cfg, stdscr)
-			if err != nil {
+		case 4: // Options
+			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
 				return err
+			} else if newFiles != nil {
+				// reload systems after rebuild
+				return systemMenu(cfg, stdscr, newFiles)
 			}
-			return systemMenu(cfg, stdscr, newFiles)
 		case 5: // Exit
 			return nil
 		}
@@ -199,6 +227,9 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) err
 // Browse a single system
 // -------------------------
 func browseSystem(cfg *config.UserConfig, stdscr *gc.Window, sysName string, files []MenuFile) error {
+	stdscr.Clear()
+	stdscr.Refresh()
+
 	// sort by game name
 	sort.Slice(files, func(i, j int) bool {
 		return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
@@ -234,6 +265,9 @@ func browseSystem(cfg *config.UserConfig, stdscr *gc.Window, sysName string, fil
 // Search Menu (Bolt)
 // -------------------------
 func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
+	stdscr.Clear()
+	stdscr.Refresh()
+
 	text := ""
 	button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
 	if err != nil || button == 1 {
