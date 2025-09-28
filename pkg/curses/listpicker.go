@@ -37,13 +37,11 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 	viewWidth := opts.Width - 4
 	pgAmount := viewHeight - 1
 
-	// ensure selected item is in view
-	if selectedItem >= viewHeight {
-		if selectedItem > len(items)-viewHeight {
-			viewStart = len(items) - viewHeight
-		} else {
-			viewStart = selectedItem
-		}
+	// 🔹 ensure selected item is visible, without forcing it to the top
+	if selectedItem < viewStart {
+		viewStart = selectedItem
+	} else if selectedItem >= viewStart+viewHeight {
+		viewStart = selectedItem - viewHeight + 1
 	}
 
 	// marquee tracking
