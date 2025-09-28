@@ -137,14 +137,14 @@ type IndexStatus struct {
 
 // Enriched file information (also written into menu.db Gob).
 type fileinfo struct {
-	SystemId     string
+	SystemId     string // Internal system ID
 	SystemName   string // Friendly system name (e.g. "Arcadia 2001")
 	SystemFolder string // Root folder on disk for this system
 	Name         string // Base name without extension
 	NameExt      string // Filename with extension
 	Path         string // Full path to file
 	FolderName   string // Parent folder name on disk
-	MenuPath     string // Logical menu path: "SystemId/<subfolders...>/<file>"
+	MenuPath     string // "SystemName/<relative path under SystemFolder>"
 }
 
 // Build a new names index and Gob file from all systems and their game files.
