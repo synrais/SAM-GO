@@ -18,7 +18,7 @@ type ListPickerOpts struct {
 	Width              int
 	Height             int
 	DynamicActionLabel func(selectedItem int) string
-	InitialIndex       int // 🔹 new: where to start highlight
+	InitialIndex       int // 🔹 where to start highlight
 }
 
 func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, int, error) {
@@ -165,16 +165,33 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 			win.MoveAddChar(height-3, width-3, gc.ACS_HLINE)
 		}
 
-		// scrollbar body + thumb
-		if len(items) > viewHeight {
-			scrollbarHeight := height - 4 // vertical space for bar
-			for y := 1; y < height-3; y++ {
-				win.MoveAddChar(y, width-3, gc.ACS_VLINE)
+		// --- Scroll bar (old style patched in) ---
+		scrollHeight := viewHeight
+		if scrollHeight > 0 {
+			var gripHeight int
+			if len(items) <= scrollHeight {
+				gripHeight = scrollHeight
+			} else {
+				gripHeight = int(float64(scrollHeight) * (float64(scrollHeight) / float64(len(items))))
+				if gripHeight < 1 {
+					gripHeight = 1
+				}
 			}
-			// proportional thumb
-			ratio := float64(viewStart) / float64(len(items)-viewHeight)
-			thumbPos := int(ratio*float64(scrollbarHeight-1)) + 1
-			win.MoveAddChar(thumbPos, width-3, gc.ACS_BLOCK)
+
+			gripOffset := 0
+			if len(items) > scrollHeight {
+				gripOffset = int(float64(viewStart) * float64(scrollHeight-gripHeight) / float64(len(items)-scrollHeight))
+			}
+
+			for i := 0; i < scrollHeight; i++ {
+				if i >= gripOffset && i < gripOffset+gripHeight {
+					win.ColorOn(1)
+					win.MoveAddChar(i+1, width-3, ' ') // highlight grip
+					win.ColorOff(1)
+				} else {
+					win.MoveAddChar(i+1, width-3, gc.ACS_CKBOARD) // track background
+				}
+			}
 		}
 
 		win.NoutRefresh()
