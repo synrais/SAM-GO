@@ -409,7 +409,13 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 			if sys, err := games.GetSystem(r.SystemId); err == nil {
 				systemName = sys.Name
 			}
-			items = append(items, fmt.Sprintf("[%s] %s", systemName, r.Name))
+			// Get extension from the actual path
+			ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(r.Path), "."))
+			displayName := r.Name
+			if ext != "" {
+				displayName = fmt.Sprintf("%s.%s", r.Name, ext)
+			}
+			items = append(items, fmt.Sprintf("[%s] %s", systemName, displayName))
 		}
 
 		// loop inside results picker so launching doesn’t exit search
