@@ -52,7 +52,6 @@ func open(options *bolt.Options) (*bolt.DB, error) {
 				return err
 			}
 		}
-
 		return nil
 	})
 
@@ -113,7 +112,6 @@ func updateNames(db *bolt.DB, files []fileinfo) error {
 				return err
 			}
 		}
-
 		return nil
 	})
 }
@@ -125,9 +123,6 @@ type IndexStatus struct {
 	Files    int
 }
 
-// Given a list of systems, index all valid game files on disk and write a
-// names index to the DB. Overwrites any existing names index, but does not
-// clean up old missing files.
 // Enriched file information.
 type fileinfo struct {
 	SystemId     string
@@ -265,6 +260,64 @@ func NewNamesIndex(
 	return status.Files, nil
 }
 
+type SearchResult struct {
+	SystemId string
+	Name     string
+	Path     string
+	MenuPath string
+}
+
+func searchNamesGeneric(
+	systems []games.System,
+	query string,
+	test func(string, string) bool,
+) ([]SearchResult, error) {
+	if !DbExists() {
+		return nil, fmt.Errorf("games.db does not exist")
+	}
+
+	db, err := open(&bolt.Options{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	var results []SearchResult
+
+	err = db.View(func(tx *bolt.Tx) error {
+		bn := tx.Bucket([]byte(BucketNames))
+
+		for _, system := range systems {
+			pre := []byte(system.Id + ":")
+			nameIdx := bytes.Index(pre, []byte(":"))
+
+			c := bn.Cursor()
+			for k, v := c.Seek([]byte(pre)); k != nil && bytes.HasPrefix(k, pre); k, v = c.Next() {
+				keyName := string(k[nameIdx+1:])
+
+				if test(query, keyName) {
+					// Build MenuPath from system.Name + keyName (best effort)
+					menuPath := filepath.Join(system.Name, keyName)
+
+					results = append(results, SearchResult{
+						SystemId: system.Id,
+						Name:     keyName,
+						Path:     string(v),
+						MenuPath: menuPath,
+					})
+				}
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
 // Return indexed names matching exact query (case insensitive).
 func SearchNamesExact(systems []games.System, query string) ([]SearchResult, error) {
 	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
@@ -283,13 +336,11 @@ func SearchNamesPartial(systems []games.System, query string) ([]SearchResult, e
 func SearchNamesWords(systems []games.System, query string) ([]SearchResult, error) {
 	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
 		qWords := strings.Fields(strings.ToLower(query))
-
 		for _, word := range qWords {
 			if !strings.Contains(strings.ToLower(keyName), word) {
 				return false
 			}
 		}
-
 		return true
 	})
 }
@@ -301,7 +352,6 @@ func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, er
 		if err != nil {
 			return false
 		}
-
 		return r.MatchString(keyName)
 	})
 }
