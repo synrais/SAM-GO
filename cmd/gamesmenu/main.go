@@ -57,7 +57,6 @@ func loadMenuDb() ([]MenuFile, error) {
 // Shared DB Indexer
 // -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
-	// 🔹 delete old DBs before rebuilding
 	_ = os.Remove(config.MenuDb)
 	_ = os.Remove(config.GamesDb)
 
@@ -201,71 +200,73 @@ func buildTree(files []MenuFile) *Node {
 // -------------------------
 // Browse inside folders
 // -------------------------
-func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
-    for {
-        stdscr.Clear()
-        stdscr.Refresh()
+func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startIndex int) (int, error) {
+	currentIndex := startIndex
 
-        var items []string
-        var folders []string
-        for name := range node.Children {
-            folders = append(folders, name)
-        }
-        sort.Strings(folders)
-        items = append(items, folders...)
+	for {
+		stdscr.Clear()
+		stdscr.Refresh()
 
-        for _, f := range node.Files {
-            items = append(items, f.NameExt)
-        }
+		var items []string
+		var folders []string
+		for name := range node.Children {
+			folders = append(folders, name)
+		}
+		sort.Strings(folders)
+		items = append(items, folders...)
 
-        title := node.Name
-        if title == "" {
-            title = "Games"
-        }
+		for _, f := range node.Files {
+			items = append(items, f.NameExt)
+		}
 
-        buttons := []string{"PgUp", "PgDn", "", "Back"}
+		title := node.Name
+		if title == "" {
+			title = "Games"
+		}
 
-        button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-            Title:         title,
-            Buttons:       buttons,
-            ActionButton:  2,
-            DefaultButton: 2,
-            ShowTotal:     true,
-            Width:         70,
-            Height:        20,
-            DynamicActionLabel: func(idx int) string {
-                if idx < 0 || idx >= len(items) {
-                    return "Open"
-                }
-                if idx < len(folders) {
-                    return "Open"
-                }
-                return "Launch"
-            },
-        }, items)
-        if err != nil {
-            return err
-        }
+		buttons := []string{"PgUp", "PgDn", "", "Back"}
 
-        switch button {
-        case 2: // Open/Launch
-            if selected < len(folders) {
-                folderName := folders[selected]
-                if err := browseNode(cfg, stdscr, node.Children[folderName]); err != nil {
-                    return err
-                }
-            } else {
-                file := node.Files[selected-len(folders)]
-                sys, _ := games.GetSystem(file.SystemId)
-                if err := mister.LaunchGame(cfg, *sys, file.Path); err != nil {
-                    return err
-                }
-                // 🔹 No reset — stay in same folder with same highlight
-            }
-        case 3: // Back
-            return nil
-        }
-    }
+		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+			Title:         title,
+			Buttons:       buttons,
+			ActionButton:  2,
+			DefaultButton: 2,
+			ShowTotal:     true,
+			Width:         70,
+			Height:        20,
+			DynamicActionLabel: func(idx int) string {
+				if idx < len(folders) {
+					return "Open"
+				}
+				return "Launch"
+			},
+		}, items)
+		if err != nil {
+			return currentIndex, err
+		}
+
+		currentIndex = selected
+		switch button {
+		case 2: // Open/Launch
+			if selected < len(folders) {
+				folderName := folders[selected]
+				childIdx, err := browseNode(cfg, stdscr, node.Children[folderName], 0)
+				if err != nil {
+					return currentIndex, err
+				}
+				// restore parent highlight to the folder
+				currentIndex = selected
+				_ = childIdx
+			} else {
+				file := node.Files[selected-len(folders)]
+				sys, _ := games.GetSystem(file.SystemId)
+				_ = mister.LaunchGame(cfg, *sys, file.Path)
+				// stay on same file after launch
+			}
+		case 3: // Back
+			return currentIndex, nil
+		}
+	}
 }
 
 // -------------------------
@@ -284,6 +285,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 		items = append(items, sysId)
 	}
 
+	startIndex := 0
 	for {
 		stdscr.Clear()
 		stdscr.Refresh()
@@ -304,10 +306,12 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			return err
 		}
 
+		startIndex = selected
 		switch button {
 		case 2: // Open system
 			sysId := sysIds[selected]
-			if err := browseNode(cfg, stdscr, tree.Children[sysId]); err != nil {
+			_, err := browseNode(cfg, stdscr, tree.Children[sysId], 0)
+			if err != nil {
 				return err
 			}
 
@@ -323,8 +327,6 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 				return err
 			} else if newFiles != nil {
 				files := newFiles
-
-				// Rebuild tree and menu lists
 				tree = buildTree(files)
 				sysIds = sysIds[:0]
 				items = items[:0]
@@ -335,7 +337,6 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 				for _, sysId := range sysIds {
 					items = append(items, sysId)
 				}
-
 				stdscr.Clear()
 				stdscr.Refresh()
 			}
@@ -350,106 +351,101 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 // Search Menu
 // -------------------------
 func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
-    stdscr.Clear()
-    stdscr.Refresh()
+	stdscr.Clear()
+	stdscr.Refresh()
 
-    text := ""
-    for {
-        // Keep keyboard open, prefill with last text
-        button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
-        if err != nil || button == 1 {
-            return nil
-        }
-        text = query
+	text := ""
+	startIndex := 0
+	for {
+		button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
+		if err != nil || button == 1 {
+			return nil
+		}
+		text = query
 
-        // Show searching spinner
-        _ = curses.InfoBox(stdscr, "", "Searching...", false, false)
+		_ = curses.InfoBox(stdscr, "", "Searching...", false, false)
 
-        status := struct {
-            Done   bool
-            Error  error
-            Result []gamesdb.SearchResult
-        }{}
+		status := struct {
+			Done   bool
+			Error  error
+			Result []gamesdb.SearchResult
+		}{}
 
-        go func() {
-            results, err := gamesdb.SearchNamesWords(games.AllSystems(), query)
-            status.Result = results
-            status.Error = err
-            status.Done = true
-        }()
+		go func() {
+			results, err := gamesdb.SearchNamesWords(games.AllSystems(), query)
+			status.Result = results
+			status.Error = err
+			status.Done = true
+		}()
 
-        spinnerSeq := []string{"|", "/", "-", "\\"}
-        spinnerCount := 0
+		spinnerSeq := []string{"|", "/", "-", "\\"}
+		spinnerCount := 0
 
-        for {
-            if status.Done {
-                break
-            }
-            label := fmt.Sprintf("Searching... %s", spinnerSeq[spinnerCount])
-            _ = curses.InfoBox(stdscr, "", label, false, false)
-            spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
-            _ = gc.Update()
-            gc.Nap(100)
-        }
+		for {
+			if status.Done {
+				break
+			}
+			label := fmt.Sprintf("Searching... %s", spinnerSeq[spinnerCount])
+			_ = curses.InfoBox(stdscr, "", label, false, false)
+			spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+			_ = gc.Update()
+			gc.Nap(100)
+		}
 
-        if status.Error != nil {
-            return status.Error
-        }
+		if status.Error != nil {
+			return status.Error
+		}
 
-        results := status.Result
-        if len(results) == 0 {
-            _ = curses.InfoBox(stdscr, "", "No results found.", false, true)
-            continue
-        }
+		results := status.Result
+		if len(results) == 0 {
+			_ = curses.InfoBox(stdscr, "", "No results found.", false, true)
+			continue
+		}
 
-        // Build results list
-        var items []string
-        for _, r := range results {
-            systemName := r.SystemId
-            if sys, err := games.GetSystem(r.SystemId); err == nil {
-                systemName = sys.Name
-            }
-            ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(r.Path), "."))
-            displayName := r.Name
-            if ext != "" {
-                displayName = fmt.Sprintf("%s.%s", r.Name, ext)
-            }
-            items = append(items, fmt.Sprintf("[%s] %s", systemName, displayName))
-        }
+		var items []string
+		for _, r := range results {
+			systemName := r.SystemId
+			if sys, err := games.GetSystem(r.SystemId); err == nil {
+				systemName = sys.Name
+			}
+			ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(r.Path), "."))
+			displayName := r.Name
+			if ext != "" {
+				displayName = fmt.Sprintf("%s.%s", r.Name, ext)
+			}
+			items = append(items, fmt.Sprintf("[%s] %s", systemName, displayName))
+		}
 
-        // 🔹 Keep picker alive after launching a game
-        for {
-            stdscr.Clear()
-            stdscr.Refresh()
+		for {
+			stdscr.Clear()
+			stdscr.Refresh()
 
-            button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-                Title:         "Search Results",
-                Buttons:       []string{"PgUp", "PgDn", "Launch", "Back"},
-                ActionButton:  2,
-                DefaultButton: 2,
-                ShowTotal:     true,
-                Width:         70,
-                Height:        20,
-            }, items)
-            if err != nil {
-                return err
-            }
-            if button == 2 {
-                game := results[selected]
-                sys, _ := games.GetSystem(game.SystemId)
-                if err := mister.LaunchGame(cfg, *sys, game.Path); err != nil {
-                    return err
-                }
-                // 🔹 Don’t refresh — stay on current highlight in results
-                continue
-            }
-            if button == 3 { // Back
-                stdscr.Clear()
-                stdscr.Refresh()
-                break
-            }
-        }
-    }
+			button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+				Title:         "Search Results",
+				Buttons:       []string{"PgUp", "PgDn", "Launch", "Back"},
+				ActionButton:  2,
+				DefaultButton: 2,
+				ShowTotal:     true,
+				Width:         70,
+				Height:        20,
+			}, items)
+			if err != nil {
+				return err
+			}
+			startIndex = selected
+			if button == 2 {
+				game := results[selected]
+				sys, _ := games.GetSystem(game.SystemId)
+				_ = mister.LaunchGame(cfg, *sys, game.Path)
+				continue // stay highlighted
+			}
+			if button == 3 {
+				stdscr.Clear()
+				stdscr.Refresh()
+				break
+			}
+		}
+	}
 }
 
 // -------------------------
@@ -488,7 +484,6 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]MenuFile, error)) ([]Menu
 	}
 	return status.Result, nil
 }
-
 
 // -------------------------
 // Main
