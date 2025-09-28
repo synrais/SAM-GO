@@ -172,7 +172,7 @@ func NewNamesIndex(
 		update(status)
 
 		// Get full system info once per system
-		sys, ok := games.GetSystem(k)
+		sys, err := games.GetSystem(k)
 		if err != nil {
 			return status.Files, fmt.Errorf("unknown system: %s", k)
 		}
