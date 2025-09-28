@@ -310,39 +310,44 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			if err := browseNode(cfg, stdscr, tree.Children[sysId]); err != nil {
 				return err
 			}
+
 		case 3: // Search
 			if err := searchWindow(cfg, stdscr); err != nil {
 				return err
 			}
 			stdscr.Clear()
 			stdscr.Refresh()
+
 		case 4: // Options
-    		if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
-        		return err
-    		} else if newFiles != nil {
-        		// Show spinner immediately after rebuild
-        		go loadingWindow(stdscr, "Loading…")
+			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
+				return err
+			} else if newFiles != nil {
+				// Show spinner while rebuilding
+				loadingDone := make(chan struct{})
+				go func() {
+					loadingWindow(stdscr, "Loading…", loadingDone)
+				}()
 
-        		// Rebuild tree from new DB
-        		tree = buildTree(newFiles)
+				// Rebuild tree from new DB
+				tree = buildTree(newFiles)
 
-        		// Stop spinner once ready
-        		stdscr.Clear()
-        		stdscr.Refresh()
-
-        		sysIds = sysIds[:0]
-        		items = items[:0]
-        		for sysId := range tree.Children {
-            		sysIds = append(sysIds, sysId)
-        		}
-        		sort.Strings(sysIds)
-        		for _, sysId := range sysIds {
-            		items = append(items, sysId)
-        		}
-    		}
+				// Stop spinner
+				close(loadingDone)
 				stdscr.Clear()
 				stdscr.Refresh()
+
+				// Rebuild lists
+				sysIds = sysIds[:0]
+				items = items[:0]
+				for sysId := range tree.Children {
+					sysIds = append(sysIds, sysId)
+				}
+				sort.Strings(sysIds)
+				for _, sysId := range sysIds {
+					items = append(items, sysId)
+				}
 			}
+
 		case 5: // Exit
 			return nil
 		}
