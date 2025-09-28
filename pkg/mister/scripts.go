@@ -2,14 +2,15 @@ package mister
 
 import (
 	"fmt"
-	"github.com/synrais/SAM-GO/pkg/config"
-	"github.com/synrais/SAM-GO/pkg/input"
-	"github.com/bendahl/uinput"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/input/linuxinput"
+	"github.com/bendahl/uinput"
 )
 
 type Script struct {
@@ -23,7 +24,6 @@ func IsMenuRunning() bool {
 	if err != nil {
 		return false
 	}
-
 	return activeCore == config.MenuCore
 }
 
@@ -33,7 +33,6 @@ func IsScriptRunning() bool {
 	if err != nil {
 		return false
 	}
-
 	return len(out) > 0
 }
 
@@ -41,10 +40,6 @@ func KillActiveScript() error {
 	if !IsScriptRunning() {
 		return nil
 	}
-
-	// TODO: this doesn't actually work right now. it just orphans the launched script process
-	// one good idea is to launch scripts with an env variable that contains the pid of the menu
-	// so it will get picked up in the grep. it's not urgent though
 	cmd := "ps ax | grep /tmp/script | grep -v grep | awk '{print $1}' | xargs kill"
 	return exec.Command("sh", "-c", cmd).Run()
 }
@@ -53,7 +48,7 @@ func ScriptCanLaunch() bool {
 	return IsMenuRunning() && !IsScriptRunning()
 }
 
-func OpenConsole(kbd input.VirtualKeyboard) error {
+func OpenConsole(kbd *linuxinput.Keyboard) error {
 	if !IsMenuRunning() {
 		return fmt.Errorf("cannot open console, active core is not menu")
 	}
@@ -63,12 +58,10 @@ func OpenConsole(kbd input.VirtualKeyboard) error {
 		if _, err := os.Stat(sys); err != nil {
 			return "", err
 		}
-
 		tty, err := os.ReadFile(sys)
 		if err != nil {
 			return "", err
 		}
-
 		return strings.TrimSpace(string(tty)), nil
 	}
 
@@ -95,23 +88,19 @@ func OpenConsole(kbd input.VirtualKeyboard) error {
 		}
 		tries++
 	}
-
 	return nil
 }
 
 func GetAllScripts() ([]Script, error) {
 	scripts := make([]Script, 0)
-
 	files, err := os.ReadDir(config.ScriptsFolder)
 	if err != nil {
 		return scripts, err
 	}
-
 	for _, file := range files {
 		if file.IsDir() {
 			continue
 		}
-
 		fn := file.Name()
 		if strings.HasSuffix(strings.ToLower(fn), ".sh") {
 			scripts = append(scripts, Script{
@@ -121,19 +110,16 @@ func GetAllScripts() ([]Script, error) {
 			})
 		}
 	}
-
 	return scripts, nil
 }
 
-func RunScript(kbd input.VirtualKeyboard, path string) error {
+func RunScript(kbd *linuxinput.Keyboard, path string) error {
 	if _, err := os.Stat(path); err != nil {
 		return err
 	}
-
 	if !ScriptCanLaunch() {
 		return fmt.Errorf("script cannot be launched, active core is not menu or script is already running")
 	}
-
 	if err := OpenConsole(kbd); err != nil {
 		return err
 	}
@@ -143,7 +129,6 @@ func RunScript(kbd input.VirtualKeyboard, path string) error {
 		return err
 	}
 
-	// Script launcher wrapper
 	launcher := fmt.Sprintf(`#!/bin/bash
 export LC_ALL=en_US.UTF-8
 export HOME=/root
@@ -168,6 +153,5 @@ cd $(dirname "%s")
 
 	// Exit console with F12
 	_ = kbd.Press(uinput.KeyF12)
-
 	return nil
 }
