@@ -101,15 +101,6 @@ func writeIndexedSystems(db *bolt.DB, systems []string) error {
 	})
 }
 
-// Enriched file information.
-type fileInfo struct {
-	SystemId   string
-	Name       string // base name without extension
-	NameExt    string // filename with extension
-	Path       string // full path
-	FolderName string // parent folder name
-}
-
 // Update the names index with the given files.
 func updateNames(db *bolt.DB, files []fileInfo) error {
 	return db.Batch(func(tx *bolt.Tx) error {
