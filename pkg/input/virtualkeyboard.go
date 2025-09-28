@@ -1,6 +1,8 @@
 package input
 
 import (
+	"errors"
+	"sync"
 	"time"
 
 	"github.com/bendahl/uinput"
@@ -14,18 +16,41 @@ type VirtualKeyboard struct {
 	Device uinput.Keyboard
 }
 
-// NewVirtualKeyboard creates and returns a new VirtualKeyboard
+var (
+	keyboardInstance *VirtualKeyboard
+	keyboardMu       sync.Mutex
+)
+
+// NewVirtualKeyboard creates and returns the singleton VirtualKeyboard
 func NewVirtualKeyboard() (*VirtualKeyboard, error) {
+	keyboardMu.Lock()
+	defer keyboardMu.Unlock()
+
+	if keyboardInstance != nil {
+		return keyboardInstance, nil
+	}
+
 	vk, err := uinput.CreateKeyboard("/dev/uinput", []byte("SAM_Keyboard"))
 	if err != nil {
 		return nil, err
 	}
-	return &VirtualKeyboard{Device: vk}, nil
+
+	keyboardInstance = &VirtualKeyboard{Device: vk}
+	return keyboardInstance, nil
 }
 
-// Close releases the keyboard device
+// Close releases the keyboard device and clears the singleton
 func (k *VirtualKeyboard) Close() error {
-	return k.Device.Close()
+	keyboardMu.Lock()
+	defer keyboardMu.Unlock()
+
+	if keyboardInstance == nil {
+		return errors.New("no keyboard to close")
+	}
+
+	err := keyboardInstance.Device.Close()
+	keyboardInstance = nil
+	return err
 }
 
 // Press simulates a single key press
