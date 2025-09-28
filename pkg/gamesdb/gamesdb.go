@@ -206,8 +206,8 @@ func NewNamesIndex(
                 // Build MenuPath
                 // -------------------------
                 menuPath := ""
-                if idx := strings.Index(fullPath, sys.Id); idx != -1 {
-                    rel := fullPath[idx+len(sys.Id):] // strip systemId prefix
+                if idx := strings.Index(fullPath, sys.Folder[0]); idx != -1 {
+                    rel := fullPath[idx+len(sys.Folder[0]):] // strip system folder prefix
                     rel = strings.TrimPrefix(rel, string(os.PathSeparator))
                     menuPath = filepath.ToSlash(filepath.Join(sys.Name, rel))
                 } else {
