@@ -110,25 +110,21 @@ type fileInfo struct {
 	FolderName string // parent folder name
 }
 
-// Update the names index with the given files and also piggyback write into gob.
-func updateNames(db *bolt.DB, encoder *gob.Encoder, files []fileInfo) error {
-    return db.Batch(func(tx *bolt.Tx) error {
-        bns := tx.Bucket([]byte(BucketNames))
+// Update the names index with the given files.
+func updateNames(db *bolt.DB, files []fileInfo) error {
+	return db.Batch(func(tx *bolt.Tx) error {
+		bns := tx.Bucket([]byte(BucketNames))
 
-        for _, file := range files {
-            nk := NameKey(file.SystemId, file.Name)
-            if err := bns.Put([]byte(nk), []byte(file.Path)); err != nil {
-                return err
-            }
+		for _, file := range files {
+			nk := NameKey(file.SystemId, file.Name)
+			err := bns.Put([]byte(nk), []byte(file.Path))
+			if err != nil {
+				return err
+			}
+		}
 
-            // Piggyback into gob
-            if err := encoder.Encode(file); err != nil {
-                return err
-            }
-        }
-
-        return nil
-    })
+		return nil
+	})
 }
 
 type IndexStatus struct {
@@ -142,89 +138,100 @@ type IndexStatus struct {
 // names index to the DB. Overwrites any existing names index, but does not
 // clean up old missing files.
 func NewNamesIndex(
-    cfg *config.UserConfig,
-    systems []games.System,
-    update func(IndexStatus),
+	cfg *config.UserConfig,
+	systems []games.System,
+	update func(IndexStatus),
 ) (int, error) {
-    status := IndexStatus{
-        Total: len(systems) + 1,
-        Step:  1,
-    }
+	status := IndexStatus{
+		Total: len(systems) + 1,
+		Step:  1,
+	}
 
-    db, err := openNames()
-    if err != nil {
-        return status.Files, fmt.Errorf("error opening search.db: %s", err)
-    }
-    defer db.Close()
+	db, err := openNames()
+	if err != nil {
+		return status.Files, fmt.Errorf("error opening search.db: %s", err)
+	}
+	defer db.Close()
 
-    // Open gob file ONCE up front
-    gobFile, err := os.Create(config.GamesDb)
-    if err != nil {
-        return status.Files, fmt.Errorf("error creating gob file: %s", err)
-    }
-    defer gobFile.Close()
-    encoder := gob.NewEncoder(gobFile)
+	update(status)
+	systemPaths := make(map[string][]string, 0)
+	for _, v := range games.GetSystemPaths(cfg, systems) {
+		systemPaths[v.System.Id] = append(systemPaths[v.System.Id], v.Path)
+	}
 
-    update(status)
-    systemPaths := make(map[string][]string, 0)
-    for _, v := range games.GetSystemPaths(cfg, systems) {
-        systemPaths[v.System.Id] = append(systemPaths[v.System.Id], v.Path)
-    }
+	var allFiles []fileInfo
 
-    for _, k := range utils.AlphaMapKeys(systemPaths) {
-        status.SystemId = k
-        status.Step++
-        update(status)
+	for _, k := range utils.AlphaMapKeys(systemPaths) {
+		status.SystemId = k
+		status.Step++
+		update(status)
 
-        files := make([]fileInfo, 0)
+		files := make([]fileInfo, 0)
 
-        for _, path := range systemPaths[k] {
-            pathFiles, err := games.GetFiles(k, path)
-            if err != nil {
-                return status.Files, fmt.Errorf("error getting files: %s", err)
-            }
+		for _, path := range systemPaths[k] {
+			pathFiles, err := games.GetFiles(k, path)
+			if err != nil {
+				return status.Files, fmt.Errorf("error getting files: %s", err)
+			}
 
-            for _, fullPath := range pathFiles {
-                base := filepath.Base(fullPath)
-                ext := filepath.Ext(base)
-                name := strings.TrimSuffix(base, ext)
-                folder := filepath.Base(filepath.Dir(fullPath))
+			if len(pathFiles) == 0 {
+				continue
+			}
 
-                files = append(files, fileInfo{
-                    SystemId:   k,
-                    Name:       name,
-                    NameExt:    base,
-                    Path:       fullPath,
-                    FolderName: folder,
-                })
-            }
-        }
+			for _, fullPath := range pathFiles {
+				base := filepath.Base(fullPath)
+				ext := filepath.Ext(base)
+				name := strings.TrimSuffix(base, ext)
+				folder := filepath.Base(filepath.Dir(fullPath))
 
-        if len(files) == 0 {
-            continue
-        }
+				files = append(files, fileInfo{
+					SystemId:   k,
+					Name:       name,
+					NameExt:    base,
+					Path:       fullPath,
+					FolderName: folder,
+				})
+			}
+		}
 
-        status.Files += len(files)
+		if len(files) == 0 {
+			continue
+		}
 
-        // Write both Bolt + Gob sequentially
-        if err := updateNames(db, encoder, files); err != nil {
-            return status.Files, err
-        }
-    }
+		status.Files += len(files)
+		allFiles = append(allFiles, files...)
 
-    status.Step++
-    status.SystemId = ""
-    update(status)
+		// Write directly into Bolt (sequential)
+		if err := updateNames(db, files); err != nil {
+			return status.Files, err
+		}
+	}
 
-    if err := writeIndexedSystems(db, utils.AlphaMapKeys(systemPaths)); err != nil {
-        return status.Files, fmt.Errorf("error writing indexed systems: %s", err)
-    }
+	status.Step++
+	status.SystemId = ""
+	update(status)
 
-    if err := db.Sync(); err != nil {
-        return status.Files, fmt.Errorf("error syncing database: %s", err)
-    }
+	if err := writeIndexedSystems(db, utils.AlphaMapKeys(systemPaths)); err != nil {
+		return status.Files, fmt.Errorf("error writing indexed systems: %s", err)
+	}
 
-    return status.Files, nil
+	if err := db.Sync(); err != nil {
+		return status.Files, fmt.Errorf("error syncing database: %s", err)
+	}
+
+	// --- Write enriched GOB file alongside Bolt ---
+	gobFile, err := os.Create(config.GamesDb)
+	if err != nil {
+		return status.Files, fmt.Errorf("error creating gob file: %s", err)
+	}
+	defer gobFile.Close()
+
+	encoder := gob.NewEncoder(gobFile)
+	if err := encoder.Encode(allFiles); err != nil {
+		return status.Files, fmt.Errorf("error writing gob file: %s", err)
+	}
+
+	return status.Files, nil
 }
 
 type SearchResult struct {
