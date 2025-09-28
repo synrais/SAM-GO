@@ -467,10 +467,33 @@ func main() {
 	}
 	defer f.Close()
 
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		fmt.Println("Another instance of gamesmenu is already running.")
-		os.Exit(1)
+	tryLock := func() error {
+		return syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	}
+
+	// First attempt
+	if err := tryLock(); err != nil {
+		// Someone else holds the lock → kill it
+		buf := make([]byte, 32)
+		n, _ := f.ReadAt(buf, 0)
+		if n > 0 {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(buf[:n]))); err == nil {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+				// Give kernel time to drop the lock
+				gc.Nap(500)
+			}
+		}
+		// Try again
+		if err := tryLock(); err != nil {
+			log.Fatal("failed to acquire lock even after killing old process")
+		}
+	}
+
+	// Write our PID to the lockfile
+	_ = f.Truncate(0)
+	_, _ = f.Seek(0, 0)
+	_, _ = f.WriteString(fmt.Sprintf("%d", os.Getpid()))
+
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 
 	// --- Normal startup ---
@@ -507,3 +530,4 @@ func main() {
 		}
 	}
 }
+
