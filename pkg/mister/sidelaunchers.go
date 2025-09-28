@@ -9,6 +9,7 @@ import (
 	"time"
 	"uinput"
 
+	"github.com/bendahl/uinput"
 	"github.com/synrais/SAM-GO/pkg/assets"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/input/virtualinput"
