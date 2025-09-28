@@ -190,6 +190,9 @@ func buildTree(files []MenuFile) *Node {
 	return root
 }
 
+// -------------------------
+// Browse inside folders
+// -------------------------
 func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 	for {
 		stdscr.Clear()
@@ -212,7 +215,8 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 			title = "Games"
 		}
 
-		buttons := []string{"PgUp", "PgDn", "", "Back", "Search", "Options", "Exit"}
+		// ✅ Folder-level buttons only: no Options, no Exit
+		buttons := []string{"PgUp", "PgDn", "", "Back"}
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         title,
@@ -250,28 +254,74 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 			}
 		case 3: // Back
 			return nil
-		case 4: // Search
-			if err := searchWindow(cfg, stdscr); err != nil {
-				return err
-			}
-		case 5: // Options
-			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
-				return err
-			} else if newFiles != nil {
-				return browseNode(cfg, stdscr, buildTree(newFiles))
-			}
-		case 6: // Exit
-			return nil
 		}
 	}
 }
 
 // -------------------------
-// Main Menu (tree from MenuPath)
+// Main Menu (systems)
 // -------------------------
 func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error {
 	tree := buildTree(files)
-	return browseNode(cfg, stdscr, tree)
+
+	// Top-level system list
+	var items []string
+	var sysIds []string
+	for sysId := range tree.Children {
+		sysIds = append(sysIds, sysId)
+	}
+	sort.Strings(sysIds)
+	for _, sysId := range sysIds {
+		items = append(items, sysId)
+	}
+
+	for {
+		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+			Title:         "Systems",
+			Buttons:       []string{"PgUp", "PgDn", "", "Search", "Options", "Exit"},
+			ActionButton:  2,
+			DefaultButton: 2,
+			ShowTotal:     true,
+			Width:         70,
+			Height:        20,
+			DynamicActionLabel: func(idx int) string {
+				return "Open"
+			},
+		}, items)
+		if err != nil {
+			return err
+		}
+
+		switch button {
+		case 2: // Open system
+			sysId := sysIds[selected]
+			if err := browseNode(cfg, stdscr, tree.Children[sysId]); err != nil {
+				return err
+			}
+		case 3: // Search
+			if err := searchWindow(cfg, stdscr); err != nil {
+				return err
+			}
+		case 4: // Options
+			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
+				return err
+			} else if newFiles != nil {
+				tree = buildTree(newFiles)
+				// rebuild system list
+				sysIds = sysIds[:0]
+				items = items[:0]
+				for sysId := range tree.Children {
+					sysIds = append(sysIds, sysId)
+				}
+				sort.Strings(sysIds)
+				for _, sysId := range sysIds {
+					items = append(items, sysId)
+				}
+			}
+		case 5: // Exit
+			return nil
+		}
+	}
 }
 
 // -------------------------
