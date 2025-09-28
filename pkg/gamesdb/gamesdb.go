@@ -199,8 +199,8 @@ func NewNamesIndex(
 					relPath = base // fallback to filename only
 				}
 
-				// Build friendly MenuPath = "SystemName/<relPath>"
-				menuPath := filepath.Join(sys.Name, relPath)
+				// Preserve full hierarchy under system root
+				menuPath := filepath.ToSlash(filepath.Join(sys.Id, relPath))
 
 				files = append(files, fileinfo{
 					SystemId:     sys.Id,
