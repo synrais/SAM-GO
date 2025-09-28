@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/synrais/SAM-GO/pkg/backups/uinput"
+	"github.com/bendahl/uinput"
 )
 
 const (
