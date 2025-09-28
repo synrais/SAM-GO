@@ -94,7 +94,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 	go func() {
 		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
 			systemName := is.SystemId
-			if sys, ok := games.GetSystem(is.SystemId); ok {
+			if sys, err := games.GetSystem(is.SystemId); err == nil {
 				systemName = sys.Name
 			}
 			text := fmt.Sprintf("Indexing %s... (%d files)", systemName, is.Files)
@@ -238,7 +238,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	var items []string
 	for _, r := range results {
 		systemName := r.SystemId
-		if sys, ok := games.GetSystem(r.SystemId); ok {
+		if sys, err := games.GetSystem(r.SystemId); err == nil {
 			systemName = sys.Name
 		}
 		items = append(items, fmt.Sprintf("[%s] %s", systemName, r.Name))
