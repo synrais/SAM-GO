@@ -94,7 +94,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 	go func() {
 		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
 			systemName := is.SystemId
-			if sys, ok := games.GetSystem(is.SystemId); ok {
+			if sys, e := games.GetSystem(is.SystemId); e == nil {
 				systemName = sys.Name
 			}
 			text := fmt.Sprintf("Indexing %s... (%d files)", systemName, is.Files)
@@ -198,7 +198,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			sys, _ := games.GetSystem(game.SystemId)
 			return mister.LaunchGame(cfg, *sys, game.Path)
 		case 3: // Search
-			if err := searchWindow(cfg, stdscr); err != nil {
+			if err := searchWindow(cfg, stdscr, files); err != nil {
 				return err
 			}
 		case 4: // Options
@@ -216,7 +216,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 // -------------------------
 // Search Menu (Bolt)
 // -------------------------
-func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
+func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error {
 	stdscr.Clear()
 	stdscr.Refresh()
 
@@ -237,11 +237,15 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 
 	var items []string
 	for _, r := range results {
-		systemName := r.SystemId
-		if sys, ok := games.GetSystem(r.SystemId); ok {
-			systemName = sys.Name
+		// find the matching MenuPath for this result
+		menuPath := r.Path
+		for _, f := range files {
+			if f.Path == r.Path {
+				menuPath = f.MenuPath
+				break
+			}
 		}
-		items = append(items, fmt.Sprintf("[%s] %s", systemName, r.Name))
+		items = append(items, menuPath)
 	}
 
 	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
@@ -250,16 +254,23 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		ActionButton:  2,
 		DefaultButton: 2,
 		ShowTotal:     true,
-		Width:         70,
-		Height:        20,
+		Width:         80,
+		Height:        22,
 	}, items)
 	if err != nil {
 		return err
 	}
 	if button == 2 {
-		game := results[selected]
-		sys, _ := games.GetSystem(game.SystemId)
-		return mister.LaunchGame(cfg, *sys, game.Path)
+		gamePath := results[selected].Path
+		var sysId string
+		for _, f := range files {
+			if f.Path == gamePath {
+				sysId = f.SystemId
+				break
+			}
+		}
+		sys, _ := games.GetSystem(sysId)
+		return mister.LaunchGame(cfg, *sys, gamePath)
 	}
 	return nil
 }
