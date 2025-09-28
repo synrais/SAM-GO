@@ -1,210 +1,150 @@
 package curses
 
 import (
-	"fmt"
 	"strings"
-	"time"
-
 	gc "github.com/rthornton128/goncurses"
-	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-type ListPickerOpts struct {
-	Title              string
-	Buttons            []string
-	DefaultButton      int
-	ActionButton       int
-	ShowTotal          bool
-	Width              int
-	Height             int
-	DynamicActionLabel func(selectedItem int) string
-	InitialIndex       int // 🔹 new: where to start highlight
+type Coords struct {
+	Y int
+	X int
 }
 
-func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, int, error) {
-	// apply InitialIndex safely
-	selectedItem := opts.InitialIndex
-	if selectedItem < 0 || selectedItem >= len(items) {
-		selectedItem = 0
-	}
-	selectedButton := opts.DefaultButton
+type SetupWindowError struct {
+	Ctx error
+}
 
-	height := opts.Height
-	width := opts.Width
+func (e *SetupWindowError) Error() string {
+	return e.Ctx.Error()
+}
 
-	viewStart := 0
-	viewHeight := height - 4
-	viewWidth := opts.Width - 4
-	pgAmount := viewHeight - 1
-
-	// 🔹 ensure selected item is visible, without forcing it to the top
-	if selectedItem < viewStart {
-		viewStart = selectedItem
-	} else if selectedItem >= viewStart+viewHeight {
-		viewStart = selectedItem - viewHeight + 1
-	}
-
-	// marquee tracking
-	currentSelection := -1
-	scrollOffset := 0
-	lastScroll := time.Now()
-
-	pageUp := func() {
-		if viewStart == 0 {
-			selectedItem = 0
-		} else if (viewStart - pgAmount) < 0 {
-			viewStart = 0
-			selectedItem = 0
-		} else {
-			viewStart -= pgAmount
-			selectedItem = viewStart
-		}
-		if selectedItem >= len(items) {
-			selectedItem = len(items) - 1
-		}
-	}
-
-	pageDown := func() {
-		if len(items) <= viewHeight {
-			return
-		}
-		if viewStart+viewHeight >= len(items) {
-			selectedItem = len(items) - 1
-		} else {
-			viewStart += pgAmount
-			if viewStart+viewHeight > len(items) {
-				viewStart = len(items) - viewHeight
-			}
-			selectedItem = viewStart
-		}
-		if selectedItem >= len(items) {
-			selectedItem = len(items) - 1
-		}
-	}
-
-	win, err := NewWindow(stdscr, height, width, opts.Title, -1)
+func Setup() (*gc.Window, error) {
+	stdscr, err := gc.Init()
 	if err != nil {
-		return -1, -1, err
+		return nil, err
+	}
+
+	gc.Echo(false)
+	gc.CBreak(true)
+	gc.Cursor(0)
+
+	gc.StartColor()
+	gc.InitPair(1, gc.C_BLACK, gc.C_WHITE)
+
+	return stdscr, nil
+}
+
+func NewWindow(stdscr *gc.Window, height int, width int, title string, timeout int) (*gc.Window, error) {
+	rows, cols := stdscr.MaxYX()
+	y, x := (rows-height)/2, (cols-width)/2
+
+	var win *gc.Window
+	win, err := gc.NewWindow(height, width, y, x)
+	if err != nil {
+		return nil, &SetupWindowError{Ctx: err}
+	}
+	win.Keypad(true)
+	win.Timeout(timeout)
+
+	win.Erase()
+	win.NoutRefresh()
+
+	win.Box(gc.ACS_VLINE, gc.ACS_HLINE)
+	if len(title) > 0 {
+		titleX := (width - len(title)) / 2
+		win.MovePrint(0, titleX, title)
+	}
+	win.NoutRefresh()
+
+	return win, nil
+}
+
+func DrawBox(win *gc.Window, y int, x int, height int, width int) {
+	win.HLine(y, x+1, gc.ACS_HLINE, width-1)
+	win.HLine(height, x+1, gc.ACS_HLINE, width-1)
+	win.VLine(y+1, x, gc.ACS_VLINE, height-1)
+	win.VLine(y+1, x+width-1, gc.ACS_VLINE, height-1)
+	win.MoveAddChar(y, x, gc.ACS_ULCORNER)
+	win.MoveAddChar(y, x+width-1, gc.ACS_URCORNER)
+	win.MoveAddChar(height, x, gc.ACS_LLCORNER)
+	win.MoveAddChar(height, x+width-1, gc.ACS_LRCORNER)
+	win.NoutRefresh()
+}
+
+func DrawActionButtons(win *gc.Window, buttons []string, selected int, _ int) {
+	height, width := win.MaxYX()
+
+	// Draw horizontal separator
+	win.HLine(height-3, 1, gc.ACS_HLINE, width-2)
+	win.MoveAddChar(height-3, 0, gc.ACS_LTEE)
+	win.MoveAddChar(height-3, width-1, gc.ACS_RTEE)
+
+	// Clear the whole row where buttons will sit
+	win.MovePrint(height-2, 1, strings.Repeat(" ", width-2))
+
+	// Build button texts
+	buttonTexts := make([]string, len(buttons))
+	totalWidth := 0
+	for i, button := range buttons {
+		buttonTexts[i] = "<" + button + ">"
+		totalWidth += len(buttonTexts[i])
+		if i < len(buttons)-1 {
+			totalWidth += 3 // fixed 3-space gap
+		}
+	}
+
+	// Center the whole row
+	leftMargin := (width - totalWidth) / 2
+	x := leftMargin
+
+	for i, text := range buttonTexts {
+		if i == selected {
+			win.ColorOn(1)
+		}
+		win.MovePrint(height-2, x, text)
+		win.ColorOff(1)
+
+		x += len(text)
+		if i < len(buttonTexts)-1 {
+			x += 3 // fixed 3-space gap
+		}
+	}
+
+	win.NoutRefresh()
+}
+
+func InfoBox(stdscr *gc.Window, title string, text string, clear bool, ok bool) error {
+	if clear {
+		stdscr.Erase()
+		stdscr.NoutRefresh()
+		gc.Update()
+	}
+
+	height := 3
+	// if ok {
+	// 	height = 5
+	// }
+
+	win, err := NewWindow(stdscr, height, len(text)+4, title, -1)
+	if err != nil {
+		return err
 	}
 	defer win.Delete()
 
-	// non-blocking input with 100ms tick
-	win.Timeout(100)
-	var ch gc.Key
+	gc.Cursor(0)
 
-	for ch != gc.KEY_ESC {
-		// reset scroll when selection changes
-		if selectedItem != currentSelection {
-			currentSelection = selectedItem
-			scrollOffset = 0
-			lastScroll = time.Now()
-		}
+	win.MovePrint(1, 2, text)
 
-		// advance marquee scroll every 200ms
-		if time.Since(lastScroll) > 200*time.Millisecond {
-			scrollOffset++
-			lastScroll = time.Now()
-		}
+	// if ok {
+	// 	DrawActionButtons(win, []string{"OK"}, 0)
+	// }
 
-		// list items
-		max := utils.Min([]int{len(items), viewHeight})
+	win.NoutRefresh()
+	gc.Update()
 
-		for i := 0; i < max; i++ {
-			item := items[viewStart+i]
-			display := item
-
-			if len(item) > viewWidth {
-				if viewStart+i == selectedItem {
-					// build marquee string with gap
-					marquee := item + "   " // always a 3-space gap
-					marquee = marquee + marquee
-
-					offset := scrollOffset % (len(item) + 3)
-					display = marquee[offset : offset+viewWidth]
-				} else {
-					// normal truncation
-					display = item[:viewWidth-3] + "..."
-				}
-			}
-
-			if viewStart+i == selectedItem {
-				win.ColorOn(1)
-			}
-			win.MovePrint(i+1, 2, strings.Repeat(" ", viewWidth))
-			win.MovePrint(i+1, 2, display)
-			win.ColorOff(1)
-		}
-
-		// --- Buttons ---
-		buttons := make([]string, len(opts.Buttons))
-		copy(buttons, opts.Buttons)
-		if opts.DynamicActionLabel != nil && len(buttons) > opts.ActionButton {
-			buttons[opts.ActionButton] = opts.DynamicActionLabel(selectedItem)
-		}
-
-		DrawActionButtons(win, buttons, selectedButton, 4)
-
-		// --- Position/scroll indicators ---
-		if opts.ShowTotal {
-			totalStatus := fmt.Sprintf("%*d/%d", len(fmt.Sprint(len(items))), selectedItem+1, len(items))
-			win.MovePrint(0, 2, totalStatus)
-		}
-		if viewStart > 0 {
-			win.MoveAddChar(0, width-3, gc.ACS_UARROW)
-		} else {
-			win.MoveAddChar(0, width-3, gc.ACS_HLINE)
-		}
-		if viewStart+viewHeight < len(items) {
-			win.MoveAddChar(height-3, width-3, gc.ACS_DARROW)
-		} else {
-			win.MoveAddChar(height-3, width-3, gc.ACS_HLINE)
-		}
-
-		win.NoutRefresh()
-		gc.Update()
-
-		// non-blocking read
-		ch = win.GetChar()
-
-		switch ch {
-		case gc.KEY_DOWN:
-			if selectedItem < len(items)-1 {
-				selectedItem++
-				if selectedItem >= viewStart+viewHeight && viewStart+viewHeight < len(items) {
-					viewStart++
-				}
-			}
-		case gc.KEY_UP:
-			if selectedItem > 0 {
-				selectedItem--
-				if selectedItem < viewStart && viewStart > 0 {
-					viewStart--
-				}
-			}
-		case gc.KEY_LEFT:
-			if selectedButton > 0 {
-				selectedButton--
-			} else {
-				selectedButton = len(opts.Buttons) - 1
-			}
-		case gc.KEY_RIGHT:
-			if selectedButton < len(opts.Buttons)-1 {
-				selectedButton++
-			} else {
-				selectedButton = 0
-			}
-		case gc.KEY_PAGEUP:
-			pageUp()
-		case gc.KEY_PAGEDOWN:
-			pageDown()
-		case gc.KEY_ENTER, 10, 13:
-			if selectedButton == opts.ActionButton {
-				return selectedButton, selectedItem, nil
-			} else {
-				return selectedButton, -1, nil
-			}
-		}
+	if ok {
+		win.GetChar()
 	}
 
-	return -1, -1, nil
+	return nil
 }
