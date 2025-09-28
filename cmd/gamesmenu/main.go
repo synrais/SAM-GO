@@ -459,36 +459,56 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]MenuFile, error)) ([]Menu
 }
 
 func main() {
-	printPtr := flag.Bool("print", false, "Print game path instead of launching")
-	flag.Parse()
-	launchGame := !*printPtr
+    // Kill all other gamesmenu processes before starting
+    proc, err := os.FindProcess(os.Getpid())
+    if err == nil {
+        // get our own PID so we don't kill ourselves
+        selfPid := proc.Pid
 
-	cfg, err := config.LoadUserConfig(appName, &config.UserConfig{})
-	if err != nil && !os.IsNotExist(err) {
-		log.Fatal(err)
-	}
+        // run pkill -o gamesmenu (exclude self)
+        // Note: pkill comes with most Linux distros, but you can also
+        // use "pgrep -x gamesmenu" + syscall.Kill if you prefer pure Go.
+        out, _ := exec.Command("pgrep", "-x", appName).Output()
+        pids := strings.Fields(string(out))
+        for _, pidStr := range pids {
+            pid, _ := strconv.Atoi(pidStr)
+            if pid != selfPid {
+                _ = syscall.Kill(pid, syscall.SIGKILL)
+            }
+        }
+    }
 
-	stdscr, err := curses.Setup()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer gc.End()
+    printPtr := flag.Bool("print", false, "Print game path instead of launching")
+    flag.Parse()
+    launchGame := !*printPtr
 
-	files, err := loadingWindow(stdscr, loadMenuDb)
-	if err != nil {
-		files, err = generateIndexWindow(cfg, stdscr)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
+    cfg, err := config.LoadUserConfig(appName, &config.UserConfig{})
+    if err != nil && !os.IsNotExist(err) {
+        log.Fatal(err)
+    }
 
-	if launchGame {
-		if err := mainMenu(cfg, stdscr, files); err != nil {
-			log.Fatal(err)
-		}
-	} else {
-		for _, f := range files {
-			fmt.Println(f.MenuPath)
-		}
-	}
+    stdscr, err := curses.Setup()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer gc.End()
+
+    files, err := loadingWindow(stdscr, loadMenuDb)
+    if err != nil {
+        files, err = generateIndexWindow(cfg, stdscr)
+        if err != nil {
+            log.Fatal(err)
+        }
+    }
+
+    if launchGame {
+        if err := mainMenu(cfg, stdscr, files); err != nil {
+            log.Fatal(err)
+        }
+    } else {
+        for _, f := range files {
+            fmt.Println(f.MenuPath)
+        }
+    }
 }
+
