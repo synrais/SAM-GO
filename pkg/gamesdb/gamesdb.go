@@ -149,126 +149,128 @@ type fileinfo struct {
 
 // Build a new names index and Gob file from all systems and their game files.
 func NewNamesIndex(
-	cfg *config.UserConfig,
-	systems []games.System,
-	update func(IndexStatus),
+    cfg *config.UserConfig,
+    systems []games.System,
+    update func(IndexStatus),
 ) (int, error) {
-	status := IndexStatus{
-		Total: len(systems) + 2, // +1 for games.db write, +1 for menu.db write
-		Step:  1,
-	}
+    status := IndexStatus{
+        Total: len(systems) + 2, // +1 for games.db write, +1 for menu.db write
+        Step:  1,
+    }
 
-	db, err := openNames()
-	if err != nil {
-		return status.Files, fmt.Errorf("error opening games.db: %s", err)
-	}
-	defer db.Close()
+    db, err := openNames()
+    if err != nil {
+        return status.Files, fmt.Errorf("error opening games.db: %s", err)
+    }
+    defer db.Close()
 
-	update(status)
+    update(status)
 
-	// Collect all paths per system
-	systemPaths := make(map[string][]string, 0)
-	for _, v := range games.GetSystemPaths(cfg, systems) {
-		systemPaths[v.System.Id] = append(systemPaths[v.System.Id], v.Path)
-	}
+    // Collect all paths per system
+    systemPaths := make(map[string][]string, 0)
+    for _, v := range games.GetSystemPaths(cfg, systems) {
+        systemPaths[v.System.Id] = append(systemPaths[v.System.Id], v.Path)
+    }
 
-	var allFiles []fileinfo
+    var allFiles []fileinfo
 
-	for _, k := range utils.AlphaMapKeys(systemPaths) {
-		status.SystemId = k
-		status.Step++
-		update(status)
+    for _, k := range utils.AlphaMapKeys(systemPaths) {
+        status.SystemId = k
+        status.Step++
+        update(status)
 
-		sys, err := games.GetSystem(k)
-		if err != nil {
-			return status.Files, fmt.Errorf("unknown system: %s", k)
-		}
+        sys, err := games.GetSystem(k)
+        if err != nil {
+            return status.Files, fmt.Errorf("unknown system: %s", k)
+        }
 
-		files := make([]fileinfo, 0)
+        files := make([]fileinfo, 0)
 
-		for _, path := range systemPaths[k] {
-			pathFiles, err := games.GetFiles(k, path)
-			if err != nil {
-				return status.Files, fmt.Errorf("error getting files: %s", err)
-			}
+        for _, path := range systemPaths[k] {
+            pathFiles, err := games.GetFiles(k, path)
+            if err != nil {
+                return status.Files, fmt.Errorf("error getting files: %s", err)
+            }
 
-			if len(pathFiles) == 0 {
-				continue
-			}
+            if len(pathFiles) == 0 {
+                continue
+            }
 
-			for _, fullPath := range pathFiles {
-				base := filepath.Base(fullPath)
-				ext := filepath.Ext(base)
-				name := strings.TrimSuffix(base, ext)
-				parentFolder := filepath.Base(filepath.Dir(fullPath))
+            for _, fullPath := range pathFiles {
+                base := filepath.Base(fullPath)
+                ext := filepath.Ext(base)
+                name := strings.TrimSuffix(base, ext)
+                parentFolder := filepath.Base(filepath.Dir(fullPath))
 
-				// Compute relative path under the system’s root folder.
-				relPath := ""
-				if rel, err := filepath.Rel(sys.Folder[0], fullPath); err == nil {
-					relPath = rel
-				} else {
-					relPath = base // fallback: just filename
-				}
+                // -------------------------
+                // Build MenuPath
+                // -------------------------
+                menuPath := ""
+                if idx := strings.Index(fullPath, sys.Id); idx != -1 {
+                    rel := fullPath[idx+len(sys.Id):] // strip systemId prefix
+                    rel = strings.TrimPrefix(rel, string(os.PathSeparator))
+                    menuPath = filepath.ToSlash(filepath.Join(sys.Name, rel))
+                } else {
+                    // fallback: just FriendlyName + filename
+                    menuPath = filepath.ToSlash(filepath.Join(sys.Name, base))
+                }
 
-				// MenuPath: Friendly SystemName + full relative path
-				menuPath := filepath.ToSlash(filepath.Join(sys.Name, relPath))
+                files = append(files, fileinfo{
+                    SystemId:     sys.Id,
+                    SystemName:   sys.Name,
+                    SystemFolder: sys.Folder[0],
+                    Name:         name,
+                    NameExt:      base,
+                    Path:         fullPath,
+                    FolderName:   parentFolder,
+                    MenuPath:     menuPath,
+                })
+            }
+        }
 
-				files = append(files, fileinfo{
-					SystemId:     sys.Id,
-					SystemName:   sys.Name,
-					SystemFolder: sys.Folder[0],
-					Name:         name,
-					NameExt:      base,
-					Path:         fullPath,
-					FolderName:   parentFolder,
-					MenuPath:     menuPath,
-				})
-			}
-		}
+        if len(files) == 0 {
+            continue
+        }
 
-		if len(files) == 0 {
-			continue
-		}
+        status.Files += len(files)
+        allFiles = append(allFiles, files...)
 
-		status.Files += len(files)
-		allFiles = append(allFiles, files...)
+        // Update Bolt DB
+        if err := updateNames(db, files); err != nil {
+            return status.Files, err
+        }
+    }
 
-		// Update Bolt DB
-		if err := updateNames(db, files); err != nil {
-			return status.Files, err
-		}
-	}
+    // --- Finalize Bolt ---
+    status.Step++
+    status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.GamesDb))
+    update(status)
 
-	// --- Finalize Bolt ---
-	status.Step++
-	status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.GamesDb))
-	update(status)
+    if err := writeIndexedSystems(db, utils.AlphaMapKeys(systemPaths)); err != nil {
+        return status.Files, fmt.Errorf("error writing indexed systems: %s", err)
+    }
 
-	if err := writeIndexedSystems(db, utils.AlphaMapKeys(systemPaths)); err != nil {
-		return status.Files, fmt.Errorf("error writing indexed systems: %s", err)
-	}
+    if err := db.Sync(); err != nil {
+        return status.Files, fmt.Errorf("error syncing database: %s", err)
+    }
 
-	if err := db.Sync(); err != nil {
-		return status.Files, fmt.Errorf("error syncing database: %s", err)
-	}
+    // --- Write Gob (menu.db) ---
+    status.Step++
+    status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.MenuDb))
+    update(status)
 
-	// --- Write Gob (menu.db) ---
-	status.Step++
-	status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.MenuDb))
-	update(status)
+    gobFile, err := os.Create(config.MenuDb)
+    if err != nil {
+        return status.Files, fmt.Errorf("error creating gob file: %s", err)
+    }
+    defer gobFile.Close()
 
-	gobFile, err := os.Create(config.MenuDb)
-	if err != nil {
-		return status.Files, fmt.Errorf("error creating gob file: %s", err)
-	}
-	defer gobFile.Close()
+    encoder := gob.NewEncoder(gobFile)
+    if err := encoder.Encode(allFiles); err != nil {
+        return status.Files, fmt.Errorf("error writing gob file: %s", err)
+    }
 
-	encoder := gob.NewEncoder(gobFile)
-	if err := encoder.Encode(allFiles); err != nil {
-		return status.Files, fmt.Errorf("error writing gob file: %s", err)
-	}
-
-	return status.Files, nil
+    return status.Files, nil
 }
 
 // -------------------------
