@@ -162,55 +162,99 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) 
 }
 
 // -------------------------
-// Main Menu (flat by MenuPath)
+// Tree structure
 // -------------------------
-func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error {
+type Node struct {
+	Name     string
+	Files    []MenuFile
+	Children map[string]*Node
+}
+
+func buildTree(files []MenuFile) *Node {
+	root := &Node{Name: "Root", Children: make(map[string]*Node)}
+	for _, f := range files {
+		parts := strings.Split(f.MenuPath, string(os.PathSeparator))
+		curr := root
+		for i, part := range parts {
+			if i == len(parts)-1 {
+				curr.Files = append(curr.Files, f)
+			} else {
+				if curr.Children[part] == nil {
+					curr.Children[part] = &Node{Name: part, Children: make(map[string]*Node)}
+				}
+				curr = curr.Children[part]
+			}
+		}
+	}
+	return root
+}
+
+func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 	for {
 		stdscr.Clear()
 		stdscr.Refresh()
 
-		// sort all files by MenuPath
-		sort.Slice(files, func(i, j int) bool {
-			return strings.ToLower(files[i].MenuPath) < strings.ToLower(files[j].MenuPath)
-		})
-
 		var items []string
-		for _, f := range files {
-			items = append(items, f.MenuPath)
+		var folders []string
+		for name := range node.Children {
+			folders = append(folders, name+"/")
+		}
+		sort.Strings(folders)
+		items = append(items, folders...)
+
+		for _, f := range node.Files {
+			items = append(items, f.NameExt)
 		}
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-			Title:         "Games",
-			Buttons:       []string{"PgUp", "PgDn", "Launch", "Search", "Options", "Exit"},
+			Title:         node.Name,
+			Buttons:       []string{"PgUp", "PgDn", "Open/Launch", "Back", "Search", "Options", "Exit"},
 			ActionButton:  2,
 			DefaultButton: 2,
 			ShowTotal:     true,
-			Width:         80,
-			Height:        22,
+			Width:         70,
+			Height:        20,
 		}, items)
 		if err != nil {
 			return err
 		}
 
 		switch button {
-		case 2: // Launch
-			game := files[selected]
-			sys, _ := games.GetSystem(game.SystemId)
-			return mister.LaunchGame(cfg, *sys, game.Path)
-		case 3: // Search
+		case 2: // Open/Launch
+			if selected < len(folders) {
+				folderName := folders[selected][:len(folders[selected])-1]
+				if err := browseNode(cfg, stdscr, node.Children[folderName]); err != nil {
+					return err
+				}
+			} else {
+				file := node.Files[selected-len(folders)]
+				sys, _ := games.GetSystem(file.SystemId)
+				return mister.LaunchGame(cfg, *sys, file.Path)
+			}
+		case 3: // Back
+			return nil
+		case 4: // Search
 			if err := searchWindow(cfg, stdscr); err != nil {
 				return err
 			}
-		case 4: // Options
+		case 5: // Options
 			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
 				return err
 			} else if newFiles != nil {
-				files = newFiles
+				return browseNode(cfg, stdscr, buildTree(newFiles))
 			}
-		case 5: // Exit
+		case 6: // Exit
 			return nil
 		}
 	}
+}
+
+// -------------------------
+// Main Menu (tree from MenuPath)
+// -------------------------
+func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error {
+	tree := buildTree(files)
+	return browseNode(cfg, stdscr, tree)
 }
 
 // -------------------------
