@@ -143,7 +143,7 @@ func NewNamesIndex(
 	update func(IndexStatus),
 ) (int, error) {
 	status := IndexStatus{
-		Total: len(systems) + 1,
+		Total: len(systems) + 2, // +1 for system indexing, +1 for gob write
 		Step:  1,
 	}
 
@@ -207,8 +207,9 @@ func NewNamesIndex(
 		}
 	}
 
+	// --- Finalize Bolt ---
 	status.Step++
-	status.SystemId = ""
+	status.SystemId = filepath.Base(config.GamesDb) // show "games.db"
 	update(status)
 
 	if err := writeIndexedSystems(db, utils.AlphaMapKeys(systemPaths)); err != nil {
@@ -219,7 +220,11 @@ func NewNamesIndex(
 		return status.Files, fmt.Errorf("error syncing database: %s", err)
 	}
 
-	// --- Write enriched GOB file alongside Bolt ---
+	// --- Write enriched Gob file step ---
+	status.Step++
+	status.SystemId = filepath.Base(config.MenuDb) // show "menu.db"
+	update(status)
+
 	gobFile, err := os.Create(config.MenuDb)
 	if err != nil {
 		return status.Files, fmt.Errorf("error creating gob file: %s", err)
