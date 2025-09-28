@@ -22,18 +22,29 @@ import (
 const appName = "gamesmenu"
 
 // -------------------------
-// Global cache
+// Local struct for menu.db
 // -------------------------
-var cachedFiles []gamesdb.FileInfo
+type MenuFile struct {
+	SystemId     string
+	SystemName   string
+	SystemFolder string
+	Name         string
+	NameExt      string
+	Path         string
+	FolderName   string
+}
 
-func loadMenuDb() ([]gamesdb.FileInfo, error) {
+// -------------------------
+// Load Gob from menu.db
+// -------------------------
+func loadMenuDb() ([]MenuFile, error) {
 	f, err := os.Open(config.MenuDb)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
-	var files []gamesdb.FileInfo
+	var files []MenuFile
 	dec := gob.NewDecoder(f)
 	if err := dec.Decode(&files); err != nil {
 		return nil, err
@@ -44,7 +55,7 @@ func loadMenuDb() ([]gamesdb.FileInfo, error) {
 // -------------------------
 // Shared DB Indexer
 // -------------------------
-func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.FileInfo, error) {
+func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
 		return nil, err
@@ -126,9 +137,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.F
 // -------------------------
 // System Menu
 // -------------------------
-func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.FileInfo) error {
+func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error {
 	// group by system
-	sysMap := make(map[string][]gamesdb.FileInfo)
+	sysMap := make(map[string][]MenuFile)
 	sysNames := make(map[string]string)
 	for _, f := range files {
 		sysMap[f.SystemId] = append(sysMap[f.SystemId], f)
@@ -151,13 +162,13 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.FileI
 		}
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-			Title:     "Systems",
-			Buttons:   []string{"PgUp", "PgDn", "Open", "Search", "Rebuild", "Exit"},
+			Title:         "Systems",
+			Buttons:       []string{"PgUp", "PgDn", "Open", "Search", "Rebuild", "Exit"},
 			ActionButton:  2,
 			DefaultButton: 2,
-			ShowTotal: true,
-			Width:     70,
-			Height:    20,
+			ShowTotal:     true,
+			Width:         70,
+			Height:        20,
 		}, display)
 		if err != nil {
 			return err
@@ -170,7 +181,7 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.FileI
 				return err
 			}
 		case 3: // Search
-			if err := searchWindow(cfg, stdscr, files); err != nil {
+			if err := searchWindow(cfg, stdscr); err != nil {
 				return err
 			}
 		case 4: // Rebuild
@@ -178,8 +189,7 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.FileI
 			if err != nil {
 				return err
 			}
-			cachedFiles = newFiles
-			return systemMenu(cfg, stdscr, cachedFiles)
+			return systemMenu(cfg, stdscr, newFiles)
 		case 5: // Exit
 			return nil
 		}
@@ -189,7 +199,7 @@ func systemMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.FileI
 // -------------------------
 // Browse a single system
 // -------------------------
-func browseSystem(cfg *config.UserConfig, stdscr *gc.Window, sysName string, files []gamesdb.FileInfo) error {
+func browseSystem(cfg *config.UserConfig, stdscr *gc.Window, sysName string, files []MenuFile) error {
 	// sort by game name
 	sort.Slice(files, func(i, j int) bool {
 		return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
@@ -201,13 +211,13 @@ func browseSystem(cfg *config.UserConfig, stdscr *gc.Window, sysName string, fil
 	}
 
 	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-		Title:     sysName,
-		Buttons:   []string{"PgUp", "PgDn", "Launch", "Back"},
+		Title:         sysName,
+		Buttons:       []string{"PgUp", "PgDn", "Launch", "Back"},
 		ActionButton:  2,
 		DefaultButton: 2,
-		ShowTotal: true,
-		Width:     70,
-		Height:    20,
+		ShowTotal:     true,
+		Width:         70,
+		Height:        20,
 	}, items)
 	if err != nil {
 		return err
@@ -222,20 +232,18 @@ func browseSystem(cfg *config.UserConfig, stdscr *gc.Window, sysName string, fil
 }
 
 // -------------------------
-// Search Menu
+// Search Menu (Bolt)
 // -------------------------
-func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.FileInfo) error {
+func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	text := ""
 	button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
 	if err != nil || button == 1 {
 		return nil
 	}
 
-	var results []gamesdb.FileInfo
-	for _, f := range files {
-		if strings.Contains(strings.ToLower(f.Name), strings.ToLower(query)) {
-			results = append(results, f)
-		}
+	results, err := gamesdb.SearchNamesWords(games.AllSystems(), query)
+	if err != nil {
+		return err
 	}
 	if len(results) == 0 {
 		_ = curses.InfoBox(stdscr, "", "No results found.", false, true)
@@ -243,18 +251,22 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.Fil
 	}
 
 	var items []string
-	for _, f := range results {
-		items = append(items, fmt.Sprintf("[%s] %s", f.SystemName, f.NameExt))
+	for _, r := range results {
+		systemName := r.SystemId
+		if sys, ok := games.GetSystem(r.SystemId); ok {
+			systemName = sys.Name
+		}
+		items = append(items, fmt.Sprintf("[%s] %s", systemName, r.Name))
 	}
 
 	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-		Title:     "Search Results",
-		Buttons:   []string{"PgUp", "PgDn", "Launch", "Cancel"},
+		Title:         "Search Results",
+		Buttons:       []string{"PgUp", "PgDn", "Launch", "Cancel"},
 		ActionButton:  2,
 		DefaultButton: 2,
-		ShowTotal: true,
-		Width:     70,
-		Height:    20,
+		ShowTotal:     true,
+		Width:         70,
+		Height:        20,
 	}, items)
 	if err != nil {
 		return err
@@ -294,14 +306,13 @@ func main() {
 			log.Fatal(err)
 		}
 	}
-	cachedFiles = files
 
 	if launchGame {
-		if err := systemMenu(cfg, stdscr, cachedFiles); err != nil {
+		if err := systemMenu(cfg, stdscr, files); err != nil {
 			log.Fatal(err)
 		}
 	} else {
-		for _, f := range cachedFiles {
+		for _, f := range files {
 			fmt.Printf("[%s] %s\n", f.SystemName, f.NameExt)
 		}
 	}
