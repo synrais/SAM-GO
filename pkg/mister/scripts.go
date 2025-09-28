@@ -134,8 +134,8 @@ func RunScript(path string) error {
 	}
 	defer kbd.Close()
 
-	// Open console
-	if err := openConsole(kbd); err != nil {
+	// Open console (pass pointer to kbd)
+	if err := openConsole(&kbd); err != nil {
 		return err
 	}
 
