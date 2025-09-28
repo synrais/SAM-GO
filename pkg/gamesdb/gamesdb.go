@@ -137,6 +137,20 @@ type IndexStatus struct {
 // Given a list of systems, index all valid game files on disk and write a
 // names index to the DB. Overwrites any existing names index, but does not
 // clean up old missing files.
+// Enriched file information.
+type fileInfo struct {
+	SystemId     string
+	SystemName   string // friendly system name (e.g. "Arcadia 2001")
+	SystemFolder string // DB-defined system folder
+	Name         string // base name without extension
+	NameExt      string // filename with extension
+	Path         string // full path
+	FolderName   string // parent folder name on disk
+}
+
+// Given a list of systems, index all valid game files on disk and write a
+// names index to the DB. Overwrites any existing names index, but does not
+// clean up old missing files.
 func NewNamesIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
@@ -166,6 +180,12 @@ func NewNamesIndex(
 		status.Step++
 		update(status)
 
+		// Get full system info once per system
+		sys, ok := games.GetSystem(k)
+		if !ok {
+			return status.Files, fmt.Errorf("unknown system: %s", k)
+		}
+
 		files := make([]fileInfo, 0)
 
 		for _, path := range systemPaths[k] {
@@ -182,14 +202,16 @@ func NewNamesIndex(
 				base := filepath.Base(fullPath)
 				ext := filepath.Ext(base)
 				name := strings.TrimSuffix(base, ext)
-				folder := filepath.Base(filepath.Dir(fullPath))
+				parentFolder := filepath.Base(filepath.Dir(fullPath))
 
 				files = append(files, fileInfo{
-					SystemId:   k,
-					Name:       name,
-					NameExt:    base,
-					Path:       fullPath,
-					FolderName: folder,
+					SystemId:     sys.Id,
+					SystemName:   sys.Name,
+					SystemFolder: sys.Folder[0], // first configured folder
+					Name:         name,
+					NameExt:      base,
+					Path:         fullPath,
+					FolderName:   parentFolder,
 				})
 			}
 		}
