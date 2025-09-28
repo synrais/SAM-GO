@@ -390,13 +390,22 @@ func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
     go func() {
         logFile := "/tmp/fds_sidelauncher.log"
         f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+        var useStdout bool
         if err != nil {
-            return
+            fmt.Println("[FDS] Failed to open log file, falling back to stdout:", err)
+            useStdout = true
         }
-        defer f.Close()
         log := func(msg string) {
             ts := time.Now().Format("2006-01-02 15:04:05")
-            f.WriteString(fmt.Sprintf("[%s] %s\n", ts, msg))
+            line := fmt.Sprintf("[%s] %s\n", ts, msg)
+            if useStdout {
+                fmt.Print(line)
+            } else {
+                f.WriteString(line)
+            }
+        }
+        if f != nil {
+            defer f.Close()
         }
 
         gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
