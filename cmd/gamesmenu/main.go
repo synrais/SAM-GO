@@ -171,7 +171,8 @@ type Node struct {
 }
 
 func buildTree(files []MenuFile) *Node {
-	root := &Node{Name: "Root", Children: make(map[string]*Node)}
+	// Root has empty name so we don’t show "Root" in the menu
+	root := &Node{Name: "", Children: make(map[string]*Node)}
 	for _, f := range files {
 		parts := strings.Split(f.MenuPath, string(os.PathSeparator))
 		curr := root
@@ -206,8 +207,13 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 			items = append(items, f.NameExt)
 		}
 
+		title := node.Name
+		if title == "" {
+			title = "Games"
+		}
+
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-			Title:         node.Name,
+			Title:         title,
 			Buttons:       []string{"PgUp", "PgDn", "Open/Launch", "Back", "Search", "Options", "Exit"},
 			ActionButton:  2,
 			DefaultButton: 2,
