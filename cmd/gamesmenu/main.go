@@ -260,7 +260,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
                 if err := mister.LaunchGame(cfg, *sys, file.Path); err != nil {
                     return err
                 }
-                // stay in same folder after launch
+                // 🔹 No reset — stay in same folder with same highlight
             }
         case 3: // Back
             return nil
@@ -350,108 +350,106 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 // Search Menu
 // -------------------------
 func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
-	stdscr.Clear()
-	stdscr.Refresh()
+    stdscr.Clear()
+    stdscr.Refresh()
 
-	text := ""
-	for {
-		// Keep keyboard open, prefill with last text
-		button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
-		if err != nil || button == 1 {
-			return nil
-		}
-		text = query
+    text := ""
+    for {
+        // Keep keyboard open, prefill with last text
+        button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
+        if err != nil || button == 1 {
+            return nil
+        }
+        text = query
 
-		// Show searching spinner
-		_ = curses.InfoBox(stdscr, "", "Searching...", false, false)
+        // Show searching spinner
+        _ = curses.InfoBox(stdscr, "", "Searching...", false, false)
 
-		status := struct {
-			Done   bool
-			Error  error
-			Result []gamesdb.SearchResult
-		}{}
+        status := struct {
+            Done   bool
+            Error  error
+            Result []gamesdb.SearchResult
+        }{}
 
-		go func() {
-			results, err := gamesdb.SearchNamesWords(games.AllSystems(), query)
-			status.Result = results
-			status.Error = err
-			status.Done = true
-		}()
+        go func() {
+            results, err := gamesdb.SearchNamesWords(games.AllSystems(), query)
+            status.Result = results
+            status.Error = err
+            status.Done = true
+        }()
 
-		spinnerSeq := []string{"|", "/", "-", "\\"}
-		spinnerCount := 0
+        spinnerSeq := []string{"|", "/", "-", "\\"}
+        spinnerCount := 0
 
-		for {
-			if status.Done {
-				break
-			}
-			label := fmt.Sprintf("Searching... %s", spinnerSeq[spinnerCount])
-			_ = curses.InfoBox(stdscr, "", label, false, false)
-			spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
-			_ = gc.Update()
-			gc.Nap(100)
-		}
+        for {
+            if status.Done {
+                break
+            }
+            label := fmt.Sprintf("Searching... %s", spinnerSeq[spinnerCount])
+            _ = curses.InfoBox(stdscr, "", label, false, false)
+            spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+            _ = gc.Update()
+            gc.Nap(100)
+        }
 
-		if status.Error != nil {
-			return status.Error
-		}
+        if status.Error != nil {
+            return status.Error
+        }
 
-		results := status.Result
-		if len(results) == 0 {
-			// Just layer "No results" on top of keyboard until keypress
-			_ = curses.InfoBox(stdscr, "", "No results found.", false, true)
-			continue
-		}
+        results := status.Result
+        if len(results) == 0 {
+            _ = curses.InfoBox(stdscr, "", "No results found.", false, true)
+            continue
+        }
 
-		// Build results list
-		var items []string
-		for _, r := range results {
-			systemName := r.SystemId
-			if sys, err := games.GetSystem(r.SystemId); err == nil {
-				systemName = sys.Name
-			}
-			// Get extension from the actual path
-			ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(r.Path), "."))
-			displayName := r.Name
-			if ext != "" {
-				displayName = fmt.Sprintf("%s.%s", r.Name, ext)
-			}
-			items = append(items, fmt.Sprintf("[%s] %s", systemName, displayName))
-		}
+        // Build results list
+        var items []string
+        for _, r := range results {
+            systemName := r.SystemId
+            if sys, err := games.GetSystem(r.SystemId); err == nil {
+                systemName = sys.Name
+            }
+            ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(r.Path), "."))
+            displayName := r.Name
+            if ext != "" {
+                displayName = fmt.Sprintf("%s.%s", r.Name, ext)
+            }
+            items = append(items, fmt.Sprintf("[%s] %s", systemName, displayName))
+        }
 
-		// loop inside results picker so launching doesn’t exit search
-		for {
-			stdscr.Clear()
-			stdscr.Refresh()
+        // 🔹 Keep picker alive after launching a game
+        for {
+            stdscr.Clear()
+            stdscr.Refresh()
 
-			button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-				Title:         "Search Results",
-				Buttons:       []string{"PgUp", "PgDn", "Launch", "Back"},
-				ActionButton:  2,
-				DefaultButton: 2,
-				ShowTotal:     true,
-				Width:         70,
-				Height:        20,
-			}, items)
-			if err != nil {
-				return err
-			}
-			if button == 2 {
-				game := results[selected]
-				sys, _ := games.GetSystem(game.SystemId)
-				if err := mister.LaunchGame(cfg, *sys, game.Path); err != nil {
-					return err
-				}
-				// stay in results after launch
-				continue
-			}
-			if button == 3 { // Back → return to keyboard without resetting query
-				stdscr.Clear()
-				stdscr.Refresh()
-				break
-			}
-		}
-	}
+            button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+                Title:         "Search Results",
+                Buttons:       []string{"PgUp", "PgDn", "Launch", "Back"},
+                ActionButton:  2,
+                DefaultButton: 2,
+                ShowTotal:     true,
+                Width:         70,
+                Height:        20,
+            }, items)
+            if err != nil {
+                return err
+            }
+            if button == 2 {
+                game := results[selected]
+                sys, _ := games.GetSystem(game.SystemId)
+                if err := mister.LaunchGame(cfg, *sys, game.Path); err != nil {
+                    return err
+                }
+                // 🔹 Don’t refresh — stay on current highlight in results
+                continue
+            }
+            if button == 3 { // Back
+                stdscr.Clear()
+                stdscr.Refresh()
+                break
+            }
+        }
+    }
 }
 
 // -------------------------
