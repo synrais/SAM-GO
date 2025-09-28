@@ -2,64 +2,54 @@ package input
 
 import (
 	"fmt"
-	"strings"
+	"time"
 
 	"github.com/bendahl/uinput"
 )
 
-// map of runes to their base key and whether they need Shift
-type keyMapping struct {
-	key   int
+const keyDelay = 40 * time.Millisecond
+
+// USKeyboard maps runes to keycodes and shift requirements for US layout.
+var USKeyboard = map[rune]struct {
+	code  int
 	shift bool
-}
-
-var runeToKey = map[rune]keyMapping{
+}{
 	// Letters
-	'a': {uinput.KeyA, false}, 'A': {uinput.KeyA, true},
-	'b': {uinput.KeyB, false}, 'B': {uinput.KeyB, true},
-	'c': {uinput.KeyC, false}, 'C': {uinput.KeyC, true},
-	'd': {uinput.KeyD, false}, 'D': {uinput.KeyD, true},
-	'e': {uinput.KeyE, false}, 'E': {uinput.KeyE, true},
-	'f': {uinput.KeyF, false}, 'F': {uinput.KeyF, true},
-	'g': {uinput.KeyG, false}, 'G': {uinput.KeyG, true},
-	'h': {uinput.KeyH, false}, 'H': {uinput.KeyH, true},
-	'i': {uinput.KeyI, false}, 'I': {uinput.KeyI, true},
-	'j': {uinput.KeyJ, false}, 'J': {uinput.KeyJ, true},
-	'k': {uinput.KeyK, false}, 'K': {uinput.KeyK, true},
-	'l': {uinput.KeyL, false}, 'L': {uinput.KeyL, true},
-	'm': {uinput.KeyM, false}, 'M': {uinput.KeyM, true},
-	'n': {uinput.KeyN, false}, 'N': {uinput.KeyN, true},
-	'o': {uinput.KeyO, false}, 'O': {uinput.KeyO, true},
-	'p': {uinput.KeyP, false}, 'P': {uinput.KeyP, true},
-	'q': {uinput.KeyQ, false}, 'Q': {uinput.KeyQ, true},
-	'r': {uinput.KeyR, false}, 'R': {uinput.KeyR, true},
-	's': {uinput.KeyS, false}, 'S': {uinput.KeyS, true},
-	't': {uinput.KeyT, false}, 'T': {uinput.KeyT, true},
-	'u': {uinput.KeyU, false}, 'U': {uinput.KeyU, true},
-	'v': {uinput.KeyV, false}, 'V': {uinput.KeyV, true},
-	'w': {uinput.KeyW, false}, 'W': {uinput.KeyW, true},
-	'x': {uinput.KeyX, false}, 'X': {uinput.KeyX, true},
-	'y': {uinput.KeyY, false}, 'Y': {uinput.KeyY, true},
-	'z': {uinput.KeyZ, false}, 'Z': {uinput.KeyZ, true},
+	'a': {uinput.KeyA, false}, 'b': {uinput.KeyB, false}, 'c': {uinput.KeyC, false},
+	'd': {uinput.KeyD, false}, 'e': {uinput.KeyE, false}, 'f': {uinput.KeyF, false},
+	'g': {uinput.KeyG, false}, 'h': {uinput.KeyH, false}, 'i': {uinput.KeyI, false},
+	'j': {uinput.KeyJ, false}, 'k': {uinput.KeyK, false}, 'l': {uinput.KeyL, false},
+	'm': {uinput.KeyM, false}, 'n': {uinput.KeyN, false}, 'o': {uinput.KeyO, false},
+	'p': {uinput.KeyP, false}, 'q': {uinput.KeyQ, false}, 'r': {uinput.KeyR, false},
+	's': {uinput.KeyS, false}, 't': {uinput.KeyT, false}, 'u': {uinput.KeyU, false},
+	'v': {uinput.KeyV, false}, 'w': {uinput.KeyW, false}, 'x': {uinput.KeyX, false},
+	'y': {uinput.KeyY, false}, 'z': {uinput.KeyZ, false},
 
-	// Numbers and shifted symbols
-	'0': {uinput.Key0, false}, ')': {uinput.Key0, true},
-	'1': {uinput.Key1, false}, '!': {uinput.Key1, true},
-	'2': {uinput.Key2, false}, '@': {uinput.Key2, true},
-	'3': {uinput.Key3, false}, '#': {uinput.Key3, true},
-	'4': {uinput.Key4, false}, '$': {uinput.Key4, true},
-	'5': {uinput.Key5, false}, '%': {uinput.Key5, true},
-	'6': {uinput.Key6, false}, '^': {uinput.Key6, true},
-	'7': {uinput.Key7, false}, '&': {uinput.Key7, true},
-	'8': {uinput.Key8, false}, '*': {uinput.Key8, true},
-	'9': {uinput.Key9, false}, '(': {uinput.Key9, true},
+	// Uppercase letters
+	'A': {uinput.KeyA, true}, 'B': {uinput.KeyB, true}, 'C': {uinput.KeyC, true},
+	'D': {uinput.KeyD, true}, 'E': {uinput.KeyE, true}, 'F': {uinput.KeyF, true},
+	'G': {uinput.KeyG, true}, 'H': {uinput.KeyH, true}, 'I': {uinput.KeyI, true},
+	'J': {uinput.KeyJ, true}, 'K': {uinput.KeyK, true}, 'L': {uinput.KeyL, true},
+	'M': {uinput.KeyM, true}, 'N': {uinput.KeyN, true}, 'O': {uinput.KeyO, true},
+	'P': {uinput.KeyP, true}, 'Q': {uinput.KeyQ, true}, 'R': {uinput.KeyR, true},
+	'S': {uinput.KeyS, true}, 'T': {uinput.KeyT, true}, 'U': {uinput.KeyU, true},
+	'V': {uinput.KeyV, true}, 'W': {uinput.KeyW, true}, 'X': {uinput.KeyX, true},
+	'Y': {uinput.KeyY, true}, 'Z': {uinput.KeyZ, true},
 
-	// Whitespace
+	// Numbers
+	'0': {uinput.Key0, false}, '1': {uinput.Key1, false}, '2': {uinput.Key2, false},
+	'3': {uinput.Key3, false}, '4': {uinput.Key4, false}, '5': {uinput.Key5, false},
+	'6': {uinput.Key6, false}, '7': {uinput.Key7, false}, '8': {uinput.Key8, false},
+	'9': {uinput.Key9, false},
+
+	// Shifted numbers (symbols)
+	')': {uinput.Key0, true}, '!': {uinput.Key1, true}, '@': {uinput.Key2, true},
+	'#': {uinput.Key3, true}, '$': {uinput.Key4, true}, '%': {uinput.Key5, true},
+	'^': {uinput.Key6, true}, '&': {uinput.Key7, true}, '*': {uinput.Key8, true},
+	'(': {uinput.Key9, true},
+
+	// Symbols and punctuation
 	' ': {uinput.KeySpace, false},
-	'\n': {uinput.KeyEnter, false},
-	'\t': {uinput.KeyTab, false},
-
-	// Punctuation
 	'-': {uinput.KeyMinus, false}, '_': {uinput.KeyMinus, true},
 	'=': {uinput.KeyEqual, false}, '+': {uinput.KeyEqual, true},
 	'[': {uinput.KeyLeftbrace, false}, '{': {uinput.KeyLeftbrace, true},
@@ -73,24 +63,40 @@ var runeToKey = map[rune]keyMapping{
 	'`': {uinput.KeyGrave, false}, '~': {uinput.KeyGrave, true},
 }
 
-// TypeRune presses a single rune if supported
+// TypeRune types a single rune using the virtual keyboard.
 func (k *VirtualKeyboard) TypeRune(r rune) error {
-	mapping, ok := runeToKey[r]
+	entry, ok := USKeyboard[r]
 	if !ok {
-		return fmt.Errorf("unsupported character: %q", r)
+		return fmt.Errorf("unsupported rune: %q", r)
 	}
-	if mapping.shift {
-		return k.Combo(uinput.KeyLeftshift, mapping.key)
+
+	if entry.shift {
+		if err := k.Device.KeyDown(uinput.KeyLeftshift); err != nil {
+			return err
+		}
+		time.Sleep(keyDelay)
 	}
-	return k.Press(mapping.key)
+
+	if err := k.Press(entry.code); err != nil {
+		return err
+	}
+
+	if entry.shift {
+		if err := k.Device.KeyUp(uinput.KeyLeftshift); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-// TypeString types an entire string
+// TypeString types an entire string.
 func (k *VirtualKeyboard) TypeString(s string) error {
 	for _, r := range s {
 		if err := k.TypeRune(r); err != nil {
 			return err
 		}
+		time.Sleep(keyDelay)
 	}
 	return nil
 }
