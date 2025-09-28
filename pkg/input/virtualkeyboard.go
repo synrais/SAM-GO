@@ -11,7 +11,7 @@ import (
 // delay between key presses
 const sleepTime = 40 * time.Millisecond
 
-// VirtualKeyboard wraps a uinput.Keyboard device
+// VirtualKeyboard wraps a uinput.Keyboard device.
 type VirtualKeyboard struct {
 	Device uinput.Keyboard
 }
@@ -21,7 +21,8 @@ var (
 	keyboardMu       sync.Mutex
 )
 
-// NewVirtualKeyboard creates and returns the singleton VirtualKeyboard
+// NewVirtualKeyboard creates and returns the singleton VirtualKeyboard.
+// If one already exists, it will return the existing instance.
 func NewVirtualKeyboard() (*VirtualKeyboard, error) {
 	keyboardMu.Lock()
 	defer keyboardMu.Unlock()
@@ -39,7 +40,8 @@ func NewVirtualKeyboard() (*VirtualKeyboard, error) {
 	return keyboardInstance, nil
 }
 
-// Close releases the keyboard device and clears the singleton
+// Close releases the keyboard device and clears the singleton.
+// After calling Close, the old pointer should not be used anymore.
 func (k *VirtualKeyboard) Close() error {
 	keyboardMu.Lock()
 	defer keyboardMu.Unlock()
@@ -53,8 +55,12 @@ func (k *VirtualKeyboard) Close() error {
 	return err
 }
 
-// Press simulates a single key press
+// Press simulates a single key press.
 func (k *VirtualKeyboard) Press(key int) error {
+	if k == nil || k.Device == nil {
+		return errors.New("keyboard not initialized")
+	}
+
 	if err := k.Device.KeyDown(key); err != nil {
 		return err
 	}
@@ -65,8 +71,12 @@ func (k *VirtualKeyboard) Press(key int) error {
 	return nil
 }
 
-// Combo simulates pressing and releasing a combination of keys
+// Combo simulates pressing and releasing a combination of keys.
 func (k *VirtualKeyboard) Combo(keys ...int) error {
+	if k == nil || k.Device == nil {
+		return errors.New("keyboard not initialized")
+	}
+
 	for _, key := range keys {
 		if err := k.Device.KeyDown(key); err != nil {
 			return err
