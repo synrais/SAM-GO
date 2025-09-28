@@ -10,11 +10,10 @@ import (
 	s "strings"
 	"time"
 
-	"github.com/synrais/SAM-GO/pkg/input"
-	"github.com/synrais/SAM-GO/pkg/utils"
-
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
+	"github.com/synrais/SAM-GO/pkg/utils"
+	"github.com/synrais/SAM-GO/pkg/input/virtualinput"
 )
 
 func GenerateMgl(cfg *config.UserConfig, system *games.System, path string, override string) (string, error) {
@@ -484,7 +483,7 @@ func LaunchRandomGame(cfg *config.UserConfig, systems []games.System) error {
 	return fmt.Errorf("failed to find a random game")
 }
 
-func LaunchToken(cfg *config.UserConfig, manual bool, kbd input.VirtualKeyboard, text string) error {
+func LaunchToken(cfg *config.UserConfig, manual bool, kbd *virtualinput.Keyboard, text string) error {
 	// detection can never be perfect, but these characters are illegal in
 	// windows filenames and heavily avoided in linux. use them to mark that
 	// this is a command
@@ -497,9 +496,6 @@ func LaunchToken(cfg *config.UserConfig, manual bool, kbd input.VirtualKeyboard,
 
 		cmd, args := s.TrimSpace(parts[0]), s.TrimSpace(parts[1])
 
-		// TODO: search game file
-		// TODO: game file by hash
-
 		switch cmd {
 		case "system":
 			if s.EqualFold(args, "menu") {
@@ -510,111 +506,94 @@ func LaunchToken(cfg *config.UserConfig, manual bool, kbd input.VirtualKeyboard,
 			if err != nil {
 				return err
 			}
-
 			return LaunchCore(cfg, *system)
+
 		case "command":
 			if !manual {
 				return fmt.Errorf("commands must be manually run")
 			}
-
 			command := exec.Command("bash", "-c", args)
-			err := command.Start()
-			if err != nil {
+			if err := command.Start(); err != nil {
 				return err
 			}
-
 			return nil
+
 		case "random":
 			if args == "" {
 				return fmt.Errorf("no system specified")
 			}
-
 			if args == "all" {
 				return LaunchRandomGame(cfg, games.AllSystems())
 			}
-
-			// TODO: allow multiple systems
 			system, err := games.LookupSystem(args)
 			if err != nil {
 				return err
 			}
-
 			return LaunchRandomGame(cfg, []games.System{*system})
+
 		case "ini":
 			inis, err := GetAllMisterIni()
 			if err != nil {
 				return err
 			}
-
 			if len(inis) == 0 {
 				return fmt.Errorf("no ini files found")
 			}
-
 			id, err := strconv.Atoi(args)
 			if err != nil {
 				return err
 			}
-
 			if id < 1 || id > len(inis) {
 				return fmt.Errorf("ini id out of range: %d", id)
 			}
-
 			return SetActiveIni(id, true)
+
 		case "get":
-			go func() {
-				_, _ = http.Get(args)
-			}()
+			go func() { _, _ = http.Get(args) }()
 			return nil
+
 		case "key":
 			code, err := strconv.Atoi(args)
 			if err != nil {
 				return err
 			}
+			return kbd.Press(code)
 
-			kbd.Press(code)
-
-			return nil
 		case "coinp1":
 			amount, err := strconv.Atoi(args)
 			if err != nil {
 				return err
 			}
-
 			for i := 0; i < amount; i++ {
-				kbd.Press(6)
+				_ = kbd.Press(6) // P1 coin
 				time.Sleep(100 * time.Millisecond)
 			}
-
 			return nil
+
 		case "coinp2":
-			// TODO: this is lazy, make a function
 			amount, err := strconv.Atoi(args)
 			if err != nil {
 				return err
 			}
-
 			for i := 0; i < amount; i++ {
-				kbd.Press(7)
+				_ = kbd.Press(7) // P2 coin
 				time.Sleep(100 * time.Millisecond)
 			}
-
 			return nil
+
 		default:
 			return fmt.Errorf("unknown command: %s", cmd)
 		}
 	}
 
-	// if it's not a command, assume it's some kind of file path
+	// not a command → treat as path
 	if filepath.IsAbs(text) {
 		return LaunchGenericFile(cfg, text)
 	}
-
-	// if it's a relative path with no extension, assume it's a core
 	if filepath.Ext(text) == "" {
 		return LaunchShortCore(text)
 	}
 
-	// if the file is in a .zip, just check .zip exists in each games folder
 	parts := s.Split(text, "/")
 	for i, part := range parts {
 		if s.HasSuffix(s.ToLower(part), ".zip") {
@@ -627,15 +606,12 @@ func LaunchToken(cfg *config.UserConfig, manual bool, kbd input.VirtualKeyboard,
 			break
 		}
 	}
-
-	// then try check for the whole path in each game folder
 	for _, folder := range games.GetGamesFolders(cfg) {
 		path := filepath.Join(folder, text)
 		if _, err := os.Stat(path); err == nil {
 			return LaunchGenericFile(cfg, path)
 		}
 	}
-
 	return fmt.Errorf("could not find file: %s", text)
 }
 
