@@ -21,6 +21,10 @@ const (
 	indexedSystemsKey = "meta:indexedSystems"
 )
 
+// -------------------------
+// Helpers
+// -------------------------
+
 // Return the key for a name in the names index.
 func NameKey(systemId string, name string) string {
 	return systemId + ":" + name
@@ -32,8 +36,11 @@ func DbExists() bool {
 	return err == nil
 }
 
-// Open the games.db with the given options. If the database does not exist it
-// will be created and the buckets will be initialized.
+// -------------------------
+// DB Management
+// -------------------------
+
+// Open the games.db with the given options. Creates the DB if missing.
 func open(options *bolt.Options) (*bolt.DB, error) {
 	err := os.MkdirAll(filepath.Dir(config.GamesDb), 0755)
 	if err != nil {
@@ -45,6 +52,7 @@ func open(options *bolt.Options) (*bolt.DB, error) {
 		return nil, err
 	}
 
+	// Ensure required buckets exist
 	db.Update(func(txn *bolt.Tx) error {
 		for _, bucket := range []string{BucketNames} {
 			_, err := txn.CreateBucketIfNotExists([]byte(bucket))
@@ -100,6 +108,10 @@ func writeIndexedSystems(db *bolt.DB, systems []string) error {
 	})
 }
 
+// -------------------------
+// Indexing
+// -------------------------
+
 // Update the names index with the given files.
 func updateNames(db *bolt.DB, files []fileinfo) error {
 	return db.Batch(func(tx *bolt.Tx) error {
@@ -123,28 +135,26 @@ type IndexStatus struct {
 	Files    int
 }
 
-// Enriched file information.
+// Enriched file information (also written into menu.db Gob).
 type fileinfo struct {
 	SystemId     string
-	SystemName   string // friendly system name (e.g. "Arcadia 2001")
-	SystemFolder string // DB-defined system folder
-	Name         string // base name without extension
-	NameExt      string // filename with extension
-	Path         string // full path
-	FolderName   string // parent folder name on disk
-	MenuPath     string // friendly menu path: "SystemName/<relative path under system folder>"
+	SystemName   string // Friendly system name (e.g. "Arcadia 2001")
+	SystemFolder string // Root folder on disk for this system
+	Name         string // Base name without extension
+	NameExt      string // Filename with extension
+	Path         string // Full path to file
+	FolderName   string // Parent folder name on disk
+	MenuPath     string // Logical menu path: "SystemId/<subfolders...>/<file>"
 }
 
-// Given a list of systems, index all valid game files on disk and write a
-// names index to the DB. Overwrites any existing names index, but does not
-// clean up old missing files.
+// Build a new names index and Gob file from all systems and their game files.
 func NewNamesIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
 	update func(IndexStatus),
 ) (int, error) {
 	status := IndexStatus{
-		Total: len(systems) + 2, // +1 for system indexing, +1 for gob write
+		Total: len(systems) + 2, // +1 for games.db write, +1 for menu.db write
 		Step:  1,
 	}
 
@@ -155,6 +165,8 @@ func NewNamesIndex(
 	defer db.Close()
 
 	update(status)
+
+	// Collect all paths per system
 	systemPaths := make(map[string][]string, 0)
 	for _, v := range games.GetSystemPaths(cfg, systems) {
 		systemPaths[v.System.Id] = append(systemPaths[v.System.Id], v.Path)
@@ -167,7 +179,6 @@ func NewNamesIndex(
 		status.Step++
 		update(status)
 
-		// Get full system info once per system
 		sys, err := games.GetSystem(k)
 		if err != nil {
 			return status.Files, fmt.Errorf("unknown system: %s", k)
@@ -191,21 +202,24 @@ func NewNamesIndex(
 				name := strings.TrimSuffix(base, ext)
 				parentFolder := filepath.Base(filepath.Dir(fullPath))
 
-				// Relative path under system folder
+				// Compute relative path under the system’s root folder
 				relPath := ""
 				if rel, err := filepath.Rel(sys.Folder[0], fullPath); err == nil {
 					relPath = rel
 				} else {
-					relPath = base // fallback to filename only
+					relPath = base // fallback: just filename
 				}
 
-				// Preserve full hierarchy under system root
+				// MenuPath preserves full hierarchy:
+				//   SystemId/<subfolders...>/<filename>
+				// Example:
+				//   AliceMC10/AliceMC10.zip/1 Games A-Z/ADVbeta.c10
 				menuPath := filepath.ToSlash(filepath.Join(sys.Id, relPath))
 
 				files = append(files, fileinfo{
 					SystemId:     sys.Id,
 					SystemName:   sys.Name,
-					SystemFolder: sys.Folder[0], // first configured folder
+					SystemFolder: sys.Folder[0],
 					Name:         name,
 					NameExt:      base,
 					Path:         fullPath,
@@ -222,7 +236,7 @@ func NewNamesIndex(
 		status.Files += len(files)
 		allFiles = append(allFiles, files...)
 
-		// Write directly into Bolt (sequential)
+		// Update Bolt DB
 		if err := updateNames(db, files); err != nil {
 			return status.Files, err
 		}
@@ -230,7 +244,7 @@ func NewNamesIndex(
 
 	// --- Finalize Bolt ---
 	status.Step++
-	status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.GamesDb)) // show "games.db"
+	status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.GamesDb))
 	update(status)
 
 	if err := writeIndexedSystems(db, utils.AlphaMapKeys(systemPaths)); err != nil {
@@ -241,9 +255,9 @@ func NewNamesIndex(
 		return status.Files, fmt.Errorf("error syncing database: %s", err)
 	}
 
-	// --- Write enriched Gob file step ---
+	// --- Write Gob (menu.db) ---
 	status.Step++
-	status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.MenuDb)) // show "menu.db"
+	status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.MenuDb))
 	update(status)
 
 	gobFile, err := os.Create(config.MenuDb)
@@ -259,6 +273,10 @@ func NewNamesIndex(
 
 	return status.Files, nil
 }
+
+// -------------------------
+// Searching
+// -------------------------
 
 type SearchResult struct {
 	SystemId string
@@ -296,7 +314,7 @@ func searchNamesGeneric(
 				keyName := string(k[nameIdx+1:])
 
 				if test(query, keyName) {
-					// Build MenuPath from system.Name + keyName (best effort)
+					// Rebuild MenuPath best-effort from system + keyName
 					menuPath := filepath.Join(system.Name, keyName)
 
 					results = append(results, SearchResult{
@@ -318,21 +336,21 @@ func searchNamesGeneric(
 	return results, nil
 }
 
-// Return indexed names matching exact query (case insensitive).
+// Exact match (case-insensitive).
 func SearchNamesExact(systems []games.System, query string) ([]SearchResult, error) {
 	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
 		return strings.EqualFold(query, keyName)
 	})
 }
 
-// Return indexed names partially matching query (case insensitive).
+// Partial substring match (case-insensitive).
 func SearchNamesPartial(systems []games.System, query string) ([]SearchResult, error) {
 	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
 		return strings.Contains(strings.ToLower(keyName), strings.ToLower(query))
 	})
 }
 
-// Return indexed names that include every word in query (case insensitive).
+// Word-by-word match (all words must be present).
 func SearchNamesWords(systems []games.System, query string) ([]SearchResult, error) {
 	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
 		qWords := strings.Fields(strings.ToLower(query))
@@ -345,7 +363,7 @@ func SearchNamesWords(systems []games.System, query string) ([]SearchResult, err
 	})
 }
 
-// Return indexed names matching query using regular expression.
+// Regex-based match.
 func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, error) {
 	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
 		r, err := regexp.Compile(query)
@@ -356,7 +374,11 @@ func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, er
 	})
 }
 
-// Return true if a specific system is indexed in the games.db
+// -------------------------
+// System Index Helpers
+// -------------------------
+
+// Return true if a specific system is indexed.
 func SystemIndexed(system games.System) bool {
 	if !DbExists() {
 		return false
@@ -376,7 +398,7 @@ func SystemIndexed(system games.System) bool {
 	return utils.Contains(systems, system.Id)
 }
 
-// Return all systems indexed in the games.db
+// Return all indexed system IDs.
 func IndexedSystems() ([]string, error) {
 	if !DbExists() {
 		return nil, fmt.Errorf("games.db does not exist")
