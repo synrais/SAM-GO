@@ -382,32 +382,37 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 // FDS
 // --------------------------------------------------
 func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
+    logFile := "/tmp/fds_sidelauncher.log"
+    f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_TRUNC, 0644)
+    var useStdout bool
+    if err != nil {
+        fmt.Println("[FDS] Failed to open log file, falling back to stdout:", err)
+        useStdout = true
+    }
+    log := func(msg string) {
+        ts := time.Now().Format("2006-01-02 15:04:05")
+        line := fmt.Sprintf("[%s] %s\n", ts, msg)
+        if useStdout {
+            fmt.Print(line)
+        } else {
+            f.WriteString(line)
+        }
+    }
+    if f != nil {
+        defer f.Close()
+    }
+
+    log(fmt.Sprintf("Launching FDS title: %s", path))
+
     // Launch the game normally
     if err := LaunchGame(cfg, system, path); err != nil {
+        log(fmt.Sprintf("ERROR: failed to launch FDS game: %v", err))
         return fmt.Errorf("failed to launch FDS game: %w", err)
     }
 
-    go func() {
-        logFile := "/tmp/fds_sidelauncher.log"
-        f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-        var useStdout bool
-        if err != nil {
-            fmt.Println("[FDS] Failed to open log file, falling back to stdout:", err)
-            useStdout = true
-        }
-        log := func(msg string) {
-            ts := time.Now().Format("2006-01-02 15:04:05")
-            line := fmt.Sprintf("[%s] %s\n", ts, msg)
-            if useStdout {
-                fmt.Print(line)
-            } else {
-                f.WriteString(line)
-            }
-        }
-        if f != nil {
-            defer f.Close()
-        }
+    log("FDS game launched, starting goroutine for BIOS skip…")
 
+    go func() {
         gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
         if err != nil {
             log(fmt.Sprintf("Failed to create virtual gamepad: %v", err))
