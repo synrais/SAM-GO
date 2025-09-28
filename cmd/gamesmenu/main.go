@@ -56,6 +56,13 @@ func loadMenuDb() ([]MenuFile, error) {
 // Shared DB Indexer
 // -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
+	// 🔹 delete old DBs before rebuilding
+	_ = os.Remove(config.MenuDb)
+	_ = os.Remove(config.GamesDb)
+
+	stdscr.Clear()
+	stdscr.Refresh()
+
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
 		return nil, err
@@ -126,11 +133,13 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 		gc.Nap(100)
 	}
 
+	stdscr.Clear()
+	stdscr.Refresh()
+
 	if status.Error != nil {
 		return nil, status.Error
 	}
 
-	// reload the Gob now that it’s rebuilt
 	return loadMenuDb()
 }
 
@@ -155,7 +164,6 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) 
 	}
 
 	if button == 0 && selected == 0 {
-		// trigger rebuild
 		return generateIndexWindow(cfg, stdscr)
 	}
 	return nil, nil
@@ -171,7 +179,6 @@ type Node struct {
 }
 
 func buildTree(files []MenuFile) *Node {
-	// Root has empty name so we don’t show "Root" in the menu
 	root := &Node{Name: "", Children: make(map[string]*Node)}
 	for _, f := range files {
 		parts := strings.Split(f.MenuPath, string(os.PathSeparator))
@@ -215,7 +222,6 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 			title = "Games"
 		}
 
-		// ✅ Folder-level buttons only: no Options, no Exit
 		buttons := []string{"PgUp", "PgDn", "", "Back"}
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
@@ -264,7 +270,6 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error {
 	tree := buildTree(files)
 
-	// Top-level system list
 	var items []string
 	var sysIds []string
 	for sysId := range tree.Children {
@@ -276,6 +281,9 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 	}
 
 	for {
+		stdscr.Clear()
+		stdscr.Refresh()
+
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         "Systems",
 			Buttons:       []string{"PgUp", "PgDn", "", "Search", "Options", "Exit"},
@@ -302,12 +310,13 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			if err := searchWindow(cfg, stdscr); err != nil {
 				return err
 			}
+			stdscr.Clear()
+			stdscr.Refresh()
 		case 4: // Options
 			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
 				return err
 			} else if newFiles != nil {
 				tree = buildTree(newFiles)
-				// rebuild system list
 				sysIds = sysIds[:0]
 				items = items[:0]
 				for sysId := range tree.Children {
@@ -317,6 +326,8 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 				for _, sysId := range sysIds {
 					items = append(items, sysId)
 				}
+				stdscr.Clear()
+				stdscr.Refresh()
 			}
 		case 5: // Exit
 			return nil
@@ -325,7 +336,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 }
 
 // -------------------------
-// Search Menu (unchanged)
+// Search Menu
 // -------------------------
 func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	stdscr.Clear()
@@ -354,6 +365,9 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		}
 		items = append(items, fmt.Sprintf("[%s] %s", systemName, r.Name))
 	}
+
+	stdscr.Clear()
+	stdscr.Refresh()
 
 	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 		Title:         "Search Results",
@@ -394,7 +408,6 @@ func main() {
 	}
 	defer gc.End()
 
-	// load Gob
 	files, err := loadMenuDb()
 	if err != nil {
 		files, err = generateIndexWindow(cfg, stdscr)
