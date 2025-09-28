@@ -137,6 +137,7 @@ type fileinfo struct {
 	NameExt      string // filename with extension
 	Path         string // full path
 	FolderName   string // parent folder name on disk
+	MenuPath     string // friendly menu path: "SystemName/<relative path under system folder>"
 }
 
 // Given a list of systems, index all valid game files on disk and write a
@@ -195,6 +196,17 @@ func NewNamesIndex(
 				name := strings.TrimSuffix(base, ext)
 				parentFolder := filepath.Base(filepath.Dir(fullPath))
 
+				// Relative path under system folder
+				relPath := ""
+				if rel, err := filepath.Rel(sys.Folder[0], fullPath); err == nil {
+					relPath = rel
+				} else {
+					relPath = base // fallback to filename only
+				}
+
+				// Build friendly MenuPath = "SystemName/<relPath>"
+				menuPath := filepath.Join(sys.Name, relPath)
+
 				files = append(files, fileinfo{
 					SystemId:     sys.Id,
 					SystemName:   sys.Name,
@@ -203,6 +215,7 @@ func NewNamesIndex(
 					NameExt:      base,
 					Path:         fullPath,
 					FolderName:   parentFolder,
+					MenuPath:     menuPath,
 				})
 			}
 		}
@@ -250,61 +263,6 @@ func NewNamesIndex(
 	}
 
 	return status.Files, nil
-}
-
-type SearchResult struct {
-	SystemId string
-	Name     string
-	Path     string
-}
-
-// Iterate all indexed names and return matches to test func against query.
-func searchNamesGeneric(
-	systems []games.System,
-	query string,
-	test func(string, string) bool,
-) ([]SearchResult, error) {
-	if !DbExists() {
-		return nil, fmt.Errorf("games.db does not exist")
-	}
-
-	db, err := open(&bolt.Options{ReadOnly: true})
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
-	var results []SearchResult
-
-	err = db.View(func(tx *bolt.Tx) error {
-		bn := tx.Bucket([]byte(BucketNames))
-
-		for _, system := range systems {
-			pre := []byte(system.Id + ":")
-			nameIdx := bytes.Index(pre, []byte(":"))
-
-			c := bn.Cursor()
-			for k, v := c.Seek([]byte(pre)); k != nil && bytes.HasPrefix(k, pre); k, v = c.Next() {
-				keyName := string(k[nameIdx+1:])
-
-				if test(query, keyName) {
-					results = append(results, SearchResult{
-						SystemId: system.Id,
-						Name:     keyName,
-						Path:     string(v),
-					})
-				}
-			}
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return results, nil
 }
 
 // Return indexed names matching exact query (case insensitive).
