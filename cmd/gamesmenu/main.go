@@ -348,15 +348,49 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		return nil
 	}
 
-	results, err := gamesdb.SearchNamesWords(games.AllSystems(), query)
+	// --- Searching window with spinner ---
+	win, err := curses.NewWindow(stdscr, 4, 40, "Searching...", -1)
 	if err != nil {
 		return err
+	}
+	defer win.Delete()
+
+	var (
+		results   []gamesdb.SearchResult
+		searchErr error
+		done      = make(chan struct{})
+	)
+
+	go func() {
+		results, searchErr = gamesdb.SearchNamesWords(games.AllSystems(), query)
+		close(done)
+	}()
+
+	spinner := []string{"|", "/", "-", "\\"}
+	count := 0
+loop:
+	for {
+		select {
+		case <-done:
+			break loop
+		default:
+			win.MovePrint(1, 2, fmt.Sprintf("Searching %s", spinner[count]))
+			win.NoutRefresh()
+			_ = gc.Update()
+			count = (count + 1) % len(spinner)
+			gc.Nap(100)
+		}
+	}
+
+	if searchErr != nil {
+		return searchErr
 	}
 	if len(results) == 0 {
 		_ = curses.InfoBox(stdscr, "", "No results found.", false, true)
 		return nil
 	}
 
+	// --- Build results list ---
 	var items []string
 	for _, r := range results {
 		systemName := r.SystemId
