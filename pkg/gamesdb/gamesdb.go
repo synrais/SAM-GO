@@ -202,7 +202,8 @@ func NewNamesIndex(
 				name := strings.TrimSuffix(base, ext)
 				parentFolder := filepath.Base(filepath.Dir(fullPath))
 
-				// Compute relative path under the system’s root folder
+				// Compute relative path under the system’s root folder.
+				// This keeps the *full subfolder hierarchy*, including zips.
 				relPath := ""
 				if rel, err := filepath.Rel(sys.Folder[0], fullPath); err == nil {
 					relPath = rel
@@ -211,7 +212,7 @@ func NewNamesIndex(
 				}
 
 				// MenuPath preserves full hierarchy:
-				//   SystemId/<subfolders...>/<filename>
+				//   SystemId/<subfolders...>/<file>
 				// Example:
 				//   AliceMC10/AliceMC10.zip/1 Games A-Z/ADVbeta.c10
 				menuPath := filepath.ToSlash(filepath.Join(sys.Id, relPath))
