@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bendahl/uinput"
 	"github.com/synrais/SAM-GO/pkg/assets"
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/input/virtualinput"
@@ -379,45 +380,58 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 }
 
 // --------------------------------------------------
-// FDS
+// FDS Sidelauncher
 // --------------------------------------------------
+
 func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
-	// --- Logging helper ---
-	logFile := "/tmp/fds_sidelauncher.log"
-	appendLog := func(msg string) {
-		ts := time.Now().Format("2006-01-02 15:04:05")
-		_ = os.WriteFile(logFile, []byte(fmt.Sprintf("[%s] %s\n", ts, msg)), 0644|os.O_APPEND)
-	}
+    logFile := "/tmp/fds_sidelauncher.log"
 
-	appendLog(fmt.Sprintf("Launching FDS title: %s", path))
+    // appendLog helper
+    appendLog := func(msg string) {
+        f, _ := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+        if f != nil {
+            defer f.Close()
+            ts := time.Now().Format("2006-01-02 15:04:05")
+            _, _ = fmt.Fprintf(f, "[%s] %s\n", ts, msg)
+        }
+    }
 
-	// Launch game without recursion (direct MGL launch)
-	if err := launchTempMgl(cfg, &system, path); err != nil {
-		appendLog(fmt.Sprintf("ERROR: failed to launch FDS game: %v", err))
-		return fmt.Errorf("failed to launch FDS game: %w", err)
-	}
+    appendLog(fmt.Sprintf("Launching FDS title: %s", path))
 
-	// Background goroutine to press Button 1 after 10s
-	go func() {
-		appendLog("Creating virtual gamepad...")
-		gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
-		if err != nil {
-			appendLog(fmt.Sprintf("ERROR: failed to create gamepad: %v", err))
-			return
-		}
-		defer gpd.Close()
+    // Create virtual gamepad
+    gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
+    if err != nil {
+        appendLog(fmt.Sprintf("ERROR: failed to create gamepad: %v", err))
+        return err
+    }
+    defer gpd.Close()
 
-		appendLog("Waiting 10 seconds before pressing Button 1...")
-		time.Sleep(10 * time.Second)
+    appendLog("Virtual gamepad created successfully.")
 
-		if err := gpd.Press(uinput.ButtonEast); err != nil {
-			appendLog(fmt.Sprintf("ERROR: failed to press Button 1: %v", err))
-			return
-		}
+    // Launch the game normally
+    if err := launchTempMgl(cfg, &system, path); err != nil {
+        appendLog(fmt.Sprintf("ERROR: failed to launch FDS game: %v", err))
+        return err
+    }
 
-		appendLog("Successfully pressed Button 1 to skip BIOS.")
-	}()
+    appendLog("Game launched, waiting 10 seconds before skipping BIOS...")
 
-	return nil
+    // Run BIOS skip in background
+    go func() {
+        time.Sleep(10 * time.Second)
+        appendLog("Attempting to press Button A (Button 1)...")
+
+        if err := gpd.Press(uinput.ButtonEast); err != nil {
+            appendLog(fmt.Sprintf("ERROR: failed to press Button A: %v", err))
+            return
+        }
+
+        appendLog("Successfully pressed Button A to skip BIOS.")
+    }()
+
+    return nil
 }
 
+func init() {
+    registerSideLauncher("FDS", LaunchFDS)
+}
