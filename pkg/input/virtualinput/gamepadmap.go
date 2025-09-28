@@ -1,7 +1,7 @@
 package virtualinput
 
 import (
-	"github.com/synrais/SAM-GO/pkg/backups/uinput"
+	"github.com/bendahl/uinput"
 )
 
 // ToKeyboardCode converts a single ZapScript key symbol to a uinput code.
