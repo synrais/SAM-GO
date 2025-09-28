@@ -348,49 +348,57 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		return nil
 	}
 
-	// --- Searching window with spinner ---
-	win, err := curses.NewWindow(stdscr, 4, 40, "Searching...", -1)
+	// Create searching window
+	win, err := curses.NewWindow(stdscr, 4, 75, "Searching...", -1)
 	if err != nil {
 		return err
 	}
 	defer win.Delete()
+	_, width := win.MaxYX()
 
-	var (
-		results   []gamesdb.SearchResult
-		searchErr error
-		done      = make(chan struct{})
-	)
+	status := struct {
+		Done   bool
+		Error  error
+		Result []gamesdb.SearchResult
+	}{}
 
 	go func() {
-		results, searchErr = gamesdb.SearchNamesWords(games.AllSystems(), query)
-		close(done)
+		results, err := gamesdb.SearchNamesWords(games.AllSystems(), query)
+		status.Result = results
+		status.Error = err
+		status.Done = true
 	}()
 
-	spinner := []string{"|", "/", "-", "\\"}
-	count := 0
-loop:
+	spinnerSeq := []string{"|", "/", "-", "\\"}
+	spinnerCount := 0
+
+	// Loop while search is running
 	for {
-		select {
-		case <-done:
-			break loop
-		default:
-			win.MovePrint(1, 2, fmt.Sprintf("Searching %s", spinner[count]))
-			win.NoutRefresh()
-			_ = gc.Update()
-			count = (count + 1) % len(spinner)
-			gc.Nap(100)
+		if status.Done {
+			break
 		}
+		display := fmt.Sprintf("Searching... (%s)", query)
+		win.MovePrint(1, 2, display+strings.Repeat(" ", width-len(display)-4))
+		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
+		win.NoutRefresh()
+		_ = gc.Update()
+
+		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+		gc.Nap(100)
 	}
 
-	if searchErr != nil {
-		return searchErr
+	stdscr.Clear()
+	stdscr.Refresh()
+
+	if status.Error != nil {
+		return status.Error
 	}
+	results := status.Result
 	if len(results) == 0 {
 		_ = curses.InfoBox(stdscr, "", "No results found.", false, true)
 		return nil
 	}
 
-	// --- Build results list ---
 	var items []string
 	for _, r := range results {
 		systemName := r.SystemId
