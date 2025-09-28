@@ -26,8 +26,8 @@ const (
 // -------------------------
 
 // Return the key for a name in the names index.
-func NameKey(systemId string, name string) string {
-	return systemId + ":" + name
+func NameKey(systemId string, nameExt string) string {
+    return systemId + ":" + nameExt
 }
 
 // Check if the games.db exists on disk.
@@ -118,7 +118,7 @@ func updateNames(db *bolt.DB, files []fileinfo) error {
 		bns := tx.Bucket([]byte(BucketNames))
 
 		for _, file := range files {
-			nk := NameKey(file.SystemId, file.Name)
+			nk := NameKey(file.SystemId, file.NameExt)
 			err := bns.Put([]byte(nk), []byte(file.Path))
 			if err != nil {
 				return err
