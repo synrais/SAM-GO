@@ -76,6 +76,8 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 	}
 	defer win.Delete()
 
+	// non-blocking input with 100ms tick
+	win.Timeout(100)
 	var ch gc.Key
 
 	for ch != gc.KEY_ESC {
@@ -83,6 +85,12 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 		if selectedItem != currentSelection {
 			currentSelection = selectedItem
 			scrollOffset = 0
+			lastScroll = time.Now()
+		}
+
+		// advance marquee scroll every 200ms
+		if time.Since(lastScroll) > 200*time.Millisecond {
+			scrollOffset++
 			lastScroll = time.Now()
 		}
 
@@ -96,22 +104,11 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 			if len(item) > viewWidth {
 				if viewStart+i == selectedItem {
 					// build marquee string with gap
-					marquee := item + " " // ensure a space
+					marquee := item + "   " // always a 3-space gap
 					marquee = marquee + marquee
 
-					if time.Since(lastScroll) > 200*time.Millisecond {
-						scrollOffset++
-						if scrollOffset >= len(item)+1 { // wrap after original + space
-							scrollOffset = 0
-						}
-						lastScroll = time.Now()
-					}
-
-					end := scrollOffset + viewWidth
-					if end > len(marquee) {
-						end = len(marquee)
-					}
-					display = marquee[scrollOffset:end]
+					offset := scrollOffset % (len(item) + 3)
+					display = marquee[offset : offset+viewWidth]
 				} else {
 					// normal truncation
 					display = item[:viewWidth-3] + "..."
@@ -154,6 +151,7 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 		win.NoutRefresh()
 		gc.Update()
 
+		// non-blocking read
 		ch = win.GetChar()
 
 		switch ch {
