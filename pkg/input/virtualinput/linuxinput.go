@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ZaparooProject/zaparoo-core/v2/pkg/helpers/linuxinput/keyboardmap"
 	"github.com/bendahl/uinput"
 )
 
