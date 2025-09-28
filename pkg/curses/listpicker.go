@@ -18,10 +18,15 @@ type ListPickerOpts struct {
 	Width              int
 	Height             int
 	DynamicActionLabel func(selectedItem int) string
+	InitialIndex       int // 🔹 new: where to start highlight
 }
 
 func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, int, error) {
-	selectedItem := 0
+	// apply InitialIndex safely
+	selectedItem := opts.InitialIndex
+	if selectedItem < 0 || selectedItem >= len(items) {
+		selectedItem = 0
+	}
 	selectedButton := opts.DefaultButton
 
 	height := opts.Height
@@ -31,6 +36,15 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 	viewHeight := height - 4
 	viewWidth := opts.Width - 4
 	pgAmount := viewHeight - 1
+
+	// ensure selected item is in view
+	if selectedItem >= viewHeight {
+		if selectedItem > len(items)-viewHeight {
+			viewStart = len(items) - viewHeight
+		} else {
+			viewStart = selectedItem
+		}
+	}
 
 	// marquee tracking
 	currentSelection := -1
