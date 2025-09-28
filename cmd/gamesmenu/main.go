@@ -201,70 +201,70 @@ func buildTree(files []MenuFile) *Node {
 // Browse inside folders
 // -------------------------
 func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
-	for {
-		stdscr.Clear()
-		stdscr.Refresh()
+    for {
+        stdscr.Clear()
+        stdscr.Refresh()
 
-		var items []string
-		var folders []string
-		for name := range node.Children {
-			folders = append(folders, name+"/")
-		}
-		sort.Strings(folders)
-		items = append(items, folders...)
+        var items []string
+        var folders []string
+        for name := range node.Children {
+            folders = append(folders, name)
+        }
+        sort.Strings(folders)
+        items = append(items, folders...)
 
-		for _, f := range node.Files {
-			items = append(items, f.NameExt)
-		}
+        for _, f := range node.Files {
+            items = append(items, f.NameExt)
+        }
 
-		title := node.Name
-		if title == "" {
-			title = "Games"
-		}
+        title := node.Name
+        if title == "" {
+            title = "Games"
+        }
 
-		buttons := []string{"PgUp", "PgDn", "", "Back"}
+        buttons := []string{"PgUp", "PgDn", "", "Back"}
 
-		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-			Title:         title,
-			Buttons:       buttons,
-			ActionButton:  2,
-			DefaultButton: 2,
-			ShowTotal:     true,
-			Width:         70,
-			Height:        20,
-			DynamicActionLabel: func(idx int) string {
-				if idx < 0 || idx >= len(items) {
-					return "Open"
-				}
-				if idx < len(folders) {
-					return "Open"
-				}
-				return "Launch"
-			},
-		}, items)
-		if err != nil {
-			return err
-		}
+        button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+            Title:         title,
+            Buttons:       buttons,
+            ActionButton:  2,
+            DefaultButton: 2,
+            ShowTotal:     true,
+            Width:         70,
+            Height:        20,
+            DynamicActionLabel: func(idx int) string {
+                if idx < 0 || idx >= len(items) {
+                    return "Open"
+                }
+                if idx < len(folders) {
+                    return "Open"
+                }
+                return "Launch"
+            },
+        }, items)
+        if err != nil {
+            return err
+        }
 
-		switch button {
-		case 2: // Open/Launch
-			if selected < len(folders) {
-				folderName := folders[selected][:len(folders[selected])-1]
-				if err := browseNode(cfg, stdscr, node.Children[folderName]); err != nil {
-					return err
-				}
-			} else {
-				file := node.Files[selected-len(folders)]
-				sys, _ := games.GetSystem(file.SystemId)
-				if err := mister.LaunchGame(cfg, *sys, file.Path); err != nil {
-					return err
-				}
-				// stay in same folder after launch
-			}
-		case 3: // Back
-			return nil
-		}
-	}
+        switch button {
+        case 2: // Open/Launch
+            if selected < len(folders) {
+                folderName := folders[selected]
+                if err := browseNode(cfg, stdscr, node.Children[folderName]); err != nil {
+                    return err
+                }
+            } else {
+                file := node.Files[selected-len(folders)]
+                sys, _ := games.GetSystem(file.SystemId)
+                if err := mister.LaunchGame(cfg, *sys, file.Path); err != nil {
+                    return err
+                }
+                // stay in same folder after launch
+            }
+        case 3: // Back
+            return nil
+        }
+    }
 }
 
 // -------------------------
