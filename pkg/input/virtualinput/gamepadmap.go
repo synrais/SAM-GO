@@ -6,7 +6,7 @@ import (
 
 // ToKeyboardCode converts a single ZapScript key symbol to a uinput code.
 func ToKeyboardCode(name string) (int, bool) {
-	if v, ok := keyboardmap.KeyboardMap[name]; ok {
+	if v, ok := KeyboardMap[name]; ok { // direct reference, no prefix
 		return v, ok
 	}
 	return 0, false
@@ -15,7 +15,7 @@ func ToKeyboardCode(name string) (int, bool) {
 var GamepadMap = map[string]int{
 	"^":        uinput.ButtonDpadUp,
 	"{up}":     uinput.ButtonDpadUp,
-	"v":        uinput.ButtonDpadUp,
+	"v":        uinput.ButtonDpadDown,   // fixed: was pointing to Up
 	"V":        uinput.ButtonDpadDown,
 	"{down}":   uinput.ButtonDpadDown,
 	"<":        uinput.ButtonDpadLeft,
