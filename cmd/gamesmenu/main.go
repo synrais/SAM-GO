@@ -267,7 +267,6 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 	}
 }
 
-
 // -------------------------
 // Main Menu (systems)
 // -------------------------
@@ -322,21 +321,16 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
 				return err
 			} else if newFiles != nil {
-				// Show spinner while rebuilding
-				loadingDone := make(chan struct{})
-				go func() {
-					loadingWindow(stdscr, "Loading…", loadingDone)
-				}()
+				// Wrap newFiles in loadingWindow so spinner shows while applying
+				files, err := loadingWindow(stdscr, func() ([]MenuFile, error) {
+					return newFiles, nil
+				})
+				if err != nil {
+					return err
+				}
 
-				// Rebuild tree from new DB
-				tree = buildTree(newFiles)
-
-				// Stop spinner
-				close(loadingDone)
-				stdscr.Clear()
-				stdscr.Refresh()
-
-				// Rebuild lists
+				// Rebuild tree and menu lists
+				tree = buildTree(files)
 				sysIds = sysIds[:0]
 				items = items[:0]
 				for sysId := range tree.Children {
@@ -346,6 +340,9 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 				for _, sysId := range sysIds {
 					items = append(items, sysId)
 				}
+
+				stdscr.Clear()
+				stdscr.Refresh()
 			}
 
 		case 5: // Exit
