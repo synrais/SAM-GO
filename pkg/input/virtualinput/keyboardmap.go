@@ -1,4 +1,4 @@
-package input
+package virtualinput
 
 // This module exists to support the deprecated input.key command, which used
 // uinput codes directly to press keys. The zapscript module will not work on
