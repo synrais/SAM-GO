@@ -406,30 +406,37 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 			items = append(items, fmt.Sprintf("[%s] %s", systemName, r.Name))
 		}
 
-		stdscr.Clear()
-		stdscr.Refresh()
-
-		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-			Title:         "Search Results",
-			Buttons:       []string{"PgUp", "PgDn", "Launch", "Back"},
-			ActionButton:  2,
-			DefaultButton: 2,
-			ShowTotal:     true,
-			Width:         70,
-			Height:        20,
-		}, items)
-		if err != nil {
-			return err
-		}
-		if button == 2 {
-			game := results[selected]
-			sys, _ := games.GetSystem(game.SystemId)
-			return mister.LaunchGame(cfg, *sys, game.Path)
-		}
-		if button == 3 { // Back → return to keyboard without resetting query
+		// loop inside results picker so launching doesn’t exit search
+		for {
 			stdscr.Clear()
-    		stdscr.Refresh()
-    		continue
+			stdscr.Refresh()
+
+			button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+				Title:         "Search Results",
+				Buttons:       []string{"PgUp", "PgDn", "Launch", "Back"},
+				ActionButton:  2,
+				DefaultButton: 2,
+				ShowTotal:     true,
+				Width:         70,
+				Height:        20,
+			}, items)
+			if err != nil {
+				return err
+			}
+			if button == 2 {
+				game := results[selected]
+				sys, _ := games.GetSystem(game.SystemId)
+				if err := mister.LaunchGame(cfg, *sys, game.Path); err != nil {
+					return err
+				}
+				// stay in results after launch
+				continue
+			}
+			if button == 3 { // Back → return to keyboard without resetting query
+				stdscr.Clear()
+				stdscr.Refresh()
+				break
+			}
 		}
 	}
 }
