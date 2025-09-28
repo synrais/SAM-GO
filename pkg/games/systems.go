@@ -1272,7 +1272,7 @@ var Systems = map[string]System{
     Category:     CategoryComputer,
     Manufacturer: ManufacturerCommodore,
     ReleaseDate:  "1991-01-01",
-    Folder:       []string{"Amiga", "AmigaVision"},
+    Folder:       []string{"Amiga"},
     Alias:        []string{"AmigaVision"},
     Rbf:          "_Computer/Minimig",
     Slots: []Slot{
