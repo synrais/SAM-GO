@@ -203,31 +203,42 @@ func NewNamesIndex(
 				parentFolder := filepath.Base(filepath.Dir(fullPath))
 
 				// -------------------------
-				// Build MenuPath (simplified)
+				// Build MenuPath (support multiple sys.Folder entries)
 				// -------------------------
-				parts := strings.Split(fullPath, string(os.PathSeparator))
+				menuPath := ""
+				found := false
+				for _, folder := range sys.Folder {
+					if idx := strings.Index(fullPath, folder); idx != -1 {
+						rel := fullPath[idx+len(folder):]
+						rel = strings.TrimPrefix(rel, string(os.PathSeparator))
 
-				if len(parts) < 5 {
-					continue // malformed
-				}
+						parts := strings.Split(rel, string(os.PathSeparator))
+						if len(parts) > 0 {
+							// Case 1: collapse fake .zip folder
+							if strings.HasSuffix(parts[0], ".zip") {
+								parts = parts[1:]
+							}
 
-				relParts := parts[4:] // drop /media/usb0/games
+							// Case 2: listings/*.txt collapse to label
+							if len(parts) > 1 && parts[0] == "listings" && strings.HasSuffix(parts[1], ".txt") {
+								label := strings.TrimSuffix(parts[1], ".txt")
+								if len(label) > 0 {
+									label = strings.ToUpper(label[:1]) + label[1:]
+								}
+								parts = append([]string{label}, parts[2:]...)
+							}
+						}
 
-				// Drop fake .zip folder
-				if len(relParts) > 1 && strings.HasSuffix(relParts[1], ".zip") {
-					relParts = append([]string{relParts[0]}, relParts[2:]...)
-				}
-
-				// Collapse listings/*.txt into label
-				if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
-					label := strings.TrimSuffix(relParts[1], ".txt")
-					if len(label) > 0 {
-						label = strings.ToUpper(label[:1]) + label[1:]
+						menuPath = filepath.ToSlash(filepath.Join(append([]string{sys.Name}, parts...)...))
+						found = true
+						break
 					}
-					relParts = append([]string{label}, relParts[2:]...)
 				}
 
-				menuPath := filepath.ToSlash(filepath.Join(append([]string{sys.Name}, relParts...)...))
+				// Fallback if no folder matched
+				if !found {
+					menuPath = filepath.ToSlash(filepath.Join(sys.Name, base))
+				}
 
 				files = append(files, fileinfo{
 					SystemId:     sys.Id,
