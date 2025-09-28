@@ -383,22 +383,29 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 // --------------------------------------------------
 
 func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
-	// Launch the game normally
-	if err := LaunchGame(cfg, system, path); err != nil {
-		return err
-	}
+    // Launch the game normally
+    if err := LaunchGame(cfg, system, path); err != nil {
+        return err
+    }
 
-	// After 10s, press gamepad button 1
-	go func() {
-		gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
-		if err != nil {
-			return
-		}
-		defer gpd.Close()
+    // Kick off BIOS skip in background
+    go func() {
+        time.Sleep(10 * time.Second)
 
-		time.Sleep(10 * time.Second)
-		_ = gpd.Press(1) // button 1
-	}()
+        gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
+        if err != nil {
+            fmt.Println("[SIDELAUNCHER] FDS: failed to create gamepad:", err)
+            return
+        }
 
-	return nil
+        if err := gpd.Press(uinput.ButtonEast); err != nil {
+            fmt.Println("[SIDELAUNCHER] FDS: failed to press button 1:", err)
+        }
+
+        // Small delay before closing to ensure the event is flushed
+        time.Sleep(200 * time.Millisecond)
+        _ = gpd.Close()
+    }()
+
+    return nil
 }
