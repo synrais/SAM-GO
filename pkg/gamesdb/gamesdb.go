@@ -149,146 +149,142 @@ type fileinfo struct {
 
 // Build a new names index and Gob file from all systems and their game files.
 func NewNamesIndex(
-    cfg *config.UserConfig,
-    systems []games.System,
-    update func(IndexStatus),
+	cfg *config.UserConfig,
+	systems []games.System,
+	update func(IndexStatus),
 ) (int, error) {
-    status := IndexStatus{
-        Total: len(systems) + 2, // +1 for games.db write, +1 for menu.db write
-        Step:  1,
-    }
+	status := IndexStatus{
+		Total: len(systems) + 2, // +1 for games.db write, +1 for menu.db write
+		Step:  1,
+	}
 
-    db, err := openNames()
-    if err != nil {
-        return status.Files, fmt.Errorf("error opening games.db: %s", err)
-    }
-    defer db.Close()
+	db, err := openNames()
+	if err != nil {
+		return status.Files, fmt.Errorf("error opening games.db: %s", err)
+	}
+	defer db.Close()
 
-    update(status)
+	update(status)
 
-    // Collect all paths per system
-    systemPaths := make(map[string][]string, 0)
-    for _, v := range games.GetSystemPaths(cfg, systems) {
-        systemPaths[v.System.Id] = append(systemPaths[v.System.Id], v.Path)
-    }
+	// Collect all paths per system
+	systemPaths := make(map[string][]string, 0)
+	for _, v := range games.GetSystemPaths(cfg, systems) {
+		systemPaths[v.System.Id] = append(systemPaths[v.System.Id], v.Path)
+	}
 
-    var allFiles []fileinfo
+	var allFiles []fileinfo
 
-    for _, k := range utils.AlphaMapKeys(systemPaths) {
-        status.SystemId = k
-        status.Step++
-        update(status)
+	for _, k := range utils.AlphaMapKeys(systemPaths) {
+		status.SystemId = k
+		status.Step++
+		update(status)
 
-        sys, err := games.GetSystem(k)
-        if err != nil {
-            return status.Files, fmt.Errorf("unknown system: %s", k)
-        }
+		sys, err := games.GetSystem(k)
+		if err != nil {
+			return status.Files, fmt.Errorf("unknown system: %s", k)
+		}
 
-        files := make([]fileinfo, 0)
+		files := make([]fileinfo, 0)
 
-        for _, path := range systemPaths[k] {
-            pathFiles, err := games.GetFiles(k, path)
-            if err != nil {
-                return status.Files, fmt.Errorf("error getting files: %s", err)
-            }
+		for _, path := range systemPaths[k] {
+			pathFiles, err := games.GetFiles(k, path)
+			if err != nil {
+				return status.Files, fmt.Errorf("error getting files: %s", err)
+			}
 
-            if len(pathFiles) == 0 {
-                continue
-            }
+			if len(pathFiles) == 0 {
+				continue
+			}
 
-            for _, fullPath := range pathFiles {
-                base := filepath.Base(fullPath)
-                ext := filepath.Ext(base)
-                name := strings.TrimSuffix(base, ext)
-                parentFolder := filepath.Base(filepath.Dir(fullPath))
+			for _, fullPath := range pathFiles {
+				base := filepath.Base(fullPath)
+				ext := filepath.Ext(base)
+				name := strings.TrimSuffix(base, ext)
+				parentFolder := filepath.Base(filepath.Dir(fullPath))
 
-                // -------------------------
-                // Build MenuPath
-                // -------------------------
-                menuPath := ""
-                if idx := strings.Index(fullPath, sys.Folder[0]); idx != -1 {
-                    rel := fullPath[idx+len(sys.Folder[0]):] // strip system folder prefix
-                    rel = strings.TrimPrefix(rel, string(os.PathSeparator))
+				// -------------------------
+				// Build MenuPath (simplified)
+				// -------------------------
+				parts := strings.Split(fullPath, string(os.PathSeparator))
 
-                    parts := strings.Split(rel, string(os.PathSeparator))
-                    if len(parts) > 0 {
-                        // Case 1: collapse fake .zip folder
-                        if strings.HasSuffix(parts[0], ".zip") {
-                            parts = parts[1:]
-                        }
+				if len(parts) < 5 {
+					continue // malformed
+				}
 
-                        // Case 2: listings/*.txt collapse to label
-                        if len(parts) > 1 && parts[0] == "listings" && strings.HasSuffix(parts[1], ".txt") {
-                            label := strings.TrimSuffix(parts[1], ".txt")
-                            if len(label) > 0 {
-                                label = strings.ToUpper(label[:1]) + label[1:]
-                            }
-                            parts = append([]string{label}, parts[2:]...)
-                        }
-                    }
+				relParts := parts[4:] // drop /media/usb0/games
 
-                    menuPath = filepath.ToSlash(filepath.Join(append([]string{sys.Name}, parts...)...))
-                } else {
-                    // fallback: just FriendlyName + filename
-                    menuPath = filepath.ToSlash(filepath.Join(sys.Name, base))
-                }
+				// Drop fake .zip folder
+				if len(relParts) > 1 && strings.HasSuffix(relParts[1], ".zip") {
+					relParts = append([]string{relParts[0]}, relParts[2:]...)
+				}
 
-                files = append(files, fileinfo{
-                    SystemId:     sys.Id,
-                    SystemName:   sys.Name,
-                    SystemFolder: sys.Folder[0],
-                    Name:         name,
-                    NameExt:      base,
-                    Path:         fullPath,
-                    FolderName:   parentFolder,
-                    MenuPath:     menuPath,
-                })
-            }
-        }
+				// Collapse listings/*.txt into label
+				if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
+					label := strings.TrimSuffix(relParts[1], ".txt")
+					if len(label) > 0 {
+						label = strings.ToUpper(label[:1]) + label[1:]
+					}
+					relParts = append([]string{label}, relParts[2:]...)
+				}
 
-        if len(files) == 0 {
-            continue
-        }
+				menuPath := filepath.ToSlash(filepath.Join(append([]string{sys.Name}, relParts...)...))
 
-        status.Files += len(files)
-        allFiles = append(allFiles, files...)
+				files = append(files, fileinfo{
+					SystemId:     sys.Id,
+					SystemName:   sys.Name,
+					SystemFolder: sys.Folder[0],
+					Name:         name,
+					NameExt:      base,
+					Path:         fullPath,
+					FolderName:   parentFolder,
+					MenuPath:     menuPath,
+				})
+			}
+		}
 
-        // Update Bolt DB
-        if err := updateNames(db, files); err != nil {
-            return status.Files, err
-        }
-    }
+		if len(files) == 0 {
+			continue
+		}
 
-    // --- Finalize Bolt ---
-    status.Step++
-    status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.GamesDb))
-    update(status)
+		status.Files += len(files)
+		allFiles = append(allFiles, files...)
 
-    if err := writeIndexedSystems(db, utils.AlphaMapKeys(systemPaths)); err != nil {
-        return status.Files, fmt.Errorf("error writing indexed systems: %s", err)
-    }
+		// Update Bolt DB
+		if err := updateNames(db, files); err != nil {
+			return status.Files, err
+		}
+	}
 
-    if err := db.Sync(); err != nil {
-        return status.Files, fmt.Errorf("error syncing database: %s", err)
-    }
+	// --- Finalize Bolt ---
+	status.Step++
+	status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.GamesDb))
+	update(status)
 
-    // --- Write Gob (menu.db) ---
-    status.Step++
-    status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.MenuDb))
-    update(status)
+	if err := writeIndexedSystems(db, utils.AlphaMapKeys(systemPaths)); err != nil {
+		return status.Files, fmt.Errorf("error writing indexed systems: %s", err)
+	}
 
-    gobFile, err := os.Create(config.MenuDb)
-    if err != nil {
-        return status.Files, fmt.Errorf("error creating gob file: %s", err)
-    }
-    defer gobFile.Close()
+	if err := db.Sync(); err != nil {
+		return status.Files, fmt.Errorf("error syncing database: %s", err)
+	}
 
-    encoder := gob.NewEncoder(gobFile)
-    if err := encoder.Encode(allFiles); err != nil {
-        return status.Files, fmt.Errorf("error writing gob file: %s", err)
-    }
+	// --- Write Gob (menu.db) ---
+	status.Step++
+	status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.MenuDb))
+	update(status)
 
-    return status.Files, nil
+	gobFile, err := os.Create(config.MenuDb)
+	if err != nil {
+		return status.Files, fmt.Errorf("error creating gob file: %s", err)
+	}
+	defer gobFile.Close()
+
+	encoder := gob.NewEncoder(gobFile)
+	if err := encoder.Encode(allFiles); err != nil {
+		return status.Files, fmt.Errorf("error writing gob file: %s", err)
+	}
+
+	return status.Files, nil
 }
 
 // -------------------------
