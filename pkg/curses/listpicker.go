@@ -18,7 +18,7 @@ type ListPickerOpts struct {
 	Width              int
 	Height             int
 	DynamicActionLabel func(selectedItem int) string
-	InitialIndex       int // new: where to start highlight
+	InitialIndex       int // 🔹 new: where to start highlight
 }
 
 func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, int, error) {
@@ -36,7 +36,7 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 	viewWidth := opts.Width - 4
 	pgAmount := viewHeight - 1
 
-	// ensure InitialIndex is visible
+	// 🔹 Ensure InitialIndex is visible
 	viewStart := 0
 	if selectedItem >= viewHeight {
 		if selectedItem > len(items)-viewHeight {
@@ -112,7 +112,7 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 		}
 
 		// list items
-		max := utils.Min([]int{len(items)-viewStart, viewHeight})
+		max := utils.Min([]int{len(items) - viewStart, viewHeight})
 
 		for i := 0; i < max; i++ {
 			item := items[viewStart+i]
@@ -120,6 +120,7 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 
 			if len(item) > viewWidth {
 				if viewStart+i == selectedItem {
+					// build marquee string with gap
 					marquee := item + "   "
 					marquee = marquee + marquee
 					offset := scrollOffset % (len(item) + 3)
@@ -152,11 +153,6 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 			win.MovePrint(0, 2, totalStatus)
 		}
 
-		// scrollbar body
-		for y := 1; y < height-3; y++ {
-			win.MoveAddChar(y, width-3, gc.ACS_VLINE)
-		}
-
 		// arrows
 		if viewStart > 0 {
 			win.MoveAddChar(0, width-3, gc.ACS_UARROW)
@@ -167,6 +163,18 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 			win.MoveAddChar(height-3, width-3, gc.ACS_DARROW)
 		} else {
 			win.MoveAddChar(height-3, width-3, gc.ACS_HLINE)
+		}
+
+		// scrollbar body + thumb
+		if len(items) > viewHeight {
+			scrollbarHeight := height - 4 // vertical space for bar
+			for y := 1; y < height-3; y++ {
+				win.MoveAddChar(y, width-3, gc.ACS_VLINE)
+			}
+			// proportional thumb
+			ratio := float64(viewStart) / float64(len(items)-viewHeight)
+			thumbPos := int(ratio*float64(scrollbarHeight-1)) + 1
+			win.MoveAddChar(thumbPos, width-3, gc.ACS_BLOCK)
 		}
 
 		win.NoutRefresh()
