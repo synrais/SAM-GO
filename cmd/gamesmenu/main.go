@@ -423,7 +423,9 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 			return mister.LaunchGame(cfg, *sys, game.Path)
 		}
 		if button == 3 { // Back → return to keyboard without resetting query
-			continue
+			stdscr.Clear()
+    		stdscr.Refresh()
+    		continue
 		}
 	}
 }
