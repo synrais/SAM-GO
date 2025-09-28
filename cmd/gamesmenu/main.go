@@ -140,7 +140,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 		return nil, status.Error
 	}
 
-	return loadMenuDb()
+	return loadingWindow(stdscr, loadMenuDb)
 }
 
 // -------------------------
