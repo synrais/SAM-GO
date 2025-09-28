@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"syscall"
 
@@ -220,7 +218,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 			ShowTotal:     true,
 			Width:         70,
 			Height:        20,
-			InitialIndex:  currentIndex, // 🔹 restore highlight
+			InitialIndex:  currentIndex,
 			DynamicActionLabel: func(idx int) string {
 				if idx < len(folders) {
 					return "Open"
@@ -241,13 +239,12 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 				if err != nil {
 					return currentIndex, err
 				}
-				currentIndex = selected // back → stay on folder
+				currentIndex = selected
 				_ = childIdx
 			} else {
 				file := node.Files[selected-len(folders)]
 				sys, _ := games.GetSystem(file.SystemId)
 				_ = mister.LaunchGame(cfg, *sys, file.Path)
-				// stay on same file
 			}
 		case 3: // Back
 			return currentIndex, nil
@@ -281,7 +278,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			ShowTotal:     true,
 			Width:         70,
 			Height:        20,
-			InitialIndex:  startIndex, // 🔹 persist highlight
+			InitialIndex:  startIndex,
 			DynamicActionLabel: func(idx int) string {
 				return "Open"
 			},
@@ -406,7 +403,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 				ShowTotal:     true,
 				Width:         70,
 				Height:        20,
-				InitialIndex:  startIndex, // 🔹 persist highlight
+				InitialIndex:  startIndex,
 			}, items)
 			if err != nil {
 				return err
@@ -462,56 +459,51 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]MenuFile, error)) ([]Menu
 }
 
 func main() {
-    // Kill all other gamesmenu processes before starting
-    proc, err := os.FindProcess(os.Getpid())
-    if err == nil {
-        // get our own PID so we don't kill ourselves
-        selfPid := proc.Pid
+	// --- Lockfile to prevent multiple instances ---
+	lockFile := "/tmp/gamesmenu.lock"
+	f, err := os.OpenFile(lockFile, os.O_CREATE|os.O_RDWR, 0666)
+	if err != nil {
+		log.Fatalf("failed to open lock file: %v", err)
+	}
+	defer f.Close()
 
-        // run pkill -o gamesmenu (exclude self)
-        // Note: pkill comes with most Linux distros, but you can also
-        // use "pgrep -x gamesmenu" + syscall.Kill if you prefer pure Go.
-        out, _ := exec.Command("pgrep", "-x", appName).Output()
-        pids := strings.Fields(string(out))
-        for _, pidStr := range pids {
-            pid, _ := strconv.Atoi(pidStr)
-            if pid != selfPid {
-                _ = syscall.Kill(pid, syscall.SIGKILL)
-            }
-        }
-    }
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		fmt.Println("Another instance of gamesmenu is already running.")
+		os.Exit(1)
+	}
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 
-    printPtr := flag.Bool("print", false, "Print game path instead of launching")
-    flag.Parse()
-    launchGame := !*printPtr
+	// --- Normal startup ---
+	printPtr := flag.Bool("print", false, "Print game path instead of launching")
+	flag.Parse()
+	launchGame := !*printPtr
 
-    cfg, err := config.LoadUserConfig(appName, &config.UserConfig{})
-    if err != nil && !os.IsNotExist(err) {
-        log.Fatal(err)
-    }
+	cfg, err := config.LoadUserConfig(appName, &config.UserConfig{})
+	if err != nil && !os.IsNotExist(err) {
+		log.Fatal(err)
+	}
 
-    stdscr, err := curses.Setup()
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer gc.End()
+	stdscr, err := curses.Setup()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer gc.End()
 
-    files, err := loadingWindow(stdscr, loadMenuDb)
-    if err != nil {
-        files, err = generateIndexWindow(cfg, stdscr)
-        if err != nil {
-            log.Fatal(err)
-        }
-    }
+	files, err := loadingWindow(stdscr, loadMenuDb)
+	if err != nil {
+		files, err = generateIndexWindow(cfg, stdscr)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 
-    if launchGame {
-        if err := mainMenu(cfg, stdscr, files); err != nil {
-            log.Fatal(err)
-        }
-    } else {
-        for _, f := range files {
-            fmt.Println(f.MenuPath)
-        }
-    }
+	if launchGame {
+		if err := mainMenu(cfg, stdscr, files); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		for _, f := range files {
+			fmt.Println(f.MenuPath)
+		}
+	}
 }
-
