@@ -18,11 +18,11 @@ type ListPickerOpts struct {
 	Width              int
 	Height             int
 	DynamicActionLabel func(selectedItem int) string
-	InitialIndex       int // 🔹 new: where to start highlight
+	InitialIndex       int // new: where to start highlight
 }
 
 func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, int, error) {
-	// apply InitialIndex safely
+	// Apply InitialIndex safely
 	selectedItem := opts.InitialIndex
 	if selectedItem < 0 || selectedItem >= len(items) {
 		selectedItem = 0
@@ -32,16 +32,21 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 	height := opts.Height
 	width := opts.Width
 
-	viewStart := 0
 	viewHeight := height - 4
 	viewWidth := opts.Width - 4
 	pgAmount := viewHeight - 1
 
-	// 🔹 ensure selected item is visible, without forcing it to the top
-	if selectedItem < viewStart {
-		viewStart = selectedItem
-	} else if selectedItem >= viewStart+viewHeight {
-		viewStart = selectedItem - viewHeight + 1
+	// 🔹 Proper scrollbar fix: calculate viewStart so InitialIndex is visible
+	viewStart := 0
+	if selectedItem >= viewHeight {
+		if selectedItem > len(items)-viewHeight {
+			viewStart = len(items) - viewHeight
+		} else {
+			viewStart = selectedItem - (viewHeight / 2) // center the highlight
+			if viewStart < 0 {
+				viewStart = 0
+			}
+		}
 	}
 
 	// marquee tracking
@@ -107,7 +112,7 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 		}
 
 		// list items
-		max := utils.Min([]int{len(items), viewHeight})
+		max := utils.Min([]int{len(items)-viewStart, viewHeight})
 
 		for i := 0; i < max; i++ {
 			item := items[viewStart+i]
@@ -116,13 +121,11 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 			if len(item) > viewWidth {
 				if viewStart+i == selectedItem {
 					// build marquee string with gap
-					marquee := item + "   " // always a 3-space gap
+					marquee := item + "   "
 					marquee = marquee + marquee
-
 					offset := scrollOffset % (len(item) + 3)
 					display = marquee[offset : offset+viewWidth]
 				} else {
-					// normal truncation
 					display = item[:viewWidth-3] + "..."
 				}
 			}
@@ -200,9 +203,8 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 		case gc.KEY_ENTER, 10, 13:
 			if selectedButton == opts.ActionButton {
 				return selectedButton, selectedItem, nil
-			} else {
-				return selectedButton, -1, nil
 			}
+			return selectedButton, -1, nil
 		}
 	}
 
