@@ -390,8 +390,9 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	}
 	results := status.Result
 	if len(results) == 0 {
+		// Just show message until keypress, then retry search
 		_ = curses.InfoBox(stdscr, "", "No results found.", false, true)
-		return nil
+		return searchWindow(cfg, stdscr)
 	}
 
 	var items []string
@@ -408,7 +409,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 
 	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 		Title:         "Search Results",
-		Buttons:       []string{"PgUp", "PgDn", "Launch", "Cancel"},
+		Buttons:       []string{"PgUp", "PgDn", "Launch", "Back"},
 		ActionButton:  2,
 		DefaultButton: 2,
 		ShowTotal:     true,
@@ -422,6 +423,9 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		game := results[selected]
 		sys, _ := games.GetSystem(game.SystemId)
 		return mister.LaunchGame(cfg, *sys, game.Path)
+	}
+	if button == 3 { // Back
+		return searchWindow(cfg, stdscr)
 	}
 	return nil
 }
