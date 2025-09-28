@@ -191,8 +191,6 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 // --------------------------------------------------
 
 func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error {
-	// fmt.Println("[SIDELAUNCHER] AmigaCD32 launch starting…")
-
 	cleanPath := func(p string) string {
 		return "../" + strings.TrimPrefix(p, "/media/")
 	}
@@ -228,7 +226,6 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 
 	// Compat map: title substring → alternate HDF
 	compatHDF := map[string]string{
-
 		// --- No FastMem required ---
 		"chaos engine":            "CD32NoFastMem.hdf",
 		"dangerous streets":       "CD32NoFastMem.hdf",
@@ -357,6 +354,17 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 </mistergamedescription>`
 	tmpMgl := config.LastLaunchFile
 	_ = os.WriteFile(tmpMgl, []byte(mgl), 0644)
+
+	// Handle Winboot auto-keypress
+	if hdfToUse == "CD32Winboot.hdf" {
+		go func() {
+			if vk, err := input.NewVirtualKeyboard(); err == nil {
+				defer vk.Close()
+				time.Sleep(10 * time.Second)
+				_ = vk.TypeRune('b')
+			}
+		}()
+	}
 
 	return launchFile(tmpMgl)
 }
