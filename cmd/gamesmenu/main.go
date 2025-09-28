@@ -256,13 +256,17 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node) error {
 			} else {
 				file := node.Files[selected-len(folders)]
 				sys, _ := games.GetSystem(file.SystemId)
-				return mister.LaunchGame(cfg, *sys, file.Path)
+				if err := mister.LaunchGame(cfg, *sys, file.Path); err != nil {
+					return err
+				}
+				// stay in same folder after launch
 			}
 		case 3: // Back
 			return nil
 		}
 	}
 }
+
 
 // -------------------------
 // Main Menu (systems)
