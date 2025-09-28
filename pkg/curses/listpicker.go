@@ -2,7 +2,7 @@ package curses
 
 import (
 	"fmt"
-	s "strings"
+	"strings"
 	"time"
 
 	gc "github.com/rthornton128/goncurses"
@@ -24,20 +24,18 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 	selectedItem := 0
 	selectedButton := opts.DefaultButton
 
-	pgUpName := "PgUp"
-	pgDownName := "PgDn"
-
 	height := opts.Height
 	width := opts.Width
 
 	viewStart := 0
 	viewHeight := height - 4
-	viewWidth := width - 4
+	viewWidth := opts.Width - 4
 	pgAmount := viewHeight - 1
 
-	// 🔹 offset for marquee scroll
+	// marquee tracking
+	currentSelection := -1
 	scrollOffset := 0
-	lastTick := time.Now()
+	lastScroll := time.Now()
 
 	pageUp := func() {
 		if viewStart == 0 {
@@ -56,7 +54,7 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 
 	pageDown := func() {
 		if len(items) <= viewHeight {
-			return // nothing to page
+			return
 		}
 		if viewStart+viewHeight >= len(items) {
 			selectedItem = len(items) - 1
@@ -81,76 +79,51 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 	var ch gc.Key
 
 	for ch != gc.KEY_ESC {
-		// update scroll offset every 200ms
-		if time.Since(lastTick) > 200*time.Millisecond {
-			scrollOffset++
-			lastTick = time.Now()
+		// reset scroll when selection changes
+		if selectedItem != currentSelection {
+			currentSelection = selectedItem
+			scrollOffset = 0
+			lastScroll = time.Now()
 		}
 
 		// list items
 		max := utils.Min([]int{len(items), viewHeight})
 
 		for i := 0; i < max; i++ {
-			var display string
 			item := items[viewStart+i]
+			display := item
 
 			if len(item) > viewWidth {
 				if viewStart+i == selectedItem {
-					// 🔹 marquee scroll for highlighted item
-					spacePad := " "
-					if !s.HasSuffix(item, " ") {
-						spacePad = "   " // add extra gap if no trailing space
+					// build marquee string with gap
+					marquee := item + " " // ensure a space
+					marquee = marquee + marquee
+
+					if time.Since(lastScroll) > 200*time.Millisecond {
+						scrollOffset++
+						if scrollOffset >= len(item)+1 { // wrap after original + space
+							scrollOffset = 0
+						}
+						lastScroll = time.Now()
 					}
-					doubled := item + spacePad + item
-					offset := scrollOffset % (len(item) + len(spacePad))
-					if offset+viewWidth <= len(doubled) {
-						display = doubled[offset : offset+viewWidth]
-					} else {
-						display = doubled[len(doubled)-viewWidth:]
+
+					end := scrollOffset + viewWidth
+					if end > len(marquee) {
+						end = len(marquee)
 					}
+					display = marquee[scrollOffset:end]
 				} else {
-					// truncate non-highlighted
+					// normal truncation
 					display = item[:viewWidth-3] + "..."
 				}
-			} else {
-				display = item
 			}
 
 			if viewStart+i == selectedItem {
 				win.ColorOn(1)
 			}
-			win.MovePrint(i+1, 2, s.Repeat(" ", viewWidth))
+			win.MovePrint(i+1, 2, strings.Repeat(" ", viewWidth))
 			win.MovePrint(i+1, 2, display)
 			win.ColorOff(1)
-		}
-
-		// --- Scroll bar ---
-		scrollHeight := viewHeight
-		if scrollHeight > 0 {
-			var gripHeight int
-			if len(items) <= scrollHeight {
-				gripHeight = scrollHeight
-			} else {
-				gripHeight = int(float64(scrollHeight) * (float64(scrollHeight) / float64(len(items))))
-				if gripHeight < 1 {
-					gripHeight = 1
-				}
-			}
-
-			gripOffset := 0
-			if len(items) > scrollHeight {
-				gripOffset = int(float64(viewStart) * float64(scrollHeight-gripHeight) / float64(len(items)-scrollHeight))
-			}
-
-			for i := 0; i < scrollHeight; i++ {
-				if i >= gripOffset && i < gripOffset+gripHeight {
-					win.ColorOn(1)
-					win.MoveAddChar(i+1, width-2, ' ')
-					win.ColorOff(1)
-				} else {
-					win.MoveAddChar(i+1, width-2, gc.ACS_CKBOARD)
-				}
-			}
 		}
 
 		// --- Buttons ---
@@ -161,33 +134,26 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 		}
 
 		DrawActionButtons(win, buttons, selectedButton, 4)
-		win.NoutRefresh()
 
-		// location indicators
+		// --- Position/scroll indicators ---
 		if opts.ShowTotal {
 			totalStatus := fmt.Sprintf("%*d/%d", len(fmt.Sprint(len(items))), selectedItem+1, len(items))
 			win.MovePrint(0, 2, totalStatus)
 		}
-
 		if viewStart > 0 {
 			win.MoveAddChar(0, width-3, gc.ACS_UARROW)
 		} else {
 			win.MoveAddChar(0, width-3, gc.ACS_HLINE)
 		}
-
 		if viewStart+viewHeight < len(items) {
 			win.MoveAddChar(height-3, width-3, gc.ACS_DARROW)
 		} else {
 			win.MoveAddChar(height-3, width-3, gc.ACS_HLINE)
 		}
 
-		win.Move(viewStart+selectedItem+1, width-3)
-
 		win.NoutRefresh()
 		gc.Update()
 
-		// non-blocking wait for input with small nap
-		win.Timeout(100)
 		ch = win.GetChar()
 
 		switch ch {
@@ -224,10 +190,6 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 		case gc.KEY_ENTER, 10, 13:
 			if selectedButton == opts.ActionButton {
 				return selectedButton, selectedItem, nil
-			} else if opts.Buttons[selectedButton] == pgUpName {
-				pageUp()
-			} else if opts.Buttons[selectedButton] == pgDownName {
-				pageDown()
 			} else {
 				return selectedButton, -1, nil
 			}
