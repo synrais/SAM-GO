@@ -1,4 +1,4 @@
-package input
+package virtualinput
 
 import (
 	"fmt"
