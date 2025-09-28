@@ -348,13 +348,8 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		return nil
 	}
 
-	// Create searching window
-	win, err := curses.NewWindow(stdscr, 4, 75, "Searching...", -1)
-	if err != nil {
-		return err
-	}
-	defer win.Delete()
-	_, width := win.MaxYX()
+	// Initial "Searching..." info box
+	_ = curses.InfoBox(stdscr, "", "Searching...", false, false)
 
 	status := struct {
 		Done   bool
@@ -362,6 +357,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		Result []gamesdb.SearchResult
 	}{}
 
+	// Run search async
 	go func() {
 		results, err := gamesdb.SearchNamesWords(games.AllSystems(), query)
 		status.Result = results
@@ -377,13 +373,12 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		if status.Done {
 			break
 		}
-		display := fmt.Sprintf("Searching... (%s)", query)
-		win.MovePrint(1, 2, display+strings.Repeat(" ", width-len(display)-4))
-		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
-		win.NoutRefresh()
-		_ = gc.Update()
+		// Update only the info line with spinner
+		label := fmt.Sprintf("Searching... %s", spinnerSeq[spinnerCount])
+		_ = curses.InfoBox(stdscr, "", label, false, false)
 
 		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+		_ = gc.Update()
 		gc.Nap(100)
 	}
 
