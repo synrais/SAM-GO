@@ -9,8 +9,7 @@ import (
 	"time"
 
 	"github.com/synrais/SAM-GO/pkg/config"
-	"github.com/synrais/SAM-GO/pkg/input/linuxinput"
-	"github.com/bendahl/uinput"
+	"github.com/synrais/SAM-GO/pkg/input/virtualinput"
 )
 
 type Script struct {
@@ -48,7 +47,7 @@ func ScriptCanLaunch() bool {
 	return IsMenuRunning() && !IsScriptRunning()
 }
 
-func OpenConsole(kbd *linuxinput.Keyboard) error {
+func openConsole(kbd *virtualinput.Keyboard) error {
 	if !IsMenuRunning() {
 		return fmt.Errorf("cannot open console, active core is not menu")
 	}
@@ -65,7 +64,7 @@ func OpenConsole(kbd *linuxinput.Keyboard) error {
 		return strings.TrimSpace(string(tty)), nil
 	}
 
-	// Switch to tty3, then try to trigger console with F9 until tty1 is active
+	// Switch to tty3, then try F9 until tty1 is active
 	if err := exec.Command("chvt", "3").Run(); err != nil {
 		return err
 	}
@@ -76,7 +75,12 @@ func OpenConsole(kbd *linuxinput.Keyboard) error {
 			return fmt.Errorf("could not switch to tty1")
 		}
 
-		_ = kbd.Press(uinput.KeyF9) // console toggle
+		if code, ok := virtualinput.ToKeyboardCode("f9"); ok {
+			if err := kbd.Press(code); err != nil {
+				return fmt.Errorf("failed to press F9: %w", err)
+			}
+		}
+
 		time.Sleep(50 * time.Millisecond)
 
 		tty, err := getTty()
@@ -93,10 +97,12 @@ func OpenConsole(kbd *linuxinput.Keyboard) error {
 
 func GetAllScripts() ([]Script, error) {
 	scripts := make([]Script, 0)
+
 	files, err := os.ReadDir(config.ScriptsFolder)
 	if err != nil {
 		return scripts, err
 	}
+
 	for _, file := range files {
 		if file.IsDir() {
 			continue
@@ -113,14 +119,23 @@ func GetAllScripts() ([]Script, error) {
 	return scripts, nil
 }
 
-func RunScript(kbd *linuxinput.Keyboard, path string) error {
+func RunScript(path string) error {
 	if _, err := os.Stat(path); err != nil {
 		return err
 	}
 	if !ScriptCanLaunch() {
 		return fmt.Errorf("script cannot be launched, active core is not menu or script is already running")
 	}
-	if err := OpenConsole(kbd); err != nil {
+
+	// Create virtual keyboard
+	kbd, err := virtualinput.NewKeyboard(40 * time.Millisecond)
+	if err != nil {
+		return fmt.Errorf("failed to create virtual keyboard: %w", err)
+	}
+	defer kbd.Close()
+
+	// Open console
+	if err := openConsole(kbd); err != nil {
 		return err
 	}
 
@@ -129,6 +144,7 @@ func RunScript(kbd *linuxinput.Keyboard, path string) error {
 		return err
 	}
 
+	// Script launcher wrapper
 	launcher := fmt.Sprintf(`#!/bin/bash
 export LC_ALL=en_US.UTF-8
 export HOME=/root
@@ -152,6 +168,11 @@ cd $(dirname "%s")
 	}
 
 	// Exit console with F12
-	_ = kbd.Press(uinput.KeyF12)
+	if code, ok := virtualinput.ToKeyboardCode("f12"); ok {
+		if err := kbd.Press(code); err != nil {
+			return fmt.Errorf("failed to press F12: %w", err)
+		}
+	}
+
 	return nil
 }
