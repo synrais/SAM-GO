@@ -442,6 +442,44 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 }
 
 // -------------------------
+// Startup Loading Spinner
+// -------------------------
+func loadingWindow(stdscr *gc.Window, loadFn func() ([]MenuFile, error)) ([]MenuFile, error) {
+	status := struct {
+		Done   bool
+		Error  error
+		Result []MenuFile
+	}{}
+
+	go func() {
+		files, err := loadFn()
+		status.Result = files
+		status.Error = err
+		status.Done = true
+	}()
+
+	spinnerSeq := []string{"|", "/", "-", "\\"}
+	spinnerCount := 0
+
+	for {
+		if status.Done {
+			break
+		}
+		label := fmt.Sprintf("Loading... %s", spinnerSeq[spinnerCount])
+		_ = curses.InfoBox(stdscr, "", label, false, false)
+		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+		_ = gc.Update()
+		gc.Nap(100)
+	}
+
+	if status.Error != nil {
+		return nil, status.Error
+	}
+	return status.Result, nil
+}
+
+
+// -------------------------
 // Main
 // -------------------------
 func main() {
@@ -460,7 +498,7 @@ func main() {
 	}
 	defer gc.End()
 
-	files, err := loadMenuDb()
+	files, err := loadingWindow(stdscr, loadMenuDb)
 	if err != nil {
 		files, err = generateIndexWindow(cfg, stdscr)
 		if err != nil {
