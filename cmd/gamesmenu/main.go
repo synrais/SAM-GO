@@ -343,91 +343,89 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	stdscr.Refresh()
 
 	text := ""
-	button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
-	if err != nil || button == 1 {
-		return nil
-	}
-
-	// Initial "Searching..." info box
-	_ = curses.InfoBox(stdscr, "", "Searching...", false, false)
-
-	status := struct {
-		Done   bool
-		Error  error
-		Result []gamesdb.SearchResult
-	}{}
-
-	// Run search async
-	go func() {
-		results, err := gamesdb.SearchNamesWords(games.AllSystems(), query)
-		status.Result = results
-		status.Error = err
-		status.Done = true
-	}()
-
-	spinnerSeq := []string{"|", "/", "-", "\\"}
-	spinnerCount := 0
-
-	// Loop while search is running
 	for {
-		if status.Done {
-			break
+		// Keep keyboard open, prefill with last text
+		button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
+		if err != nil || button == 1 {
+			return nil
 		}
-		// Update only the info line with spinner
-		label := fmt.Sprintf("Searching... %s", spinnerSeq[spinnerCount])
-		_ = curses.InfoBox(stdscr, "", label, false, false)
+		text = query
 
-		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
-		_ = gc.Update()
-		gc.Nap(100)
-	}
+		// Show searching spinner
+		_ = curses.InfoBox(stdscr, "", "Searching...", false, false)
 
-	stdscr.Clear()
-	stdscr.Refresh()
+		status := struct {
+			Done   bool
+			Error  error
+			Result []gamesdb.SearchResult
+		}{}
 
-	if status.Error != nil {
-		return status.Error
-	}
-	results := status.Result
-	if len(results) == 0 {
-		// Just show message until keypress, then retry search
-		_ = curses.InfoBox(stdscr, "", "No results found.", false, true)
-		return searchWindow(cfg, stdscr)
-	}
+		go func() {
+			results, err := gamesdb.SearchNamesWords(games.AllSystems(), query)
+			status.Result = results
+			status.Error = err
+			status.Done = true
+		}()
 
-	var items []string
-	for _, r := range results {
-		systemName := r.SystemId
-		if sys, err := games.GetSystem(r.SystemId); err == nil {
-			systemName = sys.Name
+		spinnerSeq := []string{"|", "/", "-", "\\"}
+		spinnerCount := 0
+
+		for {
+			if status.Done {
+				break
+			}
+			label := fmt.Sprintf("Searching... %s", spinnerSeq[spinnerCount])
+			_ = curses.InfoBox(stdscr, "", label, false, false)
+			spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+			_ = gc.Update()
+			gc.Nap(100)
 		}
-		items = append(items, fmt.Sprintf("[%s] %s", systemName, r.Name))
-	}
 
-	stdscr.Clear()
-	stdscr.Refresh()
+		if status.Error != nil {
+			return status.Error
+		}
 
-	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-		Title:         "Search Results",
-		Buttons:       []string{"PgUp", "PgDn", "Launch", "Back"},
-		ActionButton:  2,
-		DefaultButton: 2,
-		ShowTotal:     true,
-		Width:         70,
-		Height:        20,
-	}, items)
-	if err != nil {
-		return err
+		results := status.Result
+		if len(results) == 0 {
+			// Just layer "No results" on top of keyboard until keypress
+			_ = curses.InfoBox(stdscr, "", "No results found.", false, true)
+			continue
+		}
+
+		// Build results list
+		var items []string
+		for _, r := range results {
+			systemName := r.SystemId
+			if sys, err := games.GetSystem(r.SystemId); err == nil {
+				systemName = sys.Name
+			}
+			items = append(items, fmt.Sprintf("[%s] %s", systemName, r.Name))
+		}
+
+		stdscr.Clear()
+		stdscr.Refresh()
+
+		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+			Title:         "Search Results",
+			Buttons:       []string{"PgUp", "PgDn", "Launch", "Back"},
+			ActionButton:  2,
+			DefaultButton: 2,
+			ShowTotal:     true,
+			Width:         70,
+			Height:        20,
+		}, items)
+		if err != nil {
+			return err
+		}
+		if button == 2 {
+			game := results[selected]
+			sys, _ := games.GetSystem(game.SystemId)
+			return mister.LaunchGame(cfg, *sys, game.Path)
+		}
+		if button == 3 { // Back → return to keyboard without resetting query
+			continue
+		}
 	}
-	if button == 2 {
-		game := results[selected]
-		sys, _ := games.GetSystem(game.SystemId)
-		return mister.LaunchGame(cfg, *sys, game.Path)
-	}
-	if button == 3 { // Back
-		return searchWindow(cfg, stdscr)
-	}
-	return nil
 }
 
 // -------------------------
