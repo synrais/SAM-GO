@@ -22,8 +22,8 @@ type GobEntry struct {
 	Ext        string
 	Path       string
 	MenuPath   string
-	Search     string // lowercase "name ext" for search
-	SearchName string // "[SystemName] name.ext" for display
+	Search     string // 🔑 lowercase "name + ext" for matching
+	SearchName string // 🔑 "[SystemName] Name.ext" for display
 }
 
 // GobIndex maps base names -> slice of entries (supports duplicates).
@@ -106,8 +106,8 @@ func BuildGobIndex(
 				menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
 
 				// Precompute search fields
-				search := strings.ToLower(strings.TrimSpace(name + " " + ext))
-				searchName := fmt.Sprintf("[%s] %s.%s", sys.Name, name, ext)
+				search := strings.ToLower(fmt.Sprintf("%s %s", name, ext))
+				searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
 
 				entry := GobEntry{
 					SystemId:   sys.Id,
@@ -122,7 +122,7 @@ func BuildGobIndex(
 			}
 		}
 
-		// ✅ Update after finishing each system
+		// Update after finishing each system
 		done++
 		if update != nil {
 			update(sys.Name, done, total)
@@ -136,31 +136,27 @@ func BuildGobIndex(
 // Searching
 // -------------------------
 
-// SearchWords matches against GobEntry.Search, returning only
-// the first entry per key (ignores dupes but allows unique extensions).
+// SearchWords returns only the *first entry per unique name+ext* that matches query.
 func (idx GobIndex) SearchWords(query string) []GobEntry {
 	var results []GobEntry
 	words := strings.Fields(strings.ToLower(query))
+	seen := make(map[string]bool)
 
 outer:
 	for _, entries := range idx {
 		if len(entries) == 0 {
 			continue
 		}
-		// check against the prebuilt Search field of the first entry
-		lower := entries[0].Search
+		first := entries[0]
 		for _, w := range words {
-			if !strings.Contains(lower, w) {
+			if !strings.Contains(first.Search, w) {
 				continue outer
 			}
 		}
-		// collect all unique extensions in this key
-		seenExt := make(map[string]bool)
-		for _, e := range entries {
-			if !seenExt[e.Ext] {
-				results = append(results, e)
-				seenExt[e.Ext] = true
-			}
+		key := fmt.Sprintf("%s.%s", first.Name, first.Ext)
+		if !seen[key] {
+			seen[key] = true
+			results = append(results, first)
 		}
 	}
 	return results
