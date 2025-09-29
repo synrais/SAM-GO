@@ -114,10 +114,10 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		if lastProgress != nil {
 			// fixed-column layout to avoid bouncing numbers
 			text := fmt.Sprintf(
-				"Indexing... %-12s :%-6d :%2d/%-2d :%-8d",
+				"%2d/%-2d  Indexing... %-12s  Games:%-6d  Total:%-8d",
+				lastProgress.done, lastProgress.total,
 				lastProgress.system,
 				lastProgress.files,
-				lastProgress.done, lastProgress.total,
 				lastProgress.grandTotal,
 			)
 			win.MovePrint(1, 2, text)
