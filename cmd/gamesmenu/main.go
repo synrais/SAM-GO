@@ -106,17 +106,17 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		default:
 		}
 
-		// Clear only the text row (line 1 inside border)
-		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
+		// Clear the text row, but leave last 3 cols (spinner area) untouched
+		win.MovePrint(1, 2, strings.Repeat(" ", width-6))
 
 		if lastProgress != nil {
 			// left-aligned system name
 			left := fmt.Sprintf("Indexing %s...", lastProgress.system)
-			// right-aligned totals with fixed width to prevent jumping
+			// right-aligned totals with fixed width
 			right := fmt.Sprintf("(%3d/%-3d)", lastProgress.done, lastProgress.total)
 
 			win.MovePrint(1, 2, left)
-			win.MovePrint(1, width-len(right)-5, right)
+			win.MovePrint(1, width-len(right)-4, right) // stop before spinner column
 
 			// Progress bar (line 2 inside border)
 			progressWidth := width - 4
@@ -128,7 +128,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 			win.MovePrint(1, 2, "Indexing games...")
 		}
 
-		// Spinner in top-right corner
+		// Spinner always at far right
 		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
 		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
 
