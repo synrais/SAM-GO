@@ -144,7 +144,6 @@ type fileinfo struct {
 	Name         string // Base name without extension
 	Ext          string // File extension (e.g. "nes", "gg")
 	Path         string // Full path to file
-	FolderName   string // Parent folder name on disk
 	MenuPath     string // "SystemName/<relative path under SystemFolder>"
 }
 
@@ -201,7 +200,6 @@ func NewNamesIndex(
 				base := filepath.Base(fullPath)
 				ext := strings.TrimPrefix(filepath.Ext(base), ".")
 				name := strings.TrimSuffix(base, filepath.Ext(base))
-				parentFolder := filepath.Base(filepath.Dir(fullPath))
 
 				// -------------------------
 				// Build MenuPath
@@ -254,7 +252,6 @@ func NewNamesIndex(
 					Name:         name,
 					Ext:          ext,
 					Path:         fullPath,
-					FolderName:   parentFolder,
 					MenuPath:     menuPath,
 				})
 			}
@@ -449,5 +446,3 @@ func IndexedSystems() ([]string, error) {
 
 	return systems, nil
 }
-
-yes remove folder name
