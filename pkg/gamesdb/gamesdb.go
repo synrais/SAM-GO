@@ -82,7 +82,26 @@ func BuildGobIndex(
 				base := filepath.Base(fullPath)
 				ext := strings.TrimPrefix(filepath.Ext(base), ".")
 				name := strings.TrimSuffix(base, filepath.Ext(base))
-				menuPath := filepath.Join(sys.Name, base)
+
+				// --- Build MenuPath with old TXT + ZIP logic ---
+				rel, _ := filepath.Rel(sp.Path, fullPath)
+				relParts := strings.Split(filepath.ToSlash(rel), "/")
+
+				// Case 1: collapse fake .zip folder
+				if len(relParts) > 0 && strings.HasSuffix(relParts[0], ".zip") {
+					relParts = relParts[1:]
+				}
+
+				// Case 2: listings/*.txt collapse to label
+				if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
+					label := strings.TrimSuffix(relParts[1], ".txt")
+					if len(label) > 0 {
+						label = strings.ToUpper(label[:1]) + label[1:]
+					}
+					relParts = append([]string{label}, relParts[2:]...)
+				}
+
+				menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
 
 				entry := GobEntry{
 					SystemId: sys.Id,
