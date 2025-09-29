@@ -109,6 +109,11 @@ func BuildGobIndex(
 					}
 					relParts = append([]string{label}, relParts[2:]...)
 				}
+				
+				// Case 3: skip anything under top-level "media"
+				if len(relParts) > 0 && relParts[0] == "media" {
+					continue
+				}
 
 				menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
 
