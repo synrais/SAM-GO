@@ -110,12 +110,13 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 
 		if lastProgress != nil {
-			// system name left, totals right
+			// left-aligned system name
 			left := fmt.Sprintf("Indexing %s...", lastProgress.system)
-			right := fmt.Sprintf("(%d/%d)", lastProgress.done, lastProgress.total)
+			// right-aligned totals with fixed width to prevent jumping
+			right := fmt.Sprintf("(%3d/%-3d)", lastProgress.done, lastProgress.total)
 
 			win.MovePrint(1, 2, left)
-			win.MovePrint(1, width-len(right)-2, right)
+			win.MovePrint(1, width-len(right)-5, right)
 
 			// Progress bar (line 2 inside border)
 			progressWidth := width - 4
