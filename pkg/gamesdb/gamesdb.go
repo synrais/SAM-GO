@@ -46,11 +46,12 @@ func SaveGobIndex(idx GobIndex, filename string) error {
 	return enc.Encode(idx)
 }
 
-// LoadGobIndex decodes the index from disk.
-func LoadGobIndex(filename string) (GobIndex, error) {
+// LoadGobIndex decodes the index from disk and also returns a globally
+// sorted slice of entries for stable ordering.
+func LoadGobIndex(filename string) ([]GobEntry, GobIndex, error) {
 	f, err := os.Open(filename)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer f.Close()
 
@@ -58,9 +59,19 @@ func LoadGobIndex(filename string) (GobIndex, error) {
 	dec := gob.NewDecoder(f)
 	err = dec.Decode(&idx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return idx, nil
+
+	// 🔹 Flatten and sort slice by MenuPath so order is stable
+	var all []GobEntry
+	for _, entries := range idx {
+		all = append(all, entries...)
+	}
+	sort.Slice(all, func(i, j int) bool {
+		return strings.ToLower(all[i].MenuPath) < strings.ToLower(all[j].MenuPath)
+	})
+
+	return all, idx, nil
 }
 
 // -------------------------
