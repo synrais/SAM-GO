@@ -348,18 +348,9 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 			continue
 		}
 
-		// Use prebuilt SearchName for display, dedupe by Name+Ext
-		seen := make(map[string]bool)
-		var uniqueResults []gamesdb.GobEntry
+		// Build display items directly from SearchName
 		var items []string
-
 		for _, r := range results {
-			key := fmt.Sprintf("%s.%s", r.Name, r.Ext)
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			uniqueResults = append(uniqueResults, r)
 			items = append(items, r.SearchName)
 		}
 
@@ -381,13 +372,14 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 				return err
 			}
 			startIndex = selected
-			if button == 2 {
-				game := uniqueResults[selected]
+
+			if button == 2 { // Launch
+				game := results[selected]
 				sys, _ := games.GetSystem(game.SystemId)
 				_ = mister.LaunchGame(cfg, *sys, game.Path)
 				continue
 			}
-			if button == 3 {
+			if button == 3 { // Back
 				stdscr.Clear()
 				stdscr.Refresh()
 				break
