@@ -42,112 +42,108 @@ func loadMenuDb() ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
 // Index regeneration
 // -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
-	_ = os.Remove(config.MenuDb)
+    _ = os.Remove(config.MenuDb)
 
-	stdscr.Clear()
-	stdscr.Refresh()
+    stdscr.Clear()
+    stdscr.Refresh()
 
-	// Create a bordered subwindow for progress
-	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer win.Delete()
+    win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
+    if err != nil {
+        return nil, nil, err
+    }
+    defer win.Delete()
 
-	_, width := win.MaxYX()
+    _, width := win.MaxYX()
 
-	// Progress update structure
-	type progress struct {
-		system string
-		done   int
-		total  int
-	}
-	updates := make(chan progress, 1)
+    type progress struct {
+        system     string
+        done       int
+        total      int
+        filesSeen  int
+        grandTotal int
+    }
+    updates := make(chan progress, 1)
 
-	status := struct {
-		Complete bool
-		Error    error
-		Idx      gamesdb.GobIndex
-	}{}
+    status := struct {
+        Complete bool
+        Error    error
+        Idx      gamesdb.GobIndex
+    }{}
 
-	// Worker goroutine: build index and push updates
-	go func() {
-		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
-			func(system string, done, total int) {
-				select {
-				case updates <- progress{system, done, total}:
-				default:
-				}
-			})
-		if err == nil {
-			err = gamesdb.SaveGobIndex(idx, config.MenuDb)
-		}
-		status.Idx = idx
-		status.Error = err
-		status.Complete = true
-		close(updates)
-	}()
+    go func() {
+        idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
+            func(system string, done, total, filesSeen, grandTotal int) {
+                select {
+                case updates <- progress{system, done, total, filesSeen, grandTotal}:
+                default:
+                }
+            })
+        if err == nil {
+            err = gamesdb.SaveGobIndex(idx, config.MenuDb)
+        }
+        status.Idx = idx
+        status.Error = err
+        status.Complete = true
+        close(updates)
+    }()
 
-	spinnerSeq := []string{"|", "/", "-", "\\"}
-	spinnerCount := 0
-	var lastProgress *progress
+    spinnerSeq := []string{"|", "/", "-", "\\"}
+    spinnerCount := 0
+    var lastProgress *progress
 
-	for {
-		if status.Complete {
-			break
-		}
+    for {
+        if status.Complete {
+            break
+        }
 
-		// Non-blocking receive
-		select {
-		case p, ok := <-updates:
-			if ok {
-				lastProgress = &p
-			}
-		default:
-		}
+        select {
+        case p, ok := <-updates:
+            if ok {
+                lastProgress = &p
+            }
+        default:
+        }
 
-		// Clear only the text row (line 1 inside border)
-		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
+        win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 
-		if lastProgress != nil {
-			text := fmt.Sprintf("Indexing %s... (%d/%d)",
-				lastProgress.system, lastProgress.done, lastProgress.total)
-			win.MovePrint(1, 2, text)
+        if lastProgress != nil {
+            text := fmt.Sprintf("Indexing %s... (%d/%d systems, %d files)   Total: %d",
+                lastProgress.system,
+                lastProgress.done, lastProgress.total,
+                lastProgress.filesSeen,
+                lastProgress.grandTotal)
+            win.MovePrint(1, 2, text)
 
-			// Progress bar (line 2 inside border)
-			progressWidth := width - 4
-			filled := int(float64(lastProgress.done) / float64(lastProgress.total) * float64(progressWidth))
-			for i := 0; i < filled; i++ {
-				win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
-			}
-		} else {
-			win.MovePrint(1, 2, "Indexing games...")
-		}
+            progressWidth := width - 4
+            filled := int(float64(lastProgress.done) / float64(lastProgress.total) * float64(progressWidth))
+            for i := 0; i < filled; i++ {
+                win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
+            }
+        } else {
+            win.MovePrint(1, 2, "Indexing games...")
+        }
 
-		// Spinner in top-right corner
-		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
-		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
+        spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+        win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
 
-		win.NoutRefresh()
-		_ = gc.Update()
-		gc.Nap(100)
-	}
+        win.NoutRefresh()
+        _ = gc.Update()
+        gc.Nap(100)
+    }
 
-	stdscr.Clear()
-	stdscr.Refresh()
+    stdscr.Clear()
+    stdscr.Refresh()
 
-	if status.Error != nil {
-		return nil, nil, status.Error
-	}
+    if status.Error != nil {
+        return nil, nil, status.Error
+    }
 
-	// Flatten map into slice
-	var files []gamesdb.GobEntry
-	for _, entries := range status.Idx {
-		files = append(files, entries...)
-	}
+    var files []gamesdb.GobEntry
+    for _, entries := range status.Idx {
+        files = append(files, entries...)
+    }
 
-	// keep your outline, but still load via loader
-	return loadingWindow(stdscr, loadMenuDb)
+    return loadingWindow(stdscr, loadMenuDb)
 }
 
 // -------------------------
