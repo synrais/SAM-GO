@@ -125,7 +125,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		files = append(files, entries...)
 	}
 
-	return files, status.Idx, nil
+	return loadingWindow(stdscr, loadMenuDb)
 }
 
 // -------------------------
