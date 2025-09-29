@@ -42,77 +42,82 @@ func loadMenuDb() ([]gamesdb.GobEntry, error) {
 // Index regeneration
 // -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry, error) {
-	_ = os.Remove(config.MenuDb)
+    _ = os.Remove(config.MenuDb)
 
-	stdscr.Clear()
-	stdscr.Refresh()
+    stdscr.Clear()
+    stdscr.Refresh()
 
-	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
-	if err != nil {
-		return nil, err
-	}
-	defer win.Delete()
+    win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
+    if err != nil {
+        return nil, err
+    }
+    defer win.Delete()
 
-	_, width := win.MaxYX()
+    _, width := win.MaxYX()
 
-	drawProgressBar := func(current, total int) {
-		if total == 0 {
-			return
-		}
-		progressWidth := width - 4
-		progressPct := int(float64(current) / float64(total) * float64(progressWidth))
-		if progressPct < 1 {
-			progressPct = 1
-		}
-		for i := 0; i < progressPct; i++ {
-			win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
-		}
-		win.NoutRefresh()
-	}
+    drawProgressBar := func(current, total int) {
+        if total == 0 {
+            return
+        }
+        progressWidth := width - 4
+        progressPct := int(float64(current) / float64(total) * float64(progressWidth))
+        if progressPct < 1 {
+            progressPct = 1
+        }
+        for i := 0; i < progressPct; i++ {
+            win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
+        }
+        win.NoutRefresh()
+    }
 
-	clearText := func() {
-		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
-	}
+    clearText := func() {
+        win.MovePrint(1, 2, strings.Repeat(" ", width-4))
+    }
 
-	status := struct {
-		Complete bool
-		Error    error
-	}{}
+    status := struct {
+        Complete bool
+        Error    error
+    }{}
 
-	go func() {
-		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems())
-		if err == nil {
-			err = gamesdb.SaveGobIndex(idx, config.MenuDb)
-		}
-		status.Error = err
-		status.Complete = true
-	}()
+    go func() {
+        idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
+            func(system string, done, total int) {
+                clearText()
+                text := fmt.Sprintf("Indexing %s... (%d/%d)", system, done, total)
+                win.MovePrint(1, 2, text)
+                drawProgressBar(done, total)
+                win.NoutRefresh()
+                _ = gc.Update()
+            })
+        if err == nil {
+            err = gamesdb.SaveGobIndex(idx, config.MenuDb)
+        }
+        status.Error = err
+        status.Complete = true
+    }()
 
-	spinnerSeq := []string{"|", "/", "-", "\\"}
-	spinnerCount := 0
+    spinnerSeq := []string{"|", "/", "-", "\\"}
+    spinnerCount := 0
 
-	for {
-		if status.Complete {
-			break
-		}
-		clearText()
-		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
-		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
-		win.MovePrint(1, 2, "Indexing games...")
-		drawProgressBar(spinnerCount, len(spinnerSeq))
-		win.NoutRefresh()
-		_ = gc.Update()
-		gc.Nap(100)
-	}
+    for {
+        if status.Complete {
+            break
+        }
+        spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+        win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
+        win.NoutRefresh()
+        _ = gc.Update()
+        gc.Nap(100)
+    }
 
-	stdscr.Clear()
-	stdscr.Refresh()
+    stdscr.Clear()
+    stdscr.Refresh()
 
-	if status.Error != nil {
-		return nil, status.Error
-	}
+    if status.Error != nil {
+        return nil, status.Error
+    }
 
-	return loadMenuDb()
+    return loadMenuDb()
 }
 
 // -------------------------
