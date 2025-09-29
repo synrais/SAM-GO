@@ -343,13 +343,12 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 		text = query
 
 		results := idx.SearchWords(query)
-
 		if len(results) == 0 {
 			_ = curses.InfoBox(stdscr, "", "No results found.", false, true)
 			continue
 		}
 
-		// 🔑 Deduplicate by Name+Ext
+		// Use prebuilt SearchName for display, dedupe by Name+Ext
 		seen := make(map[string]bool)
 		var uniqueResults []gamesdb.GobEntry
 		var items []string
@@ -361,16 +360,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 			}
 			seen[key] = true
 			uniqueResults = append(uniqueResults, r)
-
-			systemName := r.SystemId
-			if sys, err := games.GetSystem(r.SystemId); err == nil {
-				systemName = sys.Name
-			}
-			displayName := r.Name
-			if r.Ext != "" {
-				displayName = fmt.Sprintf("%s.%s", r.Name, r.Ext)
-			}
-			items = append(items, fmt.Sprintf("[%s] %s", systemName, displayName))
+			items = append(items, r.SearchName)
 		}
 
 		for {
