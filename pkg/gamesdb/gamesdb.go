@@ -64,7 +64,7 @@ func LoadGobIndex(filename string) (GobIndex, error) {
 // -------------------------
 
 // BuildGobIndex scans systems and builds the index fully in memory,
-// reporting progress once per completed system via the optional update callback.
+// reporting progress via the optional update callback.
 func BuildGobIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
@@ -75,7 +75,8 @@ func BuildGobIndex(
 	done := 0
 
 	for _, sys := range systems {
-		// 🔹 Let UI know we’re starting this system
+		// 🔹 Increment first, then announce this system
+		done++
 		if update != nil {
 			update(sys.Name, done, total)
 		}
@@ -112,7 +113,7 @@ func BuildGobIndex(
 				menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
 
 				// Precompute search fields
-				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext))
+				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext)) // "super mario bros .nes"
 				searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
 
 				entry := GobEntry{
@@ -126,12 +127,6 @@ func BuildGobIndex(
 				}
 				idx[name] = append(idx[name], entry)
 			}
-		}
-
-		// 🔹 Mark system finished
-		done++
-		if update != nil {
-			update(sys.Name, done, total)
 		}
 	}
 
