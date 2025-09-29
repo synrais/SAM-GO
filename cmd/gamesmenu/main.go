@@ -63,7 +63,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		done   int
 		total  int
 	}
-	updates := make(chan progress, 1)
+
+	// 🔹 buffer big enough for all systems so we never drop an update
+	updates := make(chan progress, len(games.AllSystems()))
 
 	status := struct {
 		Complete bool
@@ -74,10 +76,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 	go func() {
 		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
 			func(system string, done, total int) {
-				select {
-				case updates <- progress{system, done, total}:
-				default:
-				}
+				updates <- progress{system, done, total}
 			})
 		if err == nil {
 			err = gamesdb.SaveGobIndex(idx, config.MenuDb)
