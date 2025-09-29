@@ -32,10 +32,6 @@ type GobIndex map[string][]GobEntry
 
 // SaveGobIndex encodes the index to disk.
 func SaveGobIndex(idx GobIndex, filename string) error {
-	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
-		return err
-	}
-
 	f, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -68,7 +64,7 @@ func LoadGobIndex(filename string) (GobIndex, error) {
 // -------------------------
 
 // BuildGobIndex scans systems and builds the index fully in memory,
-// reporting progress via the optional update callback.
+// reporting progress once per completed system via the optional update callback.
 func BuildGobIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
@@ -78,13 +74,7 @@ func BuildGobIndex(
 	total := len(systems)
 	done := 0
 
-	// No enforced sort, just process systems in their incoming order
 	for _, sys := range systems {
-		done++
-		if update != nil {
-			update(sys.Name, done, total)
-		}
-
 		paths := games.GetSystemPaths(cfg, []games.System{sys})
 		for _, sp := range paths {
 			files, err := games.GetFiles(sys.Id, sp.Path)
@@ -96,13 +86,16 @@ func BuildGobIndex(
 				ext := strings.TrimPrefix(filepath.Ext(base), ".")
 				name := strings.TrimSuffix(base, filepath.Ext(base))
 
-				// --- Build MenuPath with TXT + ZIP logic ---
+				// --- Build MenuPath with old TXT + ZIP logic ---
 				rel, _ := filepath.Rel(sp.Path, fullPath)
 				relParts := strings.Split(filepath.ToSlash(rel), "/")
 
+				// Case 1: collapse fake .zip folder
 				if len(relParts) > 0 && strings.HasSuffix(relParts[0], ".zip") {
 					relParts = relParts[1:]
 				}
+
+				// Case 2: listings/*.txt collapse to label
 				if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
 					label := strings.TrimSuffix(relParts[1], ".txt")
 					if len(label) > 0 {
@@ -110,14 +103,11 @@ func BuildGobIndex(
 					}
 					relParts = append([]string{label}, relParts[2:]...)
 				}
-				if len(relParts) > 0 && relParts[0] == "media" {
-					continue
-				}
 
 				menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
 
 				// Precompute search fields
-				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext))
+				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext)) // "super mario bros .nes"
 				searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
 
 				entry := GobEntry{
@@ -131,6 +121,12 @@ func BuildGobIndex(
 				}
 				idx[name] = append(idx[name], entry)
 			}
+		}
+
+		// Update after finishing each system
+		done++
+		if update != nil {
+			update(sys.Name, done, total)
 		}
 	}
 
