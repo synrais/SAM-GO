@@ -139,8 +139,6 @@ type IndexStatus struct {
 // Enriched file information (also written into menu.db Gob).
 type fileinfo struct {
 	SystemId     string // Internal system ID
-	SystemName   string // Friendly system name (e.g. "Arcadia 2001")
-	SystemFolder string // Root folder on disk for this system
 	Name         string // Base name without extension
 	Ext          string // File extension (e.g. "nes", "gg")
 	Path         string // Full path to file
@@ -246,13 +244,11 @@ func NewNamesIndex(
 				}
 
 				files = append(files, fileinfo{
-					SystemId:     sys.Id,
-					SystemName:   sys.Name,
-					SystemFolder: sys.Folder[0],
-					Name:         name,
-					Ext:          ext,
-					Path:         fullPath,
-					MenuPath:     menuPath,
+					SystemId: sys.Id,
+					Name:     name,
+					Ext:      ext,
+					Path:     fullPath,
+					MenuPath: menuPath,
 				})
 			}
 		}
