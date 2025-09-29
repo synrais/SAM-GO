@@ -88,7 +88,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		status.Error = err
 		status.Complete = true
 		close(updates)
-	}()
+	}() // 🔹 end goroutine
 
 	spinnerSeq := []string{"|", "/", "-", "\\"}
 	spinnerCount := 0
@@ -140,14 +140,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		return nil, nil, status.Error
 	}
 
-	var files []gamesdb.GobEntry
-	for _, entries := range status.Idx {
-		files = append(files, entries...)
-	}
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].MenuPath < files[j].MenuPath
-	})
-
+	// 🔹 No local sorting here — just reload from disk with loadMenuDb (which sorts once).
 	return loadingWindow(stdscr, loadMenuDb)
 }
 
