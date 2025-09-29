@@ -30,7 +30,6 @@ type MenuFile struct {
 	Name         string // base name without extension
 	Ext          string // extension only (e.g. "gg", "nes")
 	Path         string
-	FolderName   string
 	MenuPath     string
 }
 
