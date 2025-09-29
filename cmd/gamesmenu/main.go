@@ -61,8 +61,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		system     string
 		done       int // systems completed
 		total      int // total systems
-		files      int // files in this system
+		files      int // files in this system (increments per file)
 		grandTotal int // grand total files seen so far
+		sysFiles   int // total files expected in this system
 	}
 	updates := make(chan progress, 1)
 
@@ -76,8 +77,16 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 	go func() {
 		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
 			func(system string, done, total, files, grandTotal int) {
+				// NOTE: files == number of files seen so far for this system
 				select {
-				case updates <- progress{system, done, total, files, grandTotal}:
+				case updates <- progress{
+					system:     system,
+					done:       done,
+					total:      total,
+					files:      files,
+					grandTotal: grandTotal,
+					sysFiles:   files, // re-use for now (we don’t know total upfront)
+				}:
 				default:
 				}
 			})
@@ -112,7 +121,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 
 		if lastProgress != nil {
-			// fixed-column layout to avoid bouncing numbers
+			// status line
 			text := fmt.Sprintf(
 				"%2d/%-2d  Indexing... %-12s  Games:%-6d  Total:%-8d",
 				lastProgress.done, lastProgress.total,
@@ -122,11 +131,18 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 			)
 			win.MovePrint(1, 2, text)
 
-			// Progress bar (line 2 inside border) → still system-level
+			// Progress bar (line 2 inside border)
 			progressWidth := width - 4
-			filled := int(float64(lastProgress.done) / float64(lastProgress.total) * float64(progressWidth))
-			for i := 0; i < filled; i++ {
-				win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
+			filled := 0
+			if lastProgress.sysFiles > 0 {
+				filled = int(float64(lastProgress.files) / float64(lastProgress.sysFiles) * float64(progressWidth))
+			}
+			for i := 0; i < progressWidth; i++ {
+				ch := ' '
+				if i < filled {
+					ch = gc.ACS_BLOCK
+				}
+				win.MoveAddChar(2, 2+i, ch)
 			}
 		} else {
 			win.MovePrint(1, 2, "Indexing games...")
