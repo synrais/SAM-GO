@@ -56,12 +56,13 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 
 	_, width := win.MaxYX()
 
+	// Progress update structure
 	type progress struct {
-		system    string
-		done      int
-		total     int
-		fileCount int
-		grand     int
+		system     string
+		done       int // systems completed
+		total      int // total systems
+		files      int // files in this system
+		grandTotal int // grand total files seen so far
 	}
 	updates := make(chan progress, 1)
 
@@ -71,14 +72,12 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		Idx      gamesdb.GobIndex
 	}{}
 
-	// Worker goroutine
+	// Worker goroutine: build index and push updates
 	go func() {
-		grand := 0
 		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
-			func(system string, done, total int, files int) {
-				grand += files
+			func(system string, done, total, files, grandTotal int) {
 				select {
-				case updates <- progress{system, done, total, files, grand}:
+				case updates <- progress{system, done, total, files, grandTotal}:
 				default:
 				}
 			})
@@ -99,6 +98,8 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		if status.Complete {
 			break
 		}
+
+		// Non-blocking receive
 		select {
 		case p, ok := <-updates:
 			if ok {
@@ -107,18 +108,31 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		default:
 		}
 
+		// Clear only the text row (line 1 inside border)
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 
 		if lastProgress != nil {
-			// Layout: [done/total] Indexing <system> :<files> files :<grand>
-			text := fmt.Sprintf("[%d/%d] Indexing %s :%d files :%d total",
+			// fixed-column layout to avoid bouncing numbers
+			text := fmt.Sprintf(
+				"Indexing... %-12s :%-6d :%2d/%-2d :%-8d",
+				lastProgress.system,
+				lastProgress.files,
 				lastProgress.done, lastProgress.total,
-				lastProgress.system, lastProgress.fileCount, lastProgress.grand)
+				lastProgress.grandTotal,
+			)
 			win.MovePrint(1, 2, text)
+
+			// Progress bar (line 2 inside border) → still system-level
+			progressWidth := width - 4
+			filled := int(float64(lastProgress.done) / float64(lastProgress.total) * float64(progressWidth))
+			for i := 0; i < filled; i++ {
+				win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
+			}
 		} else {
 			win.MovePrint(1, 2, "Indexing games...")
 		}
 
+		// Spinner in top-right corner
 		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
 		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
 
@@ -134,10 +148,13 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		return nil, nil, status.Error
 	}
 
+	// Flatten map into slice
 	var files []gamesdb.GobEntry
 	for _, entries := range status.Idx {
 		files = append(files, entries...)
 	}
+
+	// still load via loader to be consistent
 	return loadingWindow(stdscr, loadMenuDb)
 }
 
