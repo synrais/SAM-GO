@@ -174,8 +174,21 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 		for name := range node.Children {
 			folders = append(folders, name)
 		}
-		sort.Strings(folders)
+		// Case-insensitive sort for folders
+		sort.Slice(folders, func(i, j int) bool {
+			return strings.ToLower(folders[i]) < strings.ToLower(folders[j])
+		})
 		items = append(items, folders...)
+
+		// Case-insensitive sort for files
+		sort.Slice(node.Files, func(i, j int) bool {
+			nameI := strings.ToLower(node.Files[i].Name)
+			nameJ := strings.ToLower(node.Files[j].Name)
+			if nameI == nameJ {
+				return strings.ToLower(node.Files[i].Ext) < strings.ToLower(node.Files[j].Ext)
+			}
+			return nameI < nameJ
+		})
 
 		for _, f := range node.Files {
 			displayName := f.Name
