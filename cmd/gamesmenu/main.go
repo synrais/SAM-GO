@@ -63,7 +63,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		total      int // total systems
 		files      int // files in this system
 		grandTotal int // grand total files seen so far
-		totalFiles int // total files across all systems
 	}
 	updates := make(chan progress, 1)
 
@@ -75,16 +74,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 
 	// Worker goroutine: build index and push updates
 	go func() {
-		// --- pre-count all files across all systems ---
-		totalFiles := 0
-		for _, sys := range games.AllSystems() {
-			paths := games.GetSystemPaths(cfg, []games.System{sys})
-			for _, sp := range paths {
-				files, _ := games.GetFiles(sys.Id, sp.Path)
-				totalFiles += len(files)
-			}
-		}
-
 		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
 			func(system string, done, total, files, grandTotal int) {
 				select {
@@ -94,7 +83,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 					total:      total,
 					files:      files,
 					grandTotal: grandTotal,
-					totalFiles: totalFiles,
 				}:
 				default:
 				}
@@ -140,12 +128,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 			)
 			win.MovePrint(1, 2, text)
 
-			// Progress bar (line 2 inside border) — continuous
+			// Progress bar (line 2 inside border) — just grows with grandTotal
 			progressWidth := width - 4
-			filled := 0
-			if lastProgress.totalFiles > 0 {
-				filled = int(float64(lastProgress.grandTotal) / float64(lastProgress.totalFiles) * float64(progressWidth))
-			}
+			filled := int(float64(lastProgress.grandTotal) / float64(lastProgress.grandTotal+1) * float64(progressWidth))
 			for i := 0; i < progressWidth; i++ {
 				var ch gc.Char = gc.Char(' ')
 				if i < filled {
