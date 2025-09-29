@@ -12,10 +12,6 @@ import (
 	"github.com/synrais/SAM-GO/pkg/games"
 )
 
-// -------------------------
-// Gob-backed index
-// -------------------------
-
 // GobEntry stores full details for a single game file.
 type GobEntry struct {
 	SystemId   string // Internal system ID
@@ -30,7 +26,21 @@ type GobEntry struct {
 // GobIndex maps base names -> slice of entries (supports duplicates).
 type GobIndex map[string][]GobEntry
 
-// SaveGobIndex encodes the index to disk.
+// -------------------------
+// Progress reporting
+// -------------------------
+
+type IndexStatus struct {
+	Total    int    // total systems
+	Step     int    // current system number (1-based)
+	SystemId string // current system ID
+	System   string // current system name
+}
+
+// -------------------------
+// Save/Load
+// -------------------------
+
 func SaveGobIndex(idx GobIndex, filename string) error {
 	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
 		return err
@@ -46,7 +56,6 @@ func SaveGobIndex(idx GobIndex, filename string) error {
 	return enc.Encode(idx)
 }
 
-// LoadGobIndex decodes the index from disk.
 func LoadGobIndex(filename string) (GobIndex, error) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -64,90 +73,80 @@ func LoadGobIndex(filename string) (GobIndex, error) {
 }
 
 // -------------------------
-// Building
+// Build Index
 // -------------------------
 
-// BuildGobIndex scans systems and builds the index fully in memory,
-// reporting progress via the optional update callback.
 func BuildGobIndex(
-    cfg *config.UserConfig,
-    systems []games.System,
-    update func(systemName string, done, total int),
+	cfg *config.UserConfig,
+	systems []games.System,
+	update func(IndexStatus),
 ) (GobIndex, error) {
-    idx := make(GobIndex)
-    total := len(systems)
-    done := 0
+	idx := make(GobIndex)
+	status := IndexStatus{Total: len(systems)}
 
-    for _, sys := range systems {
-        // 🔹 Mark this system as in-progress immediately
-        done++
-        if update != nil {
-            update(sys.Name, done, total)
-        }
+	for i, sys := range systems {
+		status.Step = i + 1
+		status.SystemId = sys.Id
+		status.System = sys.Name
+		if update != nil {
+			update(status)
+		}
 
-        paths := games.GetSystemPaths(cfg, []games.System{sys})
-        for _, sp := range paths {
-            files, err := games.GetFiles(sys.Id, sp.Path)
-            if err != nil {
-                return nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
-            }
-            for _, fullPath := range files {
-                base := filepath.Base(fullPath)
-                ext := strings.TrimPrefix(filepath.Ext(base), ".")
-                name := strings.TrimSuffix(base, filepath.Ext(base))
+		paths := games.GetSystemPaths(cfg, []games.System{sys})
+		for _, sp := range paths {
+			files, err := games.GetFiles(sys.Id, sp.Path)
+			if err != nil {
+				return nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
+			}
+			for _, fullPath := range files {
+				base := filepath.Base(fullPath)
+				ext := strings.TrimPrefix(filepath.Ext(base), ".")
+				name := strings.TrimSuffix(base, filepath.Ext(base))
 
-                // --- Build MenuPath with old TXT + ZIP logic ---
-                rel, _ := filepath.Rel(sp.Path, fullPath)
-                relParts := strings.Split(filepath.ToSlash(rel), "/")
+				// --- Build MenuPath with TXT + ZIP rules ---
+				rel, _ := filepath.Rel(sp.Path, fullPath)
+				relParts := strings.Split(filepath.ToSlash(rel), "/")
 
-                // Case 1: collapse fake .zip folder
-                if len(relParts) > 0 && strings.HasSuffix(relParts[0], ".zip") {
-                    relParts = relParts[1:]
-                }
+				if len(relParts) > 0 && strings.HasSuffix(relParts[0], ".zip") {
+					relParts = relParts[1:]
+				}
+				if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
+					label := strings.TrimSuffix(relParts[1], ".txt")
+					if len(label) > 0 {
+						label = strings.ToUpper(label[:1]) + label[1:]
+					}
+					relParts = append([]string{label}, relParts[2:]...)
+				}
+				if len(relParts) > 0 && relParts[0] == "media" {
+					continue
+				}
 
-                // Case 2: listings/*.txt collapse to label
-                if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
-                    label := strings.TrimSuffix(relParts[1], ".txt")
-                    if len(label) > 0 {
-                        label = strings.ToUpper(label[:1]) + label[1:]
-                    }
-                    relParts = append([]string{label}, relParts[2:]...)
-                }
+				menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
 
-                // Case 3: skip anything under top-level "media"
-                if len(relParts) > 0 && relParts[0] == "media" {
-                    continue
-                }
+				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext))
+				searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
 
-                menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
+				entry := GobEntry{
+					SystemId:   sys.Id,
+					Name:       name,
+					Ext:        ext,
+					Path:       fullPath,
+					MenuPath:   filepath.ToSlash(menuPath),
+					Search:     search,
+					SearchName: searchName,
+				}
+				idx[name] = append(idx[name], entry)
+			}
+		}
+	}
 
-                // Precompute search fields
-                search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext)) // "super mario bros .nes"
-                searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
-
-                entry := GobEntry{
-                    SystemId:   sys.Id,
-                    Name:       name,
-                    Ext:        ext,
-                    Path:       fullPath,
-                    MenuPath:   filepath.ToSlash(menuPath),
-                    Search:     search,
-                    SearchName: searchName,
-                }
-                idx[name] = append(idx[name], entry)
-            }
-        }
-    }
-
-    return idx, nil
+	return idx, nil
 }
 
 // -------------------------
 // Searching
 // -------------------------
 
-// SearchWords returns one entry per unique SearchName,
-// sorted by SearchName for consistent ordering.
 func (idx GobIndex) SearchWords(query string) []GobEntry {
 	var results []GobEntry
 	words := strings.Fields(strings.ToLower(query))
@@ -166,8 +165,6 @@ func (idx GobIndex) SearchWords(query string) []GobEntry {
 			if !match {
 				continue
 			}
-
-			// Deduplicate by SearchName
 			if seen[e.SearchName] {
 				continue
 			}
@@ -176,7 +173,6 @@ func (idx GobIndex) SearchWords(query string) []GobEntry {
 		}
 	}
 
-	// Sort once, by SearchName
 	sort.Slice(results, func(i, j int) bool {
 		return strings.ToLower(results[i].SearchName) < strings.ToLower(results[j].SearchName)
 	})
