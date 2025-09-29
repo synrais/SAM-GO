@@ -27,17 +27,15 @@ type GobEntry struct {
 	SearchName string // "[System] Name.ext" for display
 }
 
-// GobIndex holds both the sorted slice and the search map.
+// GobIndex keeps both:
+// - Entries (slice, sorted, for menus)
+// - Map (search, fast lookups)
 type GobIndex struct {
-	Entries []GobEntry               // Sorted slice (canonical order for menus)
-	Map     map[string][]GobEntry    // Fast lookup for search
+	Entries []GobEntry
+	Map     map[string][]GobEntry
 }
 
-// -------------------------
-// Saving / Loading
-// -------------------------
-
-// SaveGobIndex encodes only the sorted slice to disk.
+// SaveGobIndex encodes the index (slice + map) to disk.
 func SaveGobIndex(idx GobIndex, filename string) error {
 	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
 		return err
@@ -50,10 +48,10 @@ func SaveGobIndex(idx GobIndex, filename string) error {
 	defer f.Close()
 
 	enc := gob.NewEncoder(f)
-	return enc.Encode(idx.Entries)
+	return enc.Encode(idx)
 }
 
-// LoadGobIndex decodes the slice from disk and rebuilds the map.
+// LoadGobIndex decodes the full index (slice + map).
 func LoadGobIndex(filename string) (GobIndex, error) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -61,33 +59,27 @@ func LoadGobIndex(filename string) (GobIndex, error) {
 	}
 	defer f.Close()
 
-	var entries []GobEntry
+	var idx GobIndex
 	dec := gob.NewDecoder(f)
-	if err := dec.Decode(&entries); err != nil {
+	if err := dec.Decode(&idx); err != nil {
 		return GobIndex{}, err
 	}
-
-	// Rebuild the map from the sorted slice
-	m := make(map[string][]GobEntry)
-	for _, e := range entries {
-		m[e.Name] = append(m[e.Name], e)
-	}
-
-	return GobIndex{Entries: entries, Map: m}, nil
+	return idx, nil
 }
 
 // -------------------------
 // Building
 // -------------------------
 
-// BuildGobIndex scans systems and builds both slice + map.
-// This is the *only* place we sort — truth for order is baked here.
+// BuildGobIndex scans systems and returns a sorted slice + map.
 func BuildGobIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
 	update func(systemName string, done, total int),
 ) (GobIndex, error) {
 	var all []GobEntry
+	idx := GobIndex{Map: make(map[string][]GobEntry)}
+
 	total := len(systems)
 	done := 0
 
@@ -132,7 +124,7 @@ func BuildGobIndex(
 				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext))
 				searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
 
-				all = append(all, GobEntry{
+				e := GobEntry{
 					SystemId:   sys.Id,
 					Name:       name,
 					Ext:        ext,
@@ -140,23 +132,24 @@ func BuildGobIndex(
 					MenuPath:   filepath.ToSlash(menuPath),
 					Search:     search,
 					SearchName: searchName,
-				})
+				}
+				all = append(all, e)
 			}
 		}
 	}
 
-	// 🔹 Single global sort by MenuPath (source of truth)
+	// 🔹 Global sort (menus always consistent)
 	sort.Slice(all, func(i, j int) bool {
 		return strings.ToLower(all[i].MenuPath) < strings.ToLower(all[j].MenuPath)
 	})
 
-	// Build map from sorted slice
-	m := make(map[string][]GobEntry)
+	// Build map
 	for _, e := range all {
-		m[e.Name] = append(m[e.Name], e)
+		idx.Map[e.Name] = append(idx.Map[e.Name], e)
 	}
 
-	return GobIndex{Entries: all, Map: m}, nil
+	idx.Entries = all
+	return idx, nil
 }
 
 // -------------------------
@@ -164,7 +157,7 @@ func BuildGobIndex(
 // -------------------------
 
 // SearchWords returns one entry per unique SearchName,
-// sorted by SearchName for consistent ordering.
+// sorted by SearchName.
 func (idx GobIndex) SearchWords(query string) []GobEntry {
 	var results []GobEntry
 	words := strings.Fields(strings.ToLower(query))
@@ -184,7 +177,6 @@ func (idx GobIndex) SearchWords(query string) []GobEntry {
 				continue
 			}
 
-			// Deduplicate by SearchName
 			if seen[e.SearchName] {
 				continue
 			}
@@ -193,7 +185,6 @@ func (idx GobIndex) SearchWords(query string) []GobEntry {
 		}
 	}
 
-	// Sort once, by SearchName
 	sort.Slice(results, func(i, j int) bool {
 		return strings.ToLower(results[i].SearchName) < strings.ToLower(results[j].SearchName)
 	})
