@@ -47,6 +47,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 	stdscr.Clear()
 	stdscr.Refresh()
 
+	// Create a bordered subwindow for progress
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
 		return nil, nil, err
@@ -55,24 +56,28 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 
 	_, width := win.MaxYX()
 
+	// Progress update structure
 	type progress struct {
 		system string
 		done   int
 		total  int
 	}
-
 	updates := make(chan progress, 1)
+
 	status := struct {
 		Complete bool
 		Error    error
 		Idx      gamesdb.GobIndex
 	}{}
 
-	// Worker goroutine: build index and send progress events
+	// Worker goroutine: build index and push updates
 	go func() {
 		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
 			func(system string, done, total int) {
-				updates <- progress{system, done, total}
+				select {
+				case updates <- progress{system, done, total}:
+				default:
+				}
 			})
 		if err == nil {
 			err = gamesdb.SaveGobIndex(idx, config.MenuDb)
@@ -92,6 +97,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 			break
 		}
 
+		// Non-blocking receive
 		select {
 		case p, ok := <-updates:
 			if ok {
@@ -100,23 +106,25 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		default:
 		}
 
-		win.Clear()
+		// Clear only the text row (line 1 inside border)
+		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 
-		// Draw progress if we have it
 		if lastProgress != nil {
 			text := fmt.Sprintf("Indexing %s... (%d/%d)",
 				lastProgress.system, lastProgress.done, lastProgress.total)
 			win.MovePrint(1, 2, text)
 
-			// Draw progress bar
+			// Progress bar (line 2 inside border)
 			progressWidth := width - 4
 			filled := int(float64(lastProgress.done) / float64(lastProgress.total) * float64(progressWidth))
 			for i := 0; i < filled; i++ {
 				win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
 			}
+		} else {
+			win.MovePrint(1, 2, "Indexing games...")
 		}
 
-		// Spinner
+		// Spinner in top-right corner
 		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
 		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
 
@@ -132,10 +140,15 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		return nil, nil, status.Error
 	}
 
-	// ⬇️ Keep your behavior: re-load index fresh via loadingWindow
+	// Flatten map into slice
+	var files []gamesdb.GobEntry
+	for _, entries := range status.Idx {
+		files = append(files, entries...)
+	}
+
+	// 🔑 keep your outline, but still load via loader
 	return loadingWindow(stdscr, loadMenuDb)
 }
-
 
 // -------------------------
 // Tree navigation
