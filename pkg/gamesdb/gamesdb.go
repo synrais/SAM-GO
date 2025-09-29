@@ -25,9 +25,9 @@ const (
 // Helpers
 // -------------------------
 
-// Return the key for a name in the names index.
-func NameKey(systemId string, nameExt string) string {
-    return systemId + ":" + nameExt
+// Return the key for a game in the names index (triple key).
+func NameKey(systemId, name, ext string) string {
+	return systemId + ":" + name + ":" + ext
 }
 
 // Check if the games.db exists on disk.
@@ -118,7 +118,7 @@ func updateNames(db *bolt.DB, files []fileinfo) error {
 		bns := tx.Bucket([]byte(BucketNames))
 
 		for _, file := range files {
-			nk := NameKey(file.SystemId, file.NameExt)
+			nk := NameKey(file.SystemId, file.Name, file.Ext)
 			err := bns.Put([]byte(nk), []byte(file.Path))
 			if err != nil {
 				return err
@@ -141,7 +141,7 @@ type fileinfo struct {
 	SystemName   string // Friendly system name (e.g. "Arcadia 2001")
 	SystemFolder string // Root folder on disk for this system
 	Name         string // Base name without extension
-	NameExt      string // Filename with extension
+	Ext          string // File extension (e.g. "gg")
 	Path         string // Full path to file
 	FolderName   string // Parent folder name on disk
 	MenuPath     string // "SystemName/<relative path under SystemFolder>"
@@ -198,8 +198,8 @@ func NewNamesIndex(
 
 			for _, fullPath := range pathFiles {
 				base := filepath.Base(fullPath)
-				ext := filepath.Ext(base)
-				name := strings.TrimSuffix(base, ext)
+				ext := strings.TrimPrefix(filepath.Ext(base), ".")
+				name := strings.TrimSuffix(base, filepath.Ext(base))
 				parentFolder := filepath.Base(filepath.Dir(fullPath))
 
 				// -------------------------
@@ -251,7 +251,7 @@ func NewNamesIndex(
 					SystemName:   sys.Name,
 					SystemFolder: sys.Folder[0],
 					Name:         name,
-					NameExt:      base,
+					Ext:          ext,
 					Path:         fullPath,
 					FolderName:   parentFolder,
 					MenuPath:     menuPath,
@@ -311,6 +311,7 @@ func NewNamesIndex(
 type SearchResult struct {
 	SystemId string
 	Name     string
+	Ext      string
 	Path     string
 	MenuPath string
 }
@@ -337,19 +338,27 @@ func searchNamesGeneric(
 
 		for _, system := range systems {
 			pre := []byte(system.Id + ":")
-			nameIdx := bytes.Index(pre, []byte(":"))
-
 			c := bn.Cursor()
 			for k, v := c.Seek([]byte(pre)); k != nil && bytes.HasPrefix(k, pre); k, v = c.Next() {
-				keyName := string(k[nameIdx+1:])
+				parts := strings.SplitN(string(k), ":", 3)
+				if len(parts) < 3 {
+					continue
+				}
+				keyName := parts[1]
+				keyExt := parts[2]
 
-				if test(query, keyName) {
-					// Rebuild MenuPath best-effort from system + keyName
-					menuPath := filepath.Join(system.Name, keyName)
+				combined := keyName
+				if keyExt != "" {
+					combined = keyName + "." + keyExt
+				}
+
+				if test(query, combined) {
+					menuPath := filepath.Join(system.Name, combined)
 
 					results = append(results, SearchResult{
 						SystemId: system.Id,
 						Name:     keyName,
+						Ext:      keyExt,
 						Path:     string(v),
 						MenuPath: menuPath,
 					})
