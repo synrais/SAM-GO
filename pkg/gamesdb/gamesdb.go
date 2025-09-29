@@ -17,11 +17,13 @@ import (
 
 // GobEntry stores full details for a single game file.
 type GobEntry struct {
-	SystemId string
-	Name     string
-	Ext      string
-	Path     string
-	MenuPath string
+	SystemId   string
+	Name       string
+	Ext        string
+	Path       string
+	MenuPath   string
+	Search     string // lowercase "name ext" for search
+	SearchName string // "[SystemName] name.ext" for display
 }
 
 // GobIndex maps base names -> slice of entries (supports duplicates).
@@ -103,12 +105,18 @@ func BuildGobIndex(
 
 				menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
 
+				// Precompute search fields
+				search := strings.ToLower(strings.TrimSpace(name + " " + ext))
+				searchName := fmt.Sprintf("[%s] %s.%s", sys.Name, name, ext)
+
 				entry := GobEntry{
-					SystemId: sys.Id,
-					Name:     name,
-					Ext:      ext,
-					Path:     fullPath,
-					MenuPath: filepath.ToSlash(menuPath),
+					SystemId:   sys.Id,
+					Name:       name,
+					Ext:        ext,
+					Path:       fullPath,
+					MenuPath:   filepath.ToSlash(menuPath),
+					Search:     search,
+					SearchName: searchName,
 				}
 				idx[name] = append(idx[name], entry)
 			}
@@ -128,21 +136,31 @@ func BuildGobIndex(
 // Searching
 // -------------------------
 
-// SearchWords returns only the *first entry* for each matching name (ignores duplicates).
+// SearchWords matches against GobEntry.Search, returning only
+// the first entry per key (ignores dupes but allows unique extensions).
 func (idx GobIndex) SearchWords(query string) []GobEntry {
 	var results []GobEntry
 	words := strings.Fields(strings.ToLower(query))
 
 outer:
-	for name, entries := range idx {
-		lower := strings.ToLower(name)
+	for _, entries := range idx {
+		if len(entries) == 0 {
+			continue
+		}
+		// check against the prebuilt Search field of the first entry
+		lower := entries[0].Search
 		for _, w := range words {
 			if !strings.Contains(lower, w) {
 				continue outer
 			}
 		}
-		if len(entries) > 0 {
-			results = append(results, entries[0]) // only first entry
+		// collect all unique extensions in this key
+		seenExt := make(map[string]bool)
+		for _, e := range entries {
+			if !seenExt[e.Ext] {
+				results = append(results, e)
+				seenExt[e.Ext] = true
+			}
 		}
 	}
 	return results
