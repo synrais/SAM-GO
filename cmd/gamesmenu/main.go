@@ -47,10 +47,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 	stdscr.Clear()
 	stdscr.Refresh()
 
-	// hide cursor during indexing
-	gc.Cursor(0)
-	defer gc.Cursor(1) // restore at the end
-
 	// Create a bordered subwindow for progress
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
@@ -110,17 +106,17 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		default:
 		}
 
-		// Clear only the text row (line 1 inside border)
-		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
+		// Clear the text row, but leave last 3 cols (spinner area) untouched
+		win.MovePrint(1, 2, strings.Repeat(" ", width-6))
 
 		if lastProgress != nil {
 			// left-aligned system name
 			left := fmt.Sprintf("Indexing %s...", lastProgress.system)
-			// right-aligned totals with fixed width to prevent jumping
+			// right-aligned totals with fixed width
 			right := fmt.Sprintf("(%3d/%-3d)", lastProgress.done, lastProgress.total)
 
 			win.MovePrint(1, 2, left)
-			win.MovePrint(1, width-len(right)-5, right)
+			win.MovePrint(1, width-len(right)-4, right) // stop before spinner column
 
 			// Progress bar (line 2 inside border)
 			progressWidth := width - 4
@@ -132,7 +128,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 			win.MovePrint(1, 2, "Indexing games...")
 		}
 
-		// Spinner in top-right corner
+		// Spinner always at far right
 		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
 		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
 
@@ -344,7 +340,12 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 	startIndex := 0
 
 	for {
+		// Show cursor while typing
+		gc.Cursor(1)
 		button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
+		// Hide cursor again after keyboard
+		gc.Cursor(0)
+
 		if err != nil || button == 1 {
 			return nil
 		}
@@ -485,6 +486,10 @@ func main() {
 		log.Fatal(err)
 	}
 	defer gc.End()
+
+	// Hide cursor globally, restore at exit
+	gc.Cursor(0)
+	defer gc.Cursor(1)
 
 	files, idx, err := loadingWindow(stdscr, loadMenuDb)
 	if err != nil {
