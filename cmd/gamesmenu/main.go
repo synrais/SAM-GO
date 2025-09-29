@@ -30,6 +30,7 @@ func loadMenuDb() ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	// flatten map into slice
 	var files []gamesdb.GobEntry
 	for _, entries := range idx {
 		files = append(files, entries...)
@@ -59,7 +60,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		done   int
 		total  int
 	}
-	updates := make(chan progress, len(games.AllSystems()))
+	updates := make(chan progress, 1)
 
 	status := struct {
 		Complete bool
@@ -70,7 +71,10 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 	go func() {
 		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
 			func(system string, done, total int) {
-				updates <- progress{system, done, total}
+				select {
+				case updates <- progress{system, done, total}:
+				default:
+				}
 			})
 		if err == nil {
 			err = gamesdb.SaveGobIndex(idx, config.MenuDb)
@@ -97,14 +101,12 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		default:
 		}
 
-		win.MovePrint(1, 2, strings.Repeat(" ", width-6))
+		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 
 		if lastProgress != nil {
-			left := fmt.Sprintf("Indexing %s...", lastProgress.system)
-			right := fmt.Sprintf("(%3d/%-3d)", lastProgress.done, lastProgress.total)
-
-			win.MovePrint(1, 2, left)
-			win.MovePrint(1, width-len(right)-4, right)
+			text := fmt.Sprintf("Indexing %s... (%d/%d)",
+				lastProgress.system, lastProgress.done, lastProgress.total)
+			win.MovePrint(1, 2, text)
 
 			progressWidth := width - 4
 			filled := int(float64(lastProgress.done) / float64(lastProgress.total) * float64(progressWidth))
@@ -130,12 +132,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		return nil, nil, status.Error
 	}
 
-	// 🔹 Return in-memory index directly for fast rebuilds
-	var files []gamesdb.GobEntry
-	for _, entries := range status.Idx {
-		files = append(files, entries...)
-	}
-	return files, status.Idx, nil
+	return loadingWindow(stdscr, loadMenuDb)
 }
 
 // -------------------------
@@ -180,27 +177,13 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 		sort.Strings(folders)
 		items = append(items, folders...)
 
-		sort.Slice(node.Files, func(i, j int) bool {
-			nameA := node.Files[i].Name
-			if node.Files[i].Ext != "" {
-				nameA = fmt.Sprintf("%s.%s", node.Files[i].Name, node.Files[i].Ext)
-			}
-			nameB := node.Files[j].Name
-			if node.Files[j].Ext != "" {
-				nameB = fmt.Sprintf("%s.%s", node.Files[j].Name, node.Files[j].Ext)
-			}
-			return strings.ToLower(nameA) < strings.ToLower(nameB)
-		})
-
-		var fileNames []string
 		for _, f := range node.Files {
 			displayName := f.Name
 			if f.Ext != "" {
 				displayName = fmt.Sprintf("%s.%s", f.Name, f.Ext)
 			}
-			fileNames = append(fileNames, displayName)
+			items = append(items, displayName)
 		}
-		items = append(items, fileNames...)
 
 		title := node.Name
 		if title == "" {
@@ -284,13 +267,13 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry,
 func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntry, idx gamesdb.GobIndex) error {
 	tree := buildTree(files)
 
-	var sysNames []string
-	for name := range tree.Children {
-		sysNames = append(sysNames, name)
+	var items []string
+	var sysIds []string
+	for sysId := range tree.Children {
+		sysIds = append(sysIds, sysId)
 	}
-	sort.Strings(sysNames)
-
-	items := append([]string{}, sysNames...)
+	sort.Strings(sysIds)
+	items = append(items, sysIds...)
 
 	startIndex := 0
 	for {
@@ -316,19 +299,19 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 
 		startIndex = selected
 		switch button {
-		case 2:
-			sysName := sysNames[selected]
-			_, err := browseNode(cfg, stdscr, tree.Children[sysName], 0)
+		case 2: // Open system
+			sysId := sysIds[selected]
+			_, err := browseNode(cfg, stdscr, tree.Children[sysId], 0)
 			if err != nil {
 				return err
 			}
-		case 3:
+		case 3: // Search
 			if err := searchWindow(cfg, stdscr, idx); err != nil {
 				return err
 			}
 			stdscr.Clear()
 			stdscr.Refresh()
-		case 4:
+		case 4: // Options
 			newFiles, newIdx, err := optionsMenu(cfg, stdscr)
 			if err != nil {
 				return err
@@ -337,15 +320,15 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 				files = newFiles
 				idx = newIdx
 				tree = buildTree(files)
-
-				sysNames = sysNames[:0]
-				for name := range tree.Children {
-					sysNames = append(sysNames, name)
+				sysIds = sysIds[:0]
+				items = items[:0]
+				for sysId := range tree.Children {
+					sysIds = append(sysIds, sysId)
 				}
-				sort.Strings(sysNames)
-				items = append([]string{}, sysNames...)
+				sort.Strings(sysIds)
+				items = append(items, sysIds...)
 			}
-		case 5:
+		case 5: // Exit
 			return nil
 		}
 	}
@@ -362,10 +345,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 	startIndex := 0
 
 	for {
-		gc.Cursor(1)
 		button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
-		gc.Cursor(0)
-
 		if err != nil || button == 1 {
 			return nil
 		}
@@ -377,9 +357,9 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 			continue
 		}
 
-		items := make([]string, len(results))
-		for i, r := range results {
-			items[i] = r.SearchName
+		var items []string
+		for _, r := range results {
+			items = append(items, r.SearchName)
 		}
 
 		for {
@@ -421,10 +401,10 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 // -------------------------
 func loadingWindow(stdscr *gc.Window, loadFn func() ([]gamesdb.GobEntry, gamesdb.GobIndex, error)) ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
 	status := struct {
-		Done   bool
-		Error  error
-		Files  []gamesdb.GobEntry
-		Idx    gamesdb.GobIndex
+		Done  bool
+		Error error
+		Files []gamesdb.GobEntry
+		Idx   gamesdb.GobIndex
 	}{}
 
 	go func() {
@@ -503,9 +483,6 @@ func main() {
 		log.Fatal(err)
 	}
 	defer gc.End()
-
-	gc.Cursor(0)
-	defer gc.Cursor(1)
 
 	files, idx, err := loadingWindow(stdscr, loadMenuDb)
 	if err != nil {
