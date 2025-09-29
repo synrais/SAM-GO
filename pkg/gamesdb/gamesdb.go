@@ -1,451 +1,540 @@
-package gamesdb
+package main
 
 import (
-	"bytes"
 	"encoding/gob"
+	"flag"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
-	"regexp"
+	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 
-	bolt "go.etcd.io/bbolt"
+	gc "github.com/rthornton128/goncurses"
 
 	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/curses"
 	"github.com/synrais/SAM-GO/pkg/games"
-	"github.com/synrais/SAM-GO/pkg/utils"
+	"github.com/synrais/SAM-GO/pkg/gamesdb"
+	"github.com/synrais/SAM-GO/pkg/mister"
 )
 
-const (
-	BucketNames       = "names"
-	indexedSystemsKey = "meta:indexedSystems"
-)
+const appName = "gamesmenu"
 
-// -------------------------
-// Helpers
-// -------------------------
-
-// Return the key for a name in the names index.
-// Format: systemId:name:ext
-func NameKey(systemId, name, ext string) string {
-	return fmt.Sprintf("%s:%s:%s", systemId, name, ext)
+// --- MenuFile without FolderName ---
+type MenuFile struct {
+	SystemId     string
+	SystemName   string
+	SystemFolder string
+	Name         string // base name without extension
+	Ext          string // extension only (e.g. "gg", "nes")
+	Path         string
+	MenuPath     string
 }
 
-// Check if the games.db exists on disk.
-func DbExists() bool {
-	_, err := os.Stat(config.GamesDb)
-	return err == nil
-}
-
-// -------------------------
-// DB Management
-// -------------------------
-
-// Open the games.db with the given options. Creates the DB if missing.
-func open(options *bolt.Options) (*bolt.DB, error) {
-	err := os.MkdirAll(filepath.Dir(config.GamesDb), 0755)
+func loadMenuDb() ([]MenuFile, error) {
+	f, err := os.Open(config.MenuDb)
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
 
-	db, err := bolt.Open(config.GamesDb, 0600, options)
+	var files []MenuFile
+	dec := gob.NewDecoder(f)
+	if err := dec.Decode(&files); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
+	_ = os.Remove(config.MenuDb)
+	_ = os.Remove(config.GamesDb)
+
+	stdscr.Clear()
+	stdscr.Refresh()
+
+	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
 		return nil, err
 	}
+	defer win.Delete()
 
-	// Ensure required buckets exist
-	db.Update(func(txn *bolt.Tx) error {
-		for _, bucket := range []string{BucketNames} {
-			_, err := txn.CreateBucketIfNotExists([]byte(bucket))
-			if err != nil {
-				return err
+	_, width := win.MaxYX()
+
+	drawProgressBar := func(current, total int) {
+		if total == 0 {
+			return
+		}
+		progressWidth := width - 4
+		progressPct := int(float64(current) / float64(total) * float64(progressWidth))
+		if progressPct < 1 {
+			progressPct = 1
+		}
+		for i := 0; i < progressPct; i++ {
+			win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
+		}
+		win.NoutRefresh()
+	}
+
+	clearText := func() {
+		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
+	}
+
+	status := struct {
+		Step        int
+		Total       int
+		DisplayText string
+		Complete    bool
+		Error       error
+	}{}
+
+	go func() {
+		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
+			systemName := is.SystemId
+			if sys, err := games.GetSystem(is.SystemId); err == nil {
+				systemName = sys.Name
 			}
+			text := fmt.Sprintf("Indexing %s... (%d files)", systemName, is.Files)
+			if is.Step == 1 {
+				text = "Finding games folders..."
+			}
+			status.Step = is.Step
+			status.Total = is.Total
+			status.DisplayText = text
+		})
+		status.Error = err
+		status.Complete = true
+	}()
+
+	spinnerSeq := []string{"|", "/", "-", "\\"}
+	spinnerCount := 0
+
+	for {
+		if status.Complete {
+			break
 		}
-		return nil
-	})
+		clearText()
+		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
+		win.MovePrint(1, 2, status.DisplayText)
+		drawProgressBar(status.Step, status.Total)
+		win.NoutRefresh()
+		_ = gc.Update()
+		gc.Nap(100)
+	}
 
-	return db, nil
+	stdscr.Clear()
+	stdscr.Refresh()
+
+	if status.Error != nil {
+		return nil, status.Error
+	}
+
+	return loadingWindow(stdscr, loadMenuDb)
 }
 
-// Open the games.db with default options for generating names index.
-func openNames() (*bolt.DB, error) {
-	return open(&bolt.Options{
-		NoSync:         true,
-		NoFreelistSync: true,
-	})
+func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
+	stdscr.Clear()
+	stdscr.Refresh()
+
+	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+		Title:         "Options",
+		Buttons:       []string{"Select", "Back"},
+		DefaultButton: 0,
+		ActionButton:  0,
+		ShowTotal:     false,
+		Width:         60,
+		Height:        10,
+		InitialIndex:  0,
+	}, []string{"Rebuild games database..."})
+	if err != nil {
+		return nil, err
+	}
+
+	if button == 0 && selected == 0 {
+		return generateIndexWindow(cfg, stdscr)
+	}
+	return nil, nil
 }
 
-func readIndexedSystems(db *bolt.DB) ([]string, error) {
-	var systems []string
-
-	err := db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(BucketNames))
-		v := b.Get([]byte(indexedSystemsKey))
-		if v != nil {
-			systems = strings.Split(string(v), ",")
-		}
-		return nil
-	})
-
-	return systems, err
+type Node struct {
+	Name     string
+	Files    []MenuFile
+	Children map[string]*Node
 }
 
-func writeIndexedSystems(db *bolt.DB, systems []string) error {
-	return db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(BucketNames))
-		v := b.Get([]byte(indexedSystemsKey))
-		if v == nil {
-			v = []byte(strings.Join(systems, ","))
-			return b.Put([]byte(indexedSystemsKey), v)
-		} else {
-			existing := strings.Split(string(v), ",")
-			for _, s := range systems {
-				if !utils.Contains(existing, s) {
-					existing = append(existing, s)
+func buildTree(files []MenuFile) *Node {
+	root := &Node{Name: "", Children: make(map[string]*Node)}
+	for _, f := range files {
+		parts := strings.Split(f.MenuPath, string(os.PathSeparator))
+		curr := root
+		for i, part := range parts {
+			if i == len(parts)-1 {
+				curr.Files = append(curr.Files, f)
+			} else {
+				if curr.Children[part] == nil {
+					curr.Children[part] = &Node{Name: part, Children: make(map[string]*Node)}
 				}
-			}
-			return b.Put([]byte(indexedSystemsKey), []byte(strings.Join(existing, ",")))
-		}
-	})
-}
-
-// -------------------------
-// Indexing
-// -------------------------
-
-// Update the names index with the given files.
-func updateNames(db *bolt.DB, files []fileinfo) error {
-	return db.Batch(func(tx *bolt.Tx) error {
-		bns := tx.Bucket([]byte(BucketNames))
-
-		for _, file := range files {
-			nk := NameKey(file.SystemId, file.Name, file.Ext)
-			err := bns.Put([]byte(nk), []byte(file.Path))
-			if err != nil {
-				return err
+				curr = curr.Children[part]
 			}
 		}
-		return nil
-	})
+	}
+	return root
 }
 
-type IndexStatus struct {
-	Total    int
-	Step     int
-	SystemId string
-	Files    int
-}
+func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startIndex int) (int, error) {
+	currentIndex := startIndex
 
-// Enriched file information (also written into menu.db Gob).
-type fileinfo struct {
-	SystemId     string // Internal system ID
-	SystemName   string // Friendly system name (e.g. "Arcadia 2001")
-	SystemFolder string // Root folder on disk for this system
-	Name         string // Base name without extension
-	Ext          string // File extension (e.g. "nes", "gg")
-	Path         string // Full path to file
-	FolderName   string // Parent folder name on disk
-	MenuPath     string // "SystemName/<relative path under SystemFolder>"
-}
+	for {
+		stdscr.Clear()
+		stdscr.Refresh()
 
-// Build a new names index and Gob file from all systems and their game files.
-func NewNamesIndex(
-	cfg *config.UserConfig,
-	systems []games.System,
-	update func(IndexStatus),
-) (int, error) {
-	status := IndexStatus{
-		Total: len(systems) + 2, // +1 for games.db write, +1 for menu.db write
-		Step:  1,
-	}
+		var items []string
+		var folders []string
+		for name := range node.Children {
+			folders = append(folders, name)
+		}
+		sort.Strings(folders)
+		items = append(items, folders...)
 
-	db, err := openNames()
-	if err != nil {
-		return status.Files, fmt.Errorf("error opening games.db: %s", err)
-	}
-	defer db.Close()
+		for _, f := range node.Files {
+			displayName := f.Name
+			if f.Ext != "" {
+				displayName = fmt.Sprintf("%s.%s", f.Name, f.Ext)
+			}
+			items = append(items, displayName)
+		}
 
-	update(status)
+		title := node.Name
+		if title == "" {
+			title = "Games"
+		}
 
-	// Collect all paths per system
-	systemPaths := make(map[string][]string, 0)
-	for _, v := range games.GetSystemPaths(cfg, systems) {
-		systemPaths[v.System.Id] = append(systemPaths[v.System.Id], v.Path)
-	}
+		buttons := []string{"PgUp", "PgDn", "", "Back"}
 
-	var allFiles []fileinfo
-
-	for _, k := range utils.AlphaMapKeys(systemPaths) {
-		status.SystemId = k
-		status.Step++
-		update(status)
-
-		sys, err := games.GetSystem(k)
+		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+			Title:         title,
+			Buttons:       buttons,
+			ActionButton:  2,
+			DefaultButton: 2,
+			ShowTotal:     true,
+			Width:         70,
+			Height:        20,
+			InitialIndex:  currentIndex,
+			DynamicActionLabel: func(idx int) string {
+				if idx < len(folders) {
+					return "Open"
+				}
+				return "Launch"
+			},
+		}, items)
 		if err != nil {
-			return status.Files, fmt.Errorf("unknown system: %s", k)
+			return currentIndex, err
 		}
 
-		files := make([]fileinfo, 0)
+		currentIndex = selected
+		switch button {
+		case 2: // Open/Launch
+			if selected < len(folders) {
+				folderName := folders[selected]
+				childIdx, err := browseNode(cfg, stdscr, node.Children[folderName], 0)
+				if err != nil {
+					return currentIndex, err
+				}
+				currentIndex = selected
+				_ = childIdx
+			} else {
+				file := node.Files[selected-len(folders)]
+				sys, _ := games.GetSystem(file.SystemId)
+				_ = mister.LaunchGame(cfg, *sys, file.Path)
+			}
+		case 3: // Back
+			return currentIndex, nil
+		}
+	}
+}
 
-		for _, path := range systemPaths[k] {
-			pathFiles, err := games.GetFiles(k, path)
+func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error {
+	tree := buildTree(files)
+
+	var items []string
+	var sysIds []string
+	for sysId := range tree.Children {
+		sysIds = append(sysIds, sysId)
+	}
+	sort.Strings(sysIds)
+	for _, sysId := range sysIds {
+		items = append(items, sysId)
+	}
+
+	startIndex := 0
+	for {
+		stdscr.Clear()
+		stdscr.Refresh()
+
+		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+			Title:         "Systems",
+			Buttons:       []string{"PgUp", "PgDn", "", "Search", "Options", "Exit"},
+			ActionButton:  2,
+			DefaultButton: 2,
+			ShowTotal:     true,
+			Width:         70,
+			Height:        20,
+			InitialIndex:  startIndex,
+			DynamicActionLabel: func(idx int) string {
+				return "Open"
+			},
+		}, items)
+		if err != nil {
+			return err
+		}
+
+		startIndex = selected
+		switch button {
+		case 2: // Open system
+			sysId := sysIds[selected]
+			_, err := browseNode(cfg, stdscr, tree.Children[sysId], 0)
 			if err != nil {
-				return status.Files, fmt.Errorf("error getting files: %s", err)
+				return err
 			}
-
-			if len(pathFiles) == 0 {
-				continue
+		case 3: // Search
+			if err := searchWindow(cfg, stdscr); err != nil {
+				return err
 			}
-
-			for _, fullPath := range pathFiles {
-				base := filepath.Base(fullPath)
-				ext := strings.TrimPrefix(filepath.Ext(base), ".")
-				name := strings.TrimSuffix(base, filepath.Ext(base))
-				parentFolder := filepath.Base(filepath.Dir(fullPath))
-
-				// -------------------------
-				// Build MenuPath
-				// -------------------------
-				menuPath := ""
-				found := false
-				parts := strings.Split(filepath.ToSlash(fullPath), "/")
-
-				for i, part := range parts {
-					for _, folder := range sys.Folder {
-						if part == folder {
-							// everything after the system folder
-							relParts := parts[i+1:]
-
-							if len(relParts) > 0 {
-								// Case 1: collapse fake .zip folder
-								if strings.HasSuffix(relParts[0], ".zip") {
-									relParts = relParts[1:]
-								}
-
-								// Case 2: listings/*.txt collapse to label
-								if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
-									label := strings.TrimSuffix(relParts[1], ".txt")
-									if len(label) > 0 {
-										label = strings.ToUpper(label[:1]) + label[1:]
-									}
-									relParts = append([]string{label}, relParts[2:]...)
-								}
-							}
-
-							menuPath = filepath.ToSlash(filepath.Join(append([]string{sys.Name}, relParts...)...))
-							found = true
-							break
-						}
-					}
-					if found {
-						break
-					}
+			stdscr.Clear()
+			stdscr.Refresh()
+		case 4: // Options
+			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
+				return err
+			} else if newFiles != nil {
+				files := newFiles
+				tree = buildTree(files)
+				sysIds = sysIds[:0}
+				items = items[:0}
+				for sysId := range tree.Children {
+					sysIds = append(sysIds, sysId)
 				}
-
-				// Fallback if no folder matched
-				if !found {
-					menuPath = filepath.ToSlash(filepath.Join(sys.Name, base))
+				sort.Strings(sysIds)
+				for _, sysId := range sysIds {
+					items = append(items, sysId)
 				}
-
-				files = append(files, fileinfo{
-					SystemId:     sys.Id,
-					SystemName:   sys.Name,
-					SystemFolder: sys.Folder[0],
-					Name:         name,
-					Ext:          ext,
-					Path:         fullPath,
-					FolderName:   parentFolder,
-					MenuPath:     menuPath,
-				})
+				stdscr.Clear()
+				stdscr.Refresh()
 			}
+		case 5: // Exit
+			return nil
+		}
+	}
+}
+
+func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
+	stdscr.Clear()
+	stdscr.Refresh()
+
+	text := ""
+	startIndex := 0
+	for {
+		button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
+		if err != nil || button == 1 {
+			return nil
+		}
+		text = query
+
+		_ = curses.InfoBox(stdscr, "", "Searching...", false, false)
+
+		status := struct {
+			Done   bool
+			Error  error
+			Result []gamesdb.SearchResult
+		}{}
+
+		go func() {
+			results, err := gamesdb.SearchNamesWords(games.AllSystems(), query)
+			status.Result = results
+			status.Error = err
+			status.Done = true
+		}()
+
+		spinnerSeq := []string{"|", "/", "-", "\\"}
+		spinnerCount := 0
+
+		for {
+			if status.Done {
+				break
+			}
+			label := fmt.Sprintf("Searching... %s", spinnerSeq[spinnerCount])
+			_ = curses.InfoBox(stdscr, "", label, false, false)
+			spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+			_ = gc.Update()
+			gc.Nap(100)
 		}
 
-		if len(files) == 0 {
+		if status.Error != nil {
+			return status.Error
+		}
+
+		results := status.Result
+		if len(results) == 0 {
+			_ = curses.InfoBox(stdscr, "", "No results found.", false, true)
 			continue
 		}
 
-		status.Files += len(files)
-		allFiles = append(allFiles, files...)
-
-		// Update Bolt DB
-		if err := updateNames(db, files); err != nil {
-			return status.Files, err
+		var items []string
+		for _, r := range results {
+			systemName := r.SystemId
+			if sys, err := games.GetSystem(r.SystemId); err == nil {
+				systemName = sys.Name
+			}
+			displayName := r.Name
+			if r.Ext != "" {
+				displayName = fmt.Sprintf("%s.%s", r.Name, r.Ext)
+			}
+			items = append(items, fmt.Sprintf("[%s] %s", systemName, displayName))
 		}
-	}
 
-	// --- Finalize Bolt ---
-	status.Step++
-	status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.GamesDb))
-	update(status)
+		for {
+			stdscr.Clear()
+			stdscr.Refresh()
 
-	if err := writeIndexedSystems(db, utils.AlphaMapKeys(systemPaths)); err != nil {
-		return status.Files, fmt.Errorf("error writing indexed systems: %s", err)
-	}
-
-	if err := db.Sync(); err != nil {
-		return status.Files, fmt.Errorf("error syncing database: %s", err)
-	}
-
-	// --- Write Gob (menu.db) ---
-	status.Step++
-	status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.MenuDb))
-	update(status)
-
-	gobFile, err := os.Create(config.MenuDb)
-	if err != nil {
-		return status.Files, fmt.Errorf("error creating gob file: %s", err)
-	}
-	defer gobFile.Close()
-
-	encoder := gob.NewEncoder(gobFile)
-	if err := encoder.Encode(allFiles); err != nil {
-		return status.Files, fmt.Errorf("error writing gob file: %s", err)
-	}
-
-	return status.Files, nil
-}
-
-// -------------------------
-// Searching
-// -------------------------
-
-type SearchResult struct {
-	SystemId string
-	Name     string
-	Ext      string
-	Path     string
-}
-
-func searchNamesGeneric(
-	systems []games.System,
-	query string,
-	test func(string, string) bool,
-) ([]SearchResult, error) {
-	if !DbExists() {
-		return nil, fmt.Errorf("games.db does not exist")
-	}
-
-	db, err := open(&bolt.Options{ReadOnly: true})
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
-	var results []SearchResult
-
-	err = db.View(func(tx *bolt.Tx) error {
-		bn := tx.Bucket([]byte(BucketNames))
-
-		for _, system := range systems {
-			pre := []byte(system.Id + ":")
-			c := bn.Cursor()
-			for k, v := c.Seek(pre); k != nil && bytes.HasPrefix(k, pre); k, v = c.Next() {
-				// key = systemId:name:ext
-				parts := strings.SplitN(string(k), ":", 3)
-				if len(parts) != 3 {
-					continue
-				}
-				name := parts[1]
-				ext := parts[2]
-
-				if test(query, name) {
-					results = append(results, SearchResult{
-						SystemId: system.Id,
-						Name:     name,
-						Ext:      ext,
-						Path:     string(v),
-					})
-				}
+			button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+				Title:         "Search Results",
+				Buttons:       []string{"PgUp", "PgDn", "Launch", "Back"},
+				ActionButton:  2,
+				DefaultButton: 2,
+				ShowTotal:     true,
+				Width:         70,
+				Height:        20,
+				InitialIndex:  startIndex,
+			}, items)
+			if err != nil {
+				return err
+			}
+			startIndex = selected
+			if button == 2 {
+				game := results[selected]
+				sys, _ := games.GetSystem(game.SystemId)
+				_ = mister.LaunchGame(cfg, *sys, game.Path)
+				continue
+			}
+			if button == 3 {
+				stdscr.Clear()
+				stdscr.Refresh()
+				break
 			}
 		}
-		return nil
-	})
+	}
+}
 
-	if err != nil {
-		return nil, err
+func loadingWindow(stdscr *gc.Window, loadFn func() ([]MenuFile, error)) ([]MenuFile, error) {
+	status := struct {
+		Done   bool
+		Error  error
+		Result []MenuFile
+	}{}
+
+	go func() {
+		files, err := loadFn()
+		status.Result = files
+		status.Error = err
+		status.Done = true
+	}()
+
+	spinnerSeq := []string{"|", "/", "-", "\\"}
+	spinnerCount := 0
+
+	for {
+		if status.Done {
+			break
+		}
+		label := fmt.Sprintf("Loading... %s", spinnerSeq[spinnerCount])
+		_ = curses.InfoBox(stdscr, "", label, false, false)
+		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+		_ = gc.Update()
+		gc.Nap(100)
 	}
 
-	return results, nil
+	if status.Error != nil {
+		return nil, status.Error
+	}
+	return status.Result, nil
 }
 
-// Exact match (case-insensitive).
-func SearchNamesExact(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, name string) bool {
-		return strings.EqualFold(query, name)
-	})
-}
+func main() {
+	// --- Lockfile to prevent multiple instances ---
+	lockFile := "/tmp/gamesmenu.lock"
+	f, err := os.OpenFile(lockFile, os.O_CREATE|os.O_RDWR, 0666)
+	if err != nil {
+		log.Fatalf("failed to open lock file: %v", err)
+	}
+	defer f.Close()
 
-// Partial substring match (case-insensitive).
-func SearchNamesPartial(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, name string) bool {
-		return strings.Contains(strings.ToLower(name), strings.ToLower(query))
-	})
-}
+	tryLock := func() error {
+		return syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	}
 
-// Word-by-word match (all words must be present).
-func SearchNamesWords(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, name string) bool {
-		qWords := strings.Fields(strings.ToLower(query))
-		for _, word := range qWords {
-			if !strings.Contains(strings.ToLower(name), word) {
-				return false
+	// First attempt
+	if err := tryLock(); err != nil {
+		// Someone else holds the lock → kill it
+		buf := make([]byte, 32)
+		n, _ := f.ReadAt(buf, 0)
+		if n > 0 {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(buf[:n]))); err == nil {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+				// Give kernel time to drop the lock
+				gc.Nap(500)
 			}
 		}
-		return true
-	})
-}
+		// Try again
+		if err := tryLock(); err != nil {
+			log.Fatal("failed to acquire lock even after killing old process")
+		}
+	}
 
-// Regex-based match.
-func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, name string) bool {
-		r, err := regexp.Compile(query)
+	// Write our PID to the lockfile
+	_ = f.Truncate(0)
+	_, _ = f.Seek(0, 0)
+	_, _ = f.WriteString(fmt.Sprintf("%d", os.Getpid()))
+
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+
+	// --- Normal startup ---
+	printPtr := flag.Bool("print", false, "Print game path instead of launching")
+	flag.Parse()
+	launchGame := !*printPtr
+
+	cfg, err := config.LoadUserConfig(appName, &config.UserConfig{})
+	if err != nil && !os.IsNotExist(err) {
+		log.Fatal(err)
+	}
+
+	stdscr, err := curses.Setup()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer gc.End()
+
+	files, err := loadingWindow(stdscr, loadMenuDb)
+	if err != nil {
+		files, err = generateIndexWindow(cfg, stdscr)
 		if err != nil {
-			return false
+			log.Fatal(err)
 		}
-		return r.MatchString(name)
-	})
-}
-
-// -------------------------
-// System Index Helpers
-// -------------------------
-
-// Return true if a specific system is indexed.
-func SystemIndexed(system games.System) bool {
-	if !DbExists() {
-		return false
 	}
 
-	db, err := open(&bolt.Options{ReadOnly: true})
-	if err != nil {
-		return false
+	if launchGame {
+		if err := mainMenu(cfg, stdscr, files); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		for _, f := range files {
+			displayName := f.Name
+			if f.Ext != "" {
+				displayName = fmt.Sprintf("%s.%s", f.Name, f.Ext)
+			}
+			fmt.Println(filepath.Join(f.MenuPath, displayName))
+		}
 	}
-	defer db.Close()
-
-	systems, err := readIndexedSystems(db)
-	if err != nil {
-		return false
-	}
-
-	return utils.Contains(systems, system.Id)
-}
-
-// Return all indexed system IDs.
-func IndexedSystems() ([]string, error) {
-	if !DbExists() {
-		return nil, fmt.Errorf("games.db does not exist")
-	}
-
-	db, err := open(&bolt.Options{ReadOnly: true})
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
-	systems, err := readIndexedSystems(db)
-	if err != nil {
-		return nil, err
-	}
-
-	return systems, nil
 }
