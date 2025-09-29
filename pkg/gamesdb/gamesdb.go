@@ -107,7 +107,7 @@ func BuildGobIndex(
 				menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
 
 				// Precompute search fields
-				search := strings.ToLower(fmt.Sprintf("%s %s", name, ext))
+				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext)) // "super mario bros .nes"
 				searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
 
 				entry := GobEntry{
