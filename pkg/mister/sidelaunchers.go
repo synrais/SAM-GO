@@ -230,7 +230,6 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 
 	// Compat map: title substring → alternate HDF
 	compatHDF := map[string]string{
-		// --- No FastMem required ---
 		"chaos engine":            "CD32NoFastMem.hdf",
 		"dangerous streets":       "CD32NoFastMem.hdf",
 		"fears":                   "CD32NoFastMem.hdf",
@@ -241,21 +240,13 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		"soccer kid":              "CD32NoFastMem.hdf",
 		"surf ninjas":             "CD32NoFastMem.hdf",
 		"fire force":              "CD32NoFastMem.hdf",
-
-		// --- No FastMem + No ICache ---
-		"dizzy collection": "CD32NoFastMemNoICache.hdf",
-
-		// --- No ICache only ---
-		"ultimate body blows": "CD32NoICache.hdf",
-
-		// --- No Volume Control ---
-		"guardian": "CD32NoVolumeControl.hdf",
-
-		// --- Winboot variant ---
-		"arabian nights":      "CD32Winboot.hdf",
-		"beneath a steel sky": "CD32Winboot.hdf",
-		"deep core":           "CD32Winboot.hdf",
-		"fields of glory":     "CD32Winboot.hdf",
+		"dizzy collection":        "CD32NoFastMemNoICache.hdf",
+		"ultimate body blows":     "CD32NoICache.hdf",
+		"guardian":                "CD32NoVolumeControl.hdf",
+		"arabian nights":          "CD32Winboot.hdf",
+		"beneath a steel sky":     "CD32Winboot.hdf",
+		"deep core":               "CD32Winboot.hdf",
+		"fields of glory":         "CD32Winboot.hdf",
 	}
 
 	// Tmp cfg
@@ -328,13 +319,26 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	hdfPath := filepath.Join(pseudoRoot, hdfToUse)
 	_ = patchAt(data, offsetHdfPath, cleanPath(hdfPath))
 
-	// Saves
-	savePath := filepath.Join(pseudoRoot, "AmigaVision-Saves.hdf")
-	if _, err := os.Stat(savePath); os.IsNotExist(err) {
-		megaSave := filepath.Join(pseudoRoot, "MegaAGS-Saves.hdf")
-		if _, err := os.Stat(megaSave); err == nil {
-			savePath = megaSave
-		} else {
+	// Saves: prefer existing saves in *any* system path, else fallback
+	var savePath string
+	found := false
+	for _, sp := range sysPaths {
+		candidate := filepath.Join(sp.Path, "AmigaVision-Saves.hdf")
+		if _, err := os.Stat(candidate); err == nil {
+			savePath = candidate
+			found = true
+			break
+		}
+		candidate = filepath.Join(sp.Path, "MegaAGS-Saves.hdf")
+		if _, err := os.Stat(candidate); err == nil {
+			savePath = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		savePath = filepath.Join(pseudoRoot, "AmigaVision-Saves.hdf")
+		if _, err := os.Stat(savePath); os.IsNotExist(err) {
 			savePath, _ = seedAsset("AmigaVision-Saves.hdf", pseudoRoot)
 		}
 	}
