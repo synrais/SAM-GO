@@ -69,6 +69,8 @@ func LoadGobIndex(filename string) (GobIndex, error) {
 
 // BuildGobIndex scans systems and builds both a sorted slice and an index map,
 // reporting progress via the optional update callback.
+// BuildGobIndex scans systems and builds both a sorted slice and an index map,
+// reporting progress via the optional update callback.
 func BuildGobIndex(
     cfg *config.UserConfig,
     systems []games.System,
@@ -136,12 +138,12 @@ func BuildGobIndex(
         }
     }
 
-    // 🔹 Global sort once by MenuPath
+    // 🔹 Single global sort by MenuPath (source of truth)
     sort.Slice(all, func(i, j int) bool {
         return strings.ToLower(all[i].MenuPath) < strings.ToLower(all[j].MenuPath)
     })
 
-    // Build index map from sorted slice
+    // Build index map from globally sorted slice
     for _, e := range all {
         idx[e.Name] = append(idx[e.Name], e)
     }
