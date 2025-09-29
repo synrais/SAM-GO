@@ -25,20 +25,26 @@ const appName = "gamesmenu"
 // Database loading
 // -------------------------
 func loadMenuDb() ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
-	idx, err := gamesdb.LoadGobIndex(config.MenuDb)
-	if err != nil {
-		return nil, nil, err
-	}
+    idx, err := gamesdb.LoadGobIndex(config.MenuDb)
+    if err != nil {
+        return nil, nil, err
+    }
 
-	// Flatten map into slice (unsorted, order handled later)
-	var files []gamesdb.GobEntry
-	for _, entries := range idx {
-		files = append(files, entries...)
-	}
+    // 🔹 Rebuild sorted slice from saved index
+    var files []gamesdb.GobEntry
+    for _, entries := range idx {
+        files = append(files, entries...)
+    }
+    sort.Slice(files, func(i, j int) bool {
+        return strings.ToLower(files[i].MenuPath) < strings.ToLower(files[j].MenuPath)
+    })
 
-	return files, idx, nil
+    return files, idx, nil
 }
 
+// -------------------------
+// Index regeneration
+// -------------------------
 // -------------------------
 // Index regeneration
 // -------------------------
@@ -63,17 +69,19 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		total  int
 	}
 
-	// 🔹 buffer big enough for all systems so we never drop an update
+	// buffer big enough for all systems so we never drop an update
 	updates := make(chan progress, len(games.AllSystems()))
 
 	status := struct {
 		Complete bool
 		Error    error
+		Files    []gamesdb.GobEntry
+		Idx      gamesdb.GobIndex
 	}{}
 
 	// Worker goroutine: build index and push updates
 	go func() {
-		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
+		files, idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
 			func(system string, done, total int) {
 				updates <- progress{system, done, total}
 			})
@@ -82,6 +90,8 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		}
 		status.Error = err
 		status.Complete = true
+		status.Files = files
+		status.Idx = idx
 		close(updates)
 	}()
 
@@ -135,8 +145,8 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		return nil, nil, status.Error
 	}
 
-	// Reload from disk (order handled later)
-	return loadingWindow(stdscr, loadMenuDb)
+	// Return what BuildGobIndex already produced (sorted slice + map)
+	return status.Files, status.Idx, nil
 }
 
 // -------------------------
