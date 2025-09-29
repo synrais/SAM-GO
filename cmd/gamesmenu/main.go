@@ -27,8 +27,8 @@ type MenuFile struct {
 	SystemId     string
 	SystemName   string
 	SystemFolder string
-	Name         string
-	NameExt      string
+	Name         string // base name without extension
+	Ext          string // extension only (e.g. "gg", "nes")
 	Path         string
 	FolderName   string
 	MenuPath     string
@@ -201,7 +201,11 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 		items = append(items, folders...)
 
 		for _, f := range node.Files {
-			items = append(items, f.NameExt)
+			displayName := f.Name
+			if f.Ext != "" {
+				displayName = fmt.Sprintf("%s.%s", f.Name, f.Ext)
+			}
+			items = append(items, displayName)
 		}
 
 		title := node.Name
@@ -308,8 +312,8 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			} else if newFiles != nil {
 				files := newFiles
 				tree = buildTree(files)
-				sysIds = sysIds[:0]
-				items = items[:0]
+				sysIds = sysIds[:0}
+				items = items[:0}
 				for sysId := range tree.Children {
 					sysIds = append(sysIds, sysId)
 				}
@@ -384,10 +388,9 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 			if sys, err := games.GetSystem(r.SystemId); err == nil {
 				systemName = sys.Name
 			}
-			ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(r.Path), "."))
 			displayName := r.Name
-			if ext != "" {
-				displayName = fmt.Sprintf("%s.%s", r.Name, ext)
+			if r.Ext != "" {
+				displayName = fmt.Sprintf("%s.%s", r.Name, r.Ext)
 			}
 			items = append(items, fmt.Sprintf("[%s] %s", systemName, displayName))
 		}
@@ -527,8 +530,11 @@ func main() {
 		}
 	} else {
 		for _, f := range files {
-			fmt.Println(f.MenuPath)
+			displayName := f.Name
+			if f.Ext != "" {
+				displayName = fmt.Sprintf("%s.%s", f.Name, f.Ext)
+			}
+			fmt.Println(filepath.Join(f.MenuPath, displayName))
 		}
 	}
 }
-
