@@ -30,6 +30,7 @@ func loadMenuDb() ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	// flatten map into slice
 	var files []gamesdb.GobEntry
 	for _, entries := range idx {
 		files = append(files, entries...)
@@ -109,9 +110,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 
 			progressWidth := width - 4
 			filled := int(float64(lastProgress.done) / float64(lastProgress.total) * float64(progressWidth))
-			if filled > progressWidth {
-				filled = progressWidth
-			}
 			for i := 0; i < filled; i++ {
 				win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
 			}
@@ -171,21 +169,14 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 		stdscr.Clear()
 		stdscr.Refresh()
 
+		var items []string
 		var folders []string
 		for name := range node.Children {
 			folders = append(folders, name)
 		}
 		sort.Strings(folders)
-
-		sort.Slice(node.Files, func(i, j int) bool {
-			if node.Files[i].Name == node.Files[j].Name {
-				return node.Files[i].Ext < node.Files[j].Ext
-			}
-			return node.Files[i].Name < node.Files[j].Name
-		})
-
-		var items []string
 		items = append(items, folders...)
+
 		for _, f := range node.Files {
 			displayName := f.Name
 			if f.Ext != "" {
@@ -276,12 +267,13 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry,
 func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntry, idx gamesdb.GobIndex) error {
 	tree := buildTree(files)
 
+	var items []string
 	var sysIds []string
 	for sysId := range tree.Children {
 		sysIds = append(sysIds, sysId)
 	}
 	sort.Strings(sysIds)
-	items := append([]string(nil), sysIds...)
+	items = append(items, sysIds...)
 
 	startIndex := 0
 	for {
@@ -307,19 +299,19 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 
 		startIndex = selected
 		switch button {
-		case 2:
+		case 2: // Open system
 			sysId := sysIds[selected]
 			_, err := browseNode(cfg, stdscr, tree.Children[sysId], 0)
 			if err != nil {
 				return err
 			}
-		case 3:
+		case 3: // Search
 			if err := searchWindow(cfg, stdscr, idx); err != nil {
 				return err
 			}
 			stdscr.Clear()
 			stdscr.Refresh()
-		case 4:
+		case 4: // Options
 			newFiles, newIdx, err := optionsMenu(cfg, stdscr)
 			if err != nil {
 				return err
@@ -329,13 +321,14 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 				idx = newIdx
 				tree = buildTree(files)
 				sysIds = sysIds[:0]
+				items = items[:0]
 				for sysId := range tree.Children {
 					sysIds = append(sysIds, sysId)
 				}
 				sort.Strings(sysIds)
-				items = append([]string(nil), sysIds...)
+				items = append(items, sysIds...)
 			}
-		case 5:
+		case 5: // Exit
 			return nil
 		}
 	}
@@ -504,15 +497,6 @@ func main() {
 			log.Fatal(err)
 		}
 	} else {
-		sort.Slice(files, func(i, j int) bool {
-			if files[i].MenuPath == files[j].MenuPath {
-				if files[i].Name == files[j].Name {
-					return files[i].Ext < files[j].Ext
-				}
-				return files[i].Name < files[j].Name
-			}
-			return files[i].MenuPath < files[j].MenuPath
-		})
 		for _, f := range files {
 			displayName := f.Name
 			if f.Ext != "" {
