@@ -27,11 +27,8 @@ type GobEntry struct {
 	SearchName string // "[System] Name.ext" for display
 }
 
-// GobIndex maps base names -> slice of entries (supports duplicates).
-type GobIndex map[string][]GobEntry
-
-// SaveGobIndex encodes the index to disk.
-func SaveGobIndex(idx GobIndex, filename string) error {
+// SaveGobEntries encodes the sorted slice to disk.
+func SaveGobEntries(entries []GobEntry, filename string) error {
 	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
 		return err
 	}
@@ -43,121 +40,100 @@ func SaveGobIndex(idx GobIndex, filename string) error {
 	defer f.Close()
 
 	enc := gob.NewEncoder(f)
-	return enc.Encode(idx)
+	return enc.Encode(entries)
 }
 
-// LoadGobIndex decodes the index from disk and also returns a globally
-// sorted slice of entries for stable ordering.
-func LoadGobIndex(filename string) ([]GobEntry, GobIndex, error) {
+// LoadGobEntries decodes the slice from disk (already sorted).
+func LoadGobEntries(filename string) ([]GobEntry, error) {
 	f, err := os.Open(filename)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	defer f.Close()
 
-	var idx GobIndex
+	var entries []GobEntry
 	dec := gob.NewDecoder(f)
-	err = dec.Decode(&idx)
-	if err != nil {
-		return nil, nil, err
+	if err := dec.Decode(&entries); err != nil {
+		return nil, err
 	}
-
-	// 🔹 Flatten and sort slice by MenuPath so order is stable
-	var all []GobEntry
-	for _, entries := range idx {
-		all = append(all, entries...)
-	}
-	sort.Slice(all, func(i, j int) bool {
-		return strings.ToLower(all[i].MenuPath) < strings.ToLower(all[j].MenuPath)
-	})
-
-	return all, idx, nil
+	return entries, nil
 }
 
 // -------------------------
 // Building
 // -------------------------
 
-// BuildGobIndex scans systems and builds both a sorted slice and an index map,
-// reporting progress via the optional update callback.
-func BuildGobIndex(
-    cfg *config.UserConfig,
-    systems []games.System,
-    update func(systemName string, done, total int),
-) ([]GobEntry, GobIndex, error) {
-    idx := make(GobIndex)
-    total := len(systems)
-    done := 0
+// BuildGobEntries scans systems and returns a sorted slice of entries.
+// This is the *only* place we sort — truth for order is baked here.
+func BuildGobEntries(
+	cfg *config.UserConfig,
+	systems []games.System,
+	update func(systemName string, done, total int),
+) ([]GobEntry, error) {
+	var all []GobEntry
+	total := len(systems)
+	done := 0
 
-    var all []GobEntry
+	for _, sys := range systems {
+		done++
+		if update != nil {
+			update(sys.Name, done, total)
+		}
 
-    for _, sys := range systems {
-        done++
-        if update != nil {
-            update(sys.Name, done, total)
-        }
+		paths := games.GetSystemPaths(cfg, []games.System{sys})
+		for _, sp := range paths {
+			files, err := games.GetFiles(sys.Id, sp.Path)
+			if err != nil {
+				return nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
+			}
 
-        paths := games.GetSystemPaths(cfg, []games.System{sys})
-        for _, sp := range paths {
-            files, err := games.GetFiles(sys.Id, sp.Path)
-            if err != nil {
-                return nil, nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
-            }
+			for _, fullPath := range files {
+				base := filepath.Base(fullPath)
+				ext := strings.TrimPrefix(filepath.Ext(base), ".")
+				name := strings.TrimSuffix(base, filepath.Ext(base))
 
-            for _, fullPath := range files {
-                base := filepath.Base(fullPath)
-                ext := strings.TrimPrefix(filepath.Ext(base), ".")
-                name := strings.TrimSuffix(base, filepath.Ext(base))
+				// --- Build MenuPath with TXT + ZIP logic ---
+				rel, _ := filepath.Rel(sp.Path, fullPath)
+				relParts := strings.Split(filepath.ToSlash(rel), "/")
 
-                // --- Build MenuPath with TXT + ZIP logic ---
-                rel, _ := filepath.Rel(sp.Path, fullPath)
-                relParts := strings.Split(filepath.ToSlash(rel), "/")
+				if len(relParts) > 0 && strings.HasSuffix(relParts[0], ".zip") {
+					relParts = relParts[1:]
+				}
+				if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
+					label := strings.TrimSuffix(relParts[1], ".txt")
+					if len(label) > 0 {
+						label = strings.ToUpper(label[:1]) + label[1:]
+					}
+					relParts = append([]string{label}, relParts[2:]...)
+				}
+				if len(relParts) > 0 && relParts[0] == "media" {
+					continue
+				}
 
-                if len(relParts) > 0 && strings.HasSuffix(relParts[0], ".zip") {
-                    relParts = relParts[1:]
-                }
-                if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
-                    label := strings.TrimSuffix(relParts[1], ".txt")
-                    if len(label) > 0 {
-                        label = strings.ToUpper(label[:1]) + label[1:]
-                    }
-                    relParts = append([]string{label}, relParts[2:]...)
-                }
-                if len(relParts) > 0 && relParts[0] == "media" {
-                    continue
-                }
+				menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
 
-                menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
+				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext))
+				searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
 
-                // Precompute search fields
-                search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext))
-                searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
+				all = append(all, GobEntry{
+					SystemId:   sys.Id,
+					Name:       name,
+					Ext:        ext,
+					Path:       fullPath,
+					MenuPath:   filepath.ToSlash(menuPath),
+					Search:     search,
+					SearchName: searchName,
+				})
+			}
+		}
+	}
 
-                e := GobEntry{
-                    SystemId:   sys.Id,
-                    Name:       name,
-                    Ext:        ext,
-                    Path:       fullPath,
-                    MenuPath:   filepath.ToSlash(menuPath),
-                    Search:     search,
-                    SearchName: searchName,
-                }
-                all = append(all, e)
-            }
-        }
-    }
+	// 🔹 Single global sort by MenuPath (source of truth)
+	sort.Slice(all, func(i, j int) bool {
+		return strings.ToLower(all[i].MenuPath) < strings.ToLower(all[j].MenuPath)
+	})
 
-    // 🔹 Single global sort by MenuPath (source of truth)
-    sort.Slice(all, func(i, j int) bool {
-        return strings.ToLower(all[i].MenuPath) < strings.ToLower(all[j].MenuPath)
-    })
-
-    // Build index map from globally sorted slice
-    for _, e := range all {
-        idx[e.Name] = append(idx[e.Name], e)
-    }
-
-    return all, idx, nil
+	return all, nil
 }
 
 // -------------------------
