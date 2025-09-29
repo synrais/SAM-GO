@@ -42,82 +42,100 @@ func loadMenuDb() ([]gamesdb.GobEntry, error) {
 // Index regeneration
 // -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry, error) {
-    _ = os.Remove(config.MenuDb)
+	_ = os.Remove(config.MenuDb)
 
-    stdscr.Clear()
-    stdscr.Refresh()
+	stdscr.Clear()
+	stdscr.Refresh()
 
-    win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
-    if err != nil {
-        return nil, err
-    }
-    defer win.Delete()
+	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
+	if err != nil {
+		return nil, err
+	}
+	defer win.Delete()
 
-    _, width := win.MaxYX()
+	_, width := win.MaxYX()
 
-    drawProgressBar := func(current, total int) {
-        if total == 0 {
-            return
-        }
-        progressWidth := width - 4
-        progressPct := int(float64(current) / float64(total) * float64(progressWidth))
-        if progressPct < 1 {
-            progressPct = 1
-        }
-        for i := 0; i < progressPct; i++ {
-            win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
-        }
-        win.NoutRefresh()
-    }
+	drawProgressBar := func(current, total int) {
+		if total == 0 {
+			return
+		}
+		progressWidth := width - 4
+		progressPct := int(float64(current) / float64(total) * float64(progressWidth))
+		if progressPct < 1 {
+			progressPct = 1
+		}
+		for i := 0; i < progressPct; i++ {
+			win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
+		}
+		win.NoutRefresh()
+	}
 
-    clearText := func() {
-        win.MovePrint(1, 2, strings.Repeat(" ", width-4))
-    }
+	clearText := func() {
+		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
+	}
 
-    status := struct {
-        Complete bool
-        Error    error
-    }{}
+	status := struct {
+		Step    int
+		Total   int
+		System  string
+		Files   int
+		Complete bool
+		Error    error
+	}{}
 
-    go func() {
-        idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
-            func(system string, done, total int) {
-                clearText()
-                text := fmt.Sprintf("Indexing %s... (%d/%d)", system, done, total)
-                win.MovePrint(1, 2, text)
-                drawProgressBar(done, total)
-                win.NoutRefresh()
-                _ = gc.Update()
-            })
-        if err == nil {
-            err = gamesdb.SaveGobIndex(idx, config.MenuDb)
-        }
-        status.Error = err
-        status.Complete = true
-    }()
+	// Run indexing in the background
+	go func() {
+		systems := games.AllSystems()
+		status.Total = len(systems)
+		for i, sys := range systems {
+			status.Step = i + 1
+			status.System = sys.Name
 
-    spinnerSeq := []string{"|", "/", "-", "\\"}
-    spinnerCount := 0
+			idx, err := gamesdb.BuildGobIndex(cfg, []games.System{sys})
+			if err == nil {
+				// append system entries into one index file
+				oldIdx, _ := gamesdb.LoadGobIndex(config.MenuDb)
+				for k, v := range idx {
+					oldIdx[k] = append(oldIdx[k], v...)
+				}
+				err = gamesdb.SaveGobIndex(oldIdx, config.MenuDb)
+			}
+			status.Error = err
+			if err != nil {
+				break
+			}
+			status.Files += len(idx)
+		}
+		status.Complete = true
+	}()
 
-    for {
-        if status.Complete {
-            break
-        }
-        spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
-        win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
-        win.NoutRefresh()
-        _ = gc.Update()
-        gc.Nap(100)
-    }
+	spinnerSeq := []string{"|", "/", "-", "\\"}
+	spinnerCount := 0
 
-    stdscr.Clear()
-    stdscr.Refresh()
+	for {
+		if status.Complete {
+			break
+		}
+		clearText()
+		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
+		win.MovePrint(1, 2,
+			fmt.Sprintf("Indexing %s... (%d files)", status.System, status.Files))
+		drawProgressBar(status.Step, status.Total)
+		win.NoutRefresh()
+		_ = gc.Update()
+		gc.Nap(100)
+	}
 
-    if status.Error != nil {
-        return nil, status.Error
-    }
+	stdscr.Clear()
+	stdscr.Refresh()
 
-    return loadMenuDb()
+	if status.Error != nil {
+		return nil, status.Error
+	}
+
+	// --- Second phase: Loading spinner ---
+	return loadingWindow(stdscr, loadMenuDb)
 }
 
 // -------------------------
