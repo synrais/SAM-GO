@@ -24,26 +24,23 @@ const appName = "gamesmenu"
 // -------------------------
 // Database loading
 // -------------------------
-func loadMenuDb() ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
-	idx, err := gamesdb.LoadGobIndex(config.MenuDb)
-	if err != nil {
-		return nil, gamesdb.GobIndex{}, err
-	}
-	return idx.Entries, idx, nil
+func loadMenuDb() (gamesdb.GobIndex, error) {
+	return gamesdb.LoadGobIndex(config.MenuDb)
 }
 
 // -------------------------
 // Index regeneration
 // -------------------------
-func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
+func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) (gamesdb.GobIndex, error) {
 	_ = os.Remove(config.MenuDb)
 
 	stdscr.Clear()
 	stdscr.Refresh()
 
+	// Create a bordered subwindow for progress
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
-		return nil, gamesdb.GobIndex{}, err
+		return gamesdb.GobIndex{}, err
 	}
 	defer win.Delete()
 
@@ -63,7 +60,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		Idx      gamesdb.GobIndex
 	}{}
 
-	// Worker goroutine
+	// Worker goroutine: build index and push updates
 	go func() {
 		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
 			func(system string, done, total int) {
@@ -125,10 +122,10 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 	stdscr.Refresh()
 
 	if status.Error != nil {
-		return nil, gamesdb.GobIndex{}, status.Error
+		return gamesdb.GobIndex{}, status.Error
 	}
 
-	return status.Idx.Entries, status.Idx, nil
+	return status.Idx, nil
 }
 
 // -------------------------
@@ -233,7 +230,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 // -------------------------
 // Options menu
 // -------------------------
-func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
+func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) (gamesdb.GobIndex, error) {
 	stdscr.Clear()
 	stdscr.Refresh()
 
@@ -248,20 +245,20 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry,
 		InitialIndex:  0,
 	}, []string{"Rebuild games database..."})
 	if err != nil {
-		return nil, gamesdb.GobIndex{}, err
+		return gamesdb.GobIndex{}, err
 	}
 
 	if button == 0 && selected == 0 {
 		return generateIndexWindow(cfg, stdscr)
 	}
-	return nil, gamesdb.GobIndex{}, nil
+	return gamesdb.GobIndex{}, nil
 }
 
 // -------------------------
 // Main menu
 // -------------------------
-func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntry, idx gamesdb.GobIndex) error {
-	tree := buildTree(files)
+func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobIndex) error {
+	tree := buildTree(idx.Entries)
 
 	sysNames := tree.ChildNames
 	items := append([]string{}, sysNames...)
@@ -303,14 +300,13 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 			stdscr.Clear()
 			stdscr.Refresh()
 		case 4:
-			newFiles, newIdx, err := optionsMenu(cfg, stdscr)
+			newIdx, err := optionsMenu(cfg, stdscr)
 			if err != nil {
 				return err
 			}
-			if newFiles != nil {
-				files = newFiles
+			if len(newIdx.Entries) > 0 {
 				idx = newIdx
-				tree = buildTree(files)
+				tree = buildTree(idx.Entries)
 				sysNames = tree.ChildNames
 				items = append([]string{}, sysNames...)
 			}
@@ -388,19 +384,17 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 // -------------------------
 // Loader
 // -------------------------
-func loadingWindow(stdscr *gc.Window, loadFn func() ([]gamesdb.GobEntry, gamesdb.GobIndex, error)) ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
+func loadingWindow(stdscr *gc.Window, loadFn func() (gamesdb.GobIndex, error)) (gamesdb.GobIndex, error) {
 	status := struct {
-		Done  bool
-		Error error
-		Files []gamesdb.GobEntry
-		Idx   gamesdb.GobIndex
+		Done bool
+		Err  error
+		Idx  gamesdb.GobIndex
 	}{}
 
 	go func() {
-		files, idx, err := loadFn()
-		status.Files = files
+		idx, err := loadFn()
 		status.Idx = idx
-		status.Error = err
+		status.Err = err
 		status.Done = true
 	}()
 
@@ -418,10 +412,10 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]gamesdb.GobEntry, gamesdb
 		gc.Nap(100)
 	}
 
-	if status.Error != nil {
-		return nil, gamesdb.GobIndex{}, status.Error
+	if status.Err != nil {
+		return gamesdb.GobIndex{}, status.Err
 	}
-	return status.Files, status.Idx, nil
+	return status.Idx, nil
 }
 
 // -------------------------
@@ -459,7 +453,7 @@ func main() {
 	_, _ = f.WriteString(fmt.Sprintf("%d", os.Getpid()))
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 
-	// Startup
+	// Flags
 	printPtr := flag.Bool("print", false, "Print game path instead of launching")
 	flag.Parse()
 	launchGame := !*printPtr
@@ -478,20 +472,20 @@ func main() {
 	gc.Cursor(0)
 	defer gc.Cursor(1)
 
-	files, idx, err := loadingWindow(stdscr, loadMenuDb)
+	idx, err := loadingWindow(stdscr, loadMenuDb)
 	if err != nil {
-		files, idx, err = generateIndexWindow(cfg, stdscr)
+		idx, err = generateIndexWindow(cfg, stdscr)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
 
 	if launchGame {
-		if err := mainMenu(cfg, stdscr, files, idx); err != nil {
+		if err := mainMenu(cfg, stdscr, idx); err != nil {
 			log.Fatal(err)
 		}
 	} else {
-		for _, f := range files {
+		for _, f := range idx.Entries {
 			displayName := f.Name
 			if f.Ext != "" {
 				displayName = fmt.Sprintf("%s.%s", f.Name, f.Ext)
