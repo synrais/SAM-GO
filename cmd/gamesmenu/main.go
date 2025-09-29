@@ -144,132 +144,100 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 // Tree navigation
 // -------------------------
 type Node struct {
-	Name       string
-	Files      []gamesdb.GobEntry // pre-sorted by MenuPath
-	Children   map[string]*Node   // lookup
-	ChildNames []string           // pre-sorted by MenuPath
+    Name       string
+    Files      []gamesdb.GobEntry
+    Children   map[string]*Node
+    ChildNames []string
 }
 
 func buildTree(files []gamesdb.GobEntry) *Node {
-	root := &Node{Name: "", Children: make(map[string]*Node)}
+    root := &Node{Name: "", Children: make(map[string]*Node)}
 
-	// Insert entries into the tree
-	for _, f := range files {
-		parts := strings.Split(f.MenuPath, string(os.PathSeparator))
-		curr := root
-		for i, part := range parts {
-			if i == len(parts)-1 {
-				curr.Files = append(curr.Files, f)
-			} else {
-				if curr.Children[part] == nil {
-					curr.Children[part] = &Node{Name: part, Children: make(map[string]*Node)}
-				}
-				curr = curr.Children[part]
-			}
-		}
-	}
+    for _, f := range files {
+        parts := strings.Split(f.MenuPath, string(os.PathSeparator))
+        curr := root
+        for i, part := range parts {
+            if i == len(parts)-1 {
+                curr.Files = append(curr.Files, f)
+            } else {
+                if curr.Children[part] == nil {
+                    curr.Children[part] = &Node{Name: part, Children: make(map[string]*Node)}
+                    curr.ChildNames = append(curr.ChildNames, part) // preserve insertion order
+                }
+                curr = curr.Children[part]
+            }
+        }
+    }
 
-	// Recursive sorter: sorts child names and files by MenuPath
-	var sortNode func(n *Node, prefix string)
-	sortNode = func(n *Node, prefix string) {
-		// Collect and sort child names by full MenuPath
-		for name := range n.Children {
-			n.ChildNames = append(n.ChildNames, name)
-		}
-		sort.Slice(n.ChildNames, func(i, j int) bool {
-			pi := filepath.Join(prefix, n.ChildNames[i])
-			pj := filepath.Join(prefix, n.ChildNames[j])
-			return strings.ToLower(pi) < strings.ToLower(pj)
-		})
-
-		// Sort files by MenuPath
-		sort.Slice(n.Files, func(i, j int) bool {
-			return strings.ToLower(n.Files[i].MenuPath) < strings.ToLower(n.Files[j].MenuPath)
-		})
-
-		// Recurse into children
-		for _, name := range n.ChildNames {
-			sortNode(n.Children[name], filepath.Join(prefix, name))
-		}
-	}
-
-	sortNode(root, "")
-	return root
+    return root
 }
 
 func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startIndex int) (int, error) {
-	currentIndex := startIndex
+    currentIndex := startIndex
 
-	for {
-		stdscr.Clear()
-		stdscr.Refresh()
+    for {
+        stdscr.Clear()
+        stdscr.Refresh()
 
-		// Collect folders (no sorting)
-		var items []string
-		var folders []string
-		for name := range node.Children {
-			folders = append(folders, name)
-		}
-		items = append(items, folders...)
+        // Items come straight from the pre-sorted index
+        var items []string
+        items = append(items, node.ChildNames...)
 
-		// Collect files (no sorting)
-		var fileNames []string
-		for _, f := range node.Files {
-			displayName := f.Name
-			if f.Ext != "" {
-				displayName = fmt.Sprintf("%s.%s", f.Name, f.Ext)
-			}
-			fileNames = append(fileNames, displayName)
-		}
-		items = append(items, fileNames...)
+        for _, f := range node.Files {
+            displayName := f.Name
+            if f.Ext != "" {
+                displayName = fmt.Sprintf("%s.%s", f.Name, f.Ext)
+            }
+            items = append(items, displayName)
+        }
 
-		title := node.Name
-		if title == "" {
-			title = "Games"
-		}
+        title := node.Name
+        if title == "" {
+            title = "Games"
+        }
 
-		buttons := []string{"PgUp", "PgDn", "", "Back"}
+        buttons := []string{"PgUp", "PgDn", "", "Back"}
 
-		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-			Title:         title,
-			Buttons:       buttons,
-			ActionButton:  2,
-			DefaultButton: 2,
-			ShowTotal:     true,
-			Width:         70,
-			Height:        20,
-			InitialIndex:  currentIndex,
-			DynamicActionLabel: func(idx int) string {
-				if idx < len(folders) {
-					return "Open"
-				}
-				return "Launch"
-			},
-		}, items)
-		if err != nil {
-			return currentIndex, err
-		}
+        button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+            Title:         title,
+            Buttons:       buttons,
+            ActionButton:  2,
+            DefaultButton: 2,
+            ShowTotal:     true,
+            Width:         70,
+            Height:        20,
+            InitialIndex:  currentIndex,
+            DynamicActionLabel: func(idx int) string {
+                if idx < len(node.ChildNames) {
+                    return "Open"
+                }
+                return "Launch"
+            },
+        }, items)
+        if err != nil {
+            return currentIndex, err
+        }
 
-		currentIndex = selected
-		switch button {
-		case 2: // Open/Launch
-			if selected < len(folders) {
-				folderName := folders[selected]
-				childIdx, err := browseNode(cfg, stdscr, node.Children[folderName], 0)
-				if err != nil {
-					return currentIndex, err
-				}
-				currentIndex = selected
-				_ = childIdx
-			} else {
-				file := node.Files[selected-len(folders)]
-				sys, _ := games.GetSystem(file.SystemId)
-				_ = mister.LaunchGame(cfg, *sys, file.Path)
-			}
-		case 3: // Back
-			return currentIndex, nil
-		}
-	}
+        currentIndex = selected
+        switch button {
+        case 2: // Open/Launch
+            if selected < len(node.ChildNames) {
+                folderName := node.ChildNames[selected]
+                childIdx, err := browseNode(cfg, stdscr, node.Children[folderName], 0)
+                if err != nil {
+                    return currentIndex, err
+                }
+                currentIndex = selected
+                _ = childIdx
+            } else {
+                file := node.Files[selected-len(node.ChildNames)]
+                sys, _ := games.GetSystem(file.SystemId)
+                _ = mister.LaunchGame(cfg, *sys, file.Path)
+            }
+        case 3: // Back
+            return currentIndex, nil
+        }
+    }
 }
 
 // -------------------------
@@ -303,74 +271,64 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry,
 // Main menu
 // -------------------------
 func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntry, idx gamesdb.GobIndex) error {
-	tree := buildTree(files)
+    tree := buildTree(files)
 
-	// Collect and sort system names
-	var sysNames []string
-	for name := range tree.Children {
-		sysNames = append(sysNames, name)
-	}
-	sort.Strings(sysNames)
+    // Systems already sorted by MenuPath
+    sysNames := tree.ChildNames
+    items := append([]string{}, sysNames...)
 
-	items := append([]string{}, sysNames...)
+    startIndex := 0
+    for {
+        stdscr.Clear()
+        stdscr.Refresh()
 
-	startIndex := 0
-	for {
-		stdscr.Clear()
-		stdscr.Refresh()
+        button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+            Title:         "Systems",
+            Buttons:       []string{"PgUp", "PgDn", "", "Search", "Options", "Exit"},
+            ActionButton:  2,
+            DefaultButton: 2,
+            ShowTotal:     true,
+            Width:         70,
+            Height:        20,
+            InitialIndex:  startIndex,
+            DynamicActionLabel: func(idx int) string {
+                return "Open"
+            },
+        }, items)
+        if err != nil {
+            return err
+        }
 
-		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-			Title:         "Systems",
-			Buttons:       []string{"PgUp", "PgDn", "", "Search", "Options", "Exit"},
-			ActionButton:  2,
-			DefaultButton: 2,
-			ShowTotal:     true,
-			Width:         70,
-			Height:        20,
-			InitialIndex:  startIndex,
-			DynamicActionLabel: func(idx int) string {
-				return "Open"
-			},
-		}, items)
-		if err != nil {
-			return err
-		}
-
-		startIndex = selected
-		switch button {
-		case 2: // Open system
-			sysName := sysNames[selected]
-			_, err := browseNode(cfg, stdscr, tree.Children[sysName], 0)
-			if err != nil {
-				return err
-			}
-		case 3: // Search
-			if err := searchWindow(cfg, stdscr, idx); err != nil {
-				return err
-			}
-			stdscr.Clear()
-			stdscr.Refresh()
-		case 4: // Options
-			newFiles, newIdx, err := optionsMenu(cfg, stdscr)
-			if err != nil {
-				return err
-			}
-			if newFiles != nil {
-				files = newFiles
-				idx = newIdx
-				tree = buildTree(files)
-
-				sysNames = sysNames[:0]
-				for name := range tree.Children {
-					sysNames = append(sysNames, name)
-				}
-				sort.Strings(sysNames)
-				items = append([]string{}, sysNames...)
-			}
-		case 5: // Exit
-			return nil
-		}
-	}
+        startIndex = selected
+        switch button {
+        case 2: // Open system
+            sysName := sysNames[selected]
+            _, err := browseNode(cfg, stdscr, tree.Children[sysName], 0)
+            if err != nil {
+                return err
+            }
+        case 3: // Search
+            if err := searchWindow(cfg, stdscr, idx); err != nil {
+                return err
+            }
+            stdscr.Clear()
+            stdscr.Refresh()
+        case 4: // Options
+            newFiles, newIdx, err := optionsMenu(cfg, stdscr)
+            if err != nil {
+                return err
+            }
+            if newFiles != nil {
+                files = newFiles
+                idx = newIdx
+                tree = buildTree(files)
+                sysNames = tree.ChildNames
+                items = append([]string{}, sysNames...)
+            }
+        case 5: // Exit
+            return nil
+        }
+    }
 }
 
 // -------------------------
