@@ -144,13 +144,16 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 // Tree navigation
 // -------------------------
 type Node struct {
-	Name     string
-	Files    []gamesdb.GobEntry
-	Children map[string]*Node
+	Name       string
+	Files      []gamesdb.GobEntry // pre-sorted by MenuPath
+	Children   map[string]*Node   // lookup
+	ChildNames []string           // pre-sorted by MenuPath
 }
 
 func buildTree(files []gamesdb.GobEntry) *Node {
 	root := &Node{Name: "", Children: make(map[string]*Node)}
+
+	// Insert entries into the tree
 	for _, f := range files {
 		parts := strings.Split(f.MenuPath, string(os.PathSeparator))
 		curr := root
@@ -165,6 +168,32 @@ func buildTree(files []gamesdb.GobEntry) *Node {
 			}
 		}
 	}
+
+	// Recursive sorter: sorts child names and files by MenuPath
+	var sortNode func(n *Node, prefix string)
+	sortNode = func(n *Node, prefix string) {
+		// Collect and sort child names by full MenuPath
+		for name := range n.Children {
+			n.ChildNames = append(n.ChildNames, name)
+		}
+		sort.Slice(n.ChildNames, func(i, j int) bool {
+			pi := filepath.Join(prefix, n.ChildNames[i])
+			pj := filepath.Join(prefix, n.ChildNames[j])
+			return strings.ToLower(pi) < strings.ToLower(pj)
+		})
+
+		// Sort files by MenuPath
+		sort.Slice(n.Files, func(i, j int) bool {
+			return strings.ToLower(n.Files[i].MenuPath) < strings.ToLower(n.Files[j].MenuPath)
+		})
+
+		// Recurse into children
+		for _, name := range n.ChildNames {
+			sortNode(n.Children[name], filepath.Join(prefix, name))
+		}
+	}
+
+	sortNode(root, "")
 	return root
 }
 
