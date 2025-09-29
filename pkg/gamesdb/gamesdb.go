@@ -78,7 +78,7 @@ func BuildGobIndex(
 	total := len(systems)
 	done := 0
 
-	// No enforced sort, just process systems in their incoming order
+	// Process systems in incoming order
 	for _, sys := range systems {
 		done++
 		if update != nil {
@@ -91,6 +91,9 @@ func BuildGobIndex(
 			if err != nil {
 				return nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
 			}
+
+			// collect entries
+			var entries []GobEntry
 			for _, fullPath := range files {
 				base := filepath.Base(fullPath)
 				ext := strings.TrimPrefix(filepath.Ext(base), ".")
@@ -120,7 +123,7 @@ func BuildGobIndex(
 				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext))
 				searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
 
-				entry := GobEntry{
+				entries = append(entries, GobEntry{
 					SystemId:   sys.Id,
 					Name:       name,
 					Ext:        ext,
@@ -128,8 +131,22 @@ func BuildGobIndex(
 					MenuPath:   filepath.ToSlash(menuPath),
 					Search:     search,
 					SearchName: searchName,
+				})
+			}
+
+			// sort collected entries before inserting
+			sort.Slice(entries, func(i, j int) bool {
+				a := strings.ToLower(entries[i].Name)
+				b := strings.ToLower(entries[j].Name)
+				if a == b {
+					return strings.ToLower(entries[i].Ext) < strings.ToLower(entries[j].Ext)
 				}
-				idx[name] = append(idx[name], entry)
+				return a < b
+			})
+
+			// insert into index
+			for _, e := range entries {
+				idx[e.Name] = append(idx[e.Name], e)
 			}
 		}
 	}
