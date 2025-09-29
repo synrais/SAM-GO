@@ -66,71 +66,76 @@ func LoadGobIndex(filename string) (GobIndex, error) {
 // BuildGobIndex scans systems and builds the index fully in memory,
 // reporting progress once per completed system via the optional update callback.
 func BuildGobIndex(
-	cfg *config.UserConfig,
-	systems []games.System,
-	update func(systemName string, done, total int),
+    cfg *config.UserConfig,
+    systems []games.System,
+    update func(systemName string, done, total, filesSeen, grandTotal int),
 ) (GobIndex, error) {
-	idx := make(GobIndex)
-	total := len(systems)
-	done := 0
+    idx := make(GobIndex)
+    total := len(systems)
+    done := 0
+    grandTotal := 0
 
-	for _, sys := range systems {
-		paths := games.GetSystemPaths(cfg, []games.System{sys})
-		for _, sp := range paths {
-			files, err := games.GetFiles(sys.Id, sp.Path)
-			if err != nil {
-				return nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
-			}
-			for _, fullPath := range files {
-				base := filepath.Base(fullPath)
-				ext := strings.TrimPrefix(filepath.Ext(base), ".")
-				name := strings.TrimSuffix(base, filepath.Ext(base))
+    for _, sys := range systems {
+        fileCount := 0
+        paths := games.GetSystemPaths(cfg, []games.System{sys})
+        for _, sp := range paths {
+            files, err := games.GetFiles(sys.Id, sp.Path)
+            if err != nil {
+                return nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
+            }
+            for _, fullPath := range files {
+                fileCount++
+                grandTotal++
 
-				// --- Build MenuPath with old TXT + ZIP logic ---
-				rel, _ := filepath.Rel(sp.Path, fullPath)
-				relParts := strings.Split(filepath.ToSlash(rel), "/")
+                base := filepath.Base(fullPath)
+                ext := strings.TrimPrefix(filepath.Ext(base), ".")
+                name := strings.TrimSuffix(base, filepath.Ext(base))
 
-				// Case 1: collapse fake .zip folder
-				if len(relParts) > 0 && strings.HasSuffix(relParts[0], ".zip") {
-					relParts = relParts[1:]
-				}
+                // --- Build MenuPath with old TXT + ZIP logic ---
+                rel, _ := filepath.Rel(sp.Path, fullPath)
+                relParts := strings.Split(filepath.ToSlash(rel), "/")
 
-				// Case 2: listings/*.txt collapse to label
-				if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
-					label := strings.TrimSuffix(relParts[1], ".txt")
-					if len(label) > 0 {
-						label = strings.ToUpper(label[:1]) + label[1:]
-					}
-					relParts = append([]string{label}, relParts[2:]...)
-				}
+                if len(relParts) > 0 && strings.HasSuffix(relParts[0], ".zip") {
+                    relParts = relParts[1:]
+                }
+                if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
+                    label := strings.TrimSuffix(relParts[1], ".txt")
+                    if len(label) > 0 {
+                        label = strings.ToUpper(label[:1]) + label[1:]
+                    }
+                    relParts = append([]string{label}, relParts[2:]...)
+                }
 
-				menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
+                menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
 
-				// Precompute search fields
-				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext)) // "super mario bros .nes"
-				searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
+                search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext))
+                searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
 
-				entry := GobEntry{
-					SystemId:   sys.Id,
-					Name:       name,
-					Ext:        ext,
-					Path:       fullPath,
-					MenuPath:   filepath.ToSlash(menuPath),
-					Search:     search,
-					SearchName: searchName,
-				}
-				idx[name] = append(idx[name], entry)
-			}
-		}
+                entry := GobEntry{
+                    SystemId:   sys.Id,
+                    Name:       name,
+                    Ext:        ext,
+                    Path:       fullPath,
+                    MenuPath:   filepath.ToSlash(menuPath),
+                    Search:     search,
+                    SearchName: searchName,
+                }
+                idx[name] = append(idx[name], entry)
 
-		// Update after finishing each system
-		done++
-		if update != nil {
-			update(sys.Name, done, total)
-		}
-	}
+                // live file update
+                if update != nil {
+                    update(sys.Name, done, total, fileCount, grandTotal)
+                }
+            }
+        }
 
-	return idx, nil
+        done++
+        if update != nil {
+            update(sys.Name, done, total, fileCount, grandTotal)
+        }
+    }
+
+    return idx, nil
 }
 
 // -------------------------
