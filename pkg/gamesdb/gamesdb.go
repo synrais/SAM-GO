@@ -65,6 +65,8 @@ func LoadGobIndex(filename string) (GobIndex, error) {
 
 // BuildGobIndex scans systems and builds the index fully in memory,
 // reporting progress once per completed system via the optional update callback.
+// BuildGobIndex scans systems and builds the index fully in memory,
+// reporting progress once per file via the optional update callback.
 func BuildGobIndex(
     cfg *config.UserConfig,
     systems []games.System,
@@ -118,7 +120,7 @@ func BuildGobIndex(
                 }
                 idx[name] = append(idx[name], entry)
 
-                // 🔥 update counters
+                // update counters per file
                 systemFileCount++
                 grandTotal++
                 if update != nil {
@@ -127,10 +129,8 @@ func BuildGobIndex(
             }
         }
 
+        // only increment system counter once at the end
         done++
-        if update != nil {
-            update(sys.Name, done, total, systemFileCount, grandTotal)
-        }
     }
 
     return idx, nil
