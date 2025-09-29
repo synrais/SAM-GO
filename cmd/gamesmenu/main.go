@@ -24,18 +24,14 @@ const appName = "gamesmenu"
 // -------------------------
 // Database loading
 // -------------------------
-func loadMenuDb() ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
-    files, idx, err := gamesdb.LoadGobIndex(config.MenuDb)
-    if err != nil {
-        return nil, nil, err
-    }
-    return files, idx, nil
+func loadMenuDb() ([]gamesdb.GobEntry, error) {
+	return gamesdb.LoadGobEntries(config.MenuDb)
 }
 
 // -------------------------
 // Index regeneration
 // -------------------------
-func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
+func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry, error) {
 	_ = os.Remove(config.MenuDb)
 
 	stdscr.Clear()
@@ -44,7 +40,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 	// Create a bordered subwindow for progress
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	defer win.Delete()
 
@@ -63,22 +59,20 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		Complete bool
 		Error    error
 		Files    []gamesdb.GobEntry
-		Idx      gamesdb.GobIndex
 	}{}
 
 	// Worker goroutine: build index and push updates
 	go func() {
-		files, idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
+		files, err := gamesdb.BuildGobEntries(cfg, games.AllSystems(),
 			func(system string, done, total int) {
 				updates <- progress{system, done, total}
 			})
 		if err == nil {
-			err = gamesdb.SaveGobIndex(idx, config.MenuDb)
+			err = gamesdb.SaveGobEntries(files, config.MenuDb)
 		}
 		status.Error = err
 		status.Complete = true
 		status.Files = files
-		status.Idx = idx
 		close(updates)
 	}()
 
@@ -129,11 +123,11 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 	stdscr.Refresh()
 
 	if status.Error != nil {
-		return nil, nil, status.Error
+		return nil, status.Error
 	}
 
-	// Return what BuildGobIndex already produced (sorted slice + map)
-	return status.Files, status.Idx, nil
+	// 🔹 Return the already sorted slice
+	return status.Files, nil
 }
 
 // -------------------------
