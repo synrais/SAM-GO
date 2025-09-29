@@ -384,9 +384,10 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 			continue
 		}
 
-		var items []string
-		for _, r := range results {
-			items = append(items, r.SearchName)
+		// 🔹 Build menu items in the same order as results slice
+		items := make([]string, len(results))
+		for i, r := range results {
+			items[i] = r.SearchName
 		}
 
 		for {
@@ -409,6 +410,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 			startIndex = selected
 
 			if button == 2 {
+				// 🔹 Directly launch using results slice (same index as items)
 				game := results[selected]
 				sys, _ := games.GetSystem(game.SystemId)
 				_ = mister.LaunchGame(cfg, *sys, game.Path)
