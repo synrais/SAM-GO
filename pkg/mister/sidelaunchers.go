@@ -416,7 +416,7 @@ func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
 
     // Run BIOS skip in background
     go func(g virtualinput.Gamepad) {
-        time.Sleep(10 * time.Second)
+        time.Sleep(9 * time.Second)
         appendLog("Attempting to press Button A (Button 1)...")
 
         if err := g.Press(uinput.ButtonEast); err != nil {
