@@ -78,7 +78,7 @@ func BuildGobIndex(
 	total := len(systems)
 	done := 0
 
-	// 🔹 no enforced sort, just keep the incoming order
+	// No enforced sort, just process systems in their incoming order
 	for _, sys := range systems {
 		done++
 		if update != nil {
