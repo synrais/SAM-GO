@@ -30,12 +30,12 @@ func loadMenuDb() ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	// flatten map into slice
+	// Flatten map into slice
 	var files []gamesdb.GobEntry
 	for _, entries := range idx {
 		files = append(files, entries...)
 	}
-	// sort once by MenuPath for consistent global order
+	// Sort once by MenuPath for consistent global order
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].MenuPath < files[j].MenuPath
 	})
@@ -70,9 +70,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 	status := struct {
 		Complete bool
 		Error    error
-		Idx      gamesdb.GobIndex
 	}{}
 
+	// Worker goroutine: build index and push updates
 	go func() {
 		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
 			func(system string, done, total int) {
@@ -84,11 +84,10 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		if err == nil {
 			err = gamesdb.SaveGobIndex(idx, config.MenuDb)
 		}
-		status.Idx = idx
 		status.Error = err
 		status.Complete = true
 		close(updates)
-	}() // 🔹 end goroutine
+	}()
 
 	spinnerSeq := []string{"|", "/", "-", "\\"}
 	spinnerCount := 0
@@ -140,7 +139,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		return nil, nil, status.Error
 	}
 
-	// 🔹 No local sorting here — just reload from disk with loadMenuDb (which sorts once).
+	// Reload from disk → sorted
 	return loadingWindow(stdscr, loadMenuDb)
 }
 
@@ -184,6 +183,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 		for name := range node.Children {
 			folders = append(folders, name)
 		}
+		// Already sorted globally by MenuPath
 		items = append(items, folders...)
 
 		for _, f := range node.Files {
@@ -456,6 +456,7 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]gamesdb.GobEntry, gamesdb
 // Main
 // -------------------------
 func main() {
+	// --- Lockfile to prevent multiple instances ---
 	lockFile := "/tmp/gamesmenu.lock"
 	f, err := os.OpenFile(lockFile, os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
@@ -486,6 +487,7 @@ func main() {
 	_, _ = f.WriteString(fmt.Sprintf("%d", os.Getpid()))
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 
+	// --- Normal startup ---
 	printPtr := flag.Bool("print", false, "Print game path instead of launching")
 	flag.Parse()
 	launchGame := !*printPtr
@@ -501,6 +503,7 @@ func main() {
 	}
 	defer gc.End()
 
+	// Hide cursor globally, restore at exit
 	gc.Cursor(0)
 	defer gc.Cursor(1)
 
