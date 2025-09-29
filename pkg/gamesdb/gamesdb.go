@@ -12,6 +12,10 @@ import (
 	"github.com/synrais/SAM-GO/pkg/games"
 )
 
+// -------------------------
+// Gob-backed index
+// -------------------------
+
 // GobEntry stores full details for a single game file.
 type GobEntry struct {
 	SystemId   string // Internal system ID
@@ -26,21 +30,7 @@ type GobEntry struct {
 // GobIndex maps base names -> slice of entries (supports duplicates).
 type GobIndex map[string][]GobEntry
 
-// -------------------------
-// Progress reporting
-// -------------------------
-
-type IndexStatus struct {
-	Total    int    // total systems
-	Step     int    // current system number (1-based)
-	SystemId string // current system ID
-	System   string // current system name
-}
-
-// -------------------------
-// Save/Load
-// -------------------------
-
+// SaveGobIndex encodes the index to disk.
 func SaveGobIndex(idx GobIndex, filename string) error {
 	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
 		return err
@@ -56,6 +46,7 @@ func SaveGobIndex(idx GobIndex, filename string) error {
 	return enc.Encode(idx)
 }
 
+// LoadGobIndex decodes the index from disk.
 func LoadGobIndex(filename string) (GobIndex, error) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -73,23 +64,25 @@ func LoadGobIndex(filename string) (GobIndex, error) {
 }
 
 // -------------------------
-// Build Index
+// Building
 // -------------------------
 
+// BuildGobIndex scans systems and builds the index fully in memory,
+// reporting progress via the optional update callback.
 func BuildGobIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
-	update func(IndexStatus),
+	update func(systemName string, done, total int),
 ) (GobIndex, error) {
 	idx := make(GobIndex)
-	status := IndexStatus{Total: len(systems)}
+	total := len(systems)
+	done := 0
 
-	for i, sys := range systems {
-		status.Step = i + 1
-		status.SystemId = sys.Id
-		status.System = sys.Name
+	for _, sys := range systems {
+		// 🔹 Fix: increment first, then update
+		done++
 		if update != nil {
-			update(status)
+			update(sys.Name, done, total)
 		}
 
 		paths := games.GetSystemPaths(cfg, []games.System{sys})
@@ -103,13 +96,16 @@ func BuildGobIndex(
 				ext := strings.TrimPrefix(filepath.Ext(base), ".")
 				name := strings.TrimSuffix(base, filepath.Ext(base))
 
-				// --- Build MenuPath with TXT + ZIP rules ---
+				// --- Build MenuPath with old TXT + ZIP logic ---
 				rel, _ := filepath.Rel(sp.Path, fullPath)
 				relParts := strings.Split(filepath.ToSlash(rel), "/")
 
+				// Case 1: collapse fake .zip folder
 				if len(relParts) > 0 && strings.HasSuffix(relParts[0], ".zip") {
 					relParts = relParts[1:]
 				}
+
+				// Case 2: listings/*.txt collapse to label
 				if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
 					label := strings.TrimSuffix(relParts[1], ".txt")
 					if len(label) > 0 {
@@ -117,13 +113,16 @@ func BuildGobIndex(
 					}
 					relParts = append([]string{label}, relParts[2:]...)
 				}
+
+				// Case 3: skip anything under top-level "media"
 				if len(relParts) > 0 && relParts[0] == "media" {
 					continue
 				}
 
 				menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
 
-				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext))
+				// Precompute search fields
+				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext)) // "super mario bros .nes"
 				searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
 
 				entry := GobEntry{
@@ -147,6 +146,8 @@ func BuildGobIndex(
 // Searching
 // -------------------------
 
+// SearchWords returns one entry per unique SearchName,
+// sorted by SearchName for consistent ordering.
 func (idx GobIndex) SearchWords(query string) []GobEntry {
 	var results []GobEntry
 	words := strings.Fields(strings.ToLower(query))
@@ -165,6 +166,8 @@ func (idx GobIndex) SearchWords(query string) []GobEntry {
 			if !match {
 				continue
 			}
+
+			// Deduplicate by SearchName
 			if seen[e.SearchName] {
 				continue
 			}
@@ -173,6 +176,7 @@ func (idx GobIndex) SearchWords(query string) []GobEntry {
 		}
 	}
 
+	// Sort once, by SearchName
 	sort.Slice(results, func(i, j int) bool {
 		return strings.ToLower(results[i].SearchName) < strings.ToLower(results[j].SearchName)
 	})
