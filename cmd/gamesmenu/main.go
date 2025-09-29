@@ -30,13 +30,11 @@ func loadMenuDb() ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-
-	// Flatten map into slice (unsorted, order handled later)
+	// flatten map into slice
 	var files []gamesdb.GobEntry
 	for _, entries := range idx {
 		files = append(files, entries...)
 	}
-
 	return files, idx, nil
 }
 
@@ -58,29 +56,33 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 
 	_, width := win.MaxYX()
 
+	// Progress update structure
 	type progress struct {
 		system string
 		done   int
 		total  int
 	}
-
-	// 🔹 buffer big enough for all systems so we never drop an update
-	updates := make(chan progress, len(games.AllSystems()))
+	updates := make(chan progress, 1)
 
 	status := struct {
 		Complete bool
 		Error    error
+		Idx      gamesdb.GobIndex
 	}{}
 
 	// Worker goroutine: build index and push updates
 	go func() {
 		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
 			func(system string, done, total int) {
-				updates <- progress{system, done, total}
+				select {
+				case updates <- progress{system, done, total}:
+				default:
+				}
 			})
 		if err == nil {
 			err = gamesdb.SaveGobIndex(idx, config.MenuDb)
 		}
+		status.Idx = idx
 		status.Error = err
 		status.Complete = true
 		close(updates)
@@ -95,6 +97,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 			break
 		}
 
+		// Non-blocking receive
 		select {
 		case p, ok := <-updates:
 			if ok {
@@ -103,15 +106,15 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		default:
 		}
 
-		win.MovePrint(1, 2, strings.Repeat(" ", width-6))
+		// Clear only the text row (line 1 inside border)
+		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 
 		if lastProgress != nil {
-			left := fmt.Sprintf("Indexing %s...", lastProgress.system)
-			right := fmt.Sprintf("(%3d/%-3d)", lastProgress.done, lastProgress.total)
+			text := fmt.Sprintf("Indexing %s... (%d/%d)",
+				lastProgress.system, lastProgress.done, lastProgress.total)
+			win.MovePrint(1, 2, text)
 
-			win.MovePrint(1, 2, left)
-			win.MovePrint(1, width-len(right)-4, right)
-
+			// Progress bar (line 2 inside border)
 			progressWidth := width - 4
 			filled := int(float64(lastProgress.done) / float64(lastProgress.total) * float64(progressWidth))
 			for i := 0; i < filled; i++ {
@@ -121,6 +124,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 			win.MovePrint(1, 2, "Indexing games...")
 		}
 
+		// Spinner in top-right corner
 		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
 		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
 
@@ -136,7 +140,13 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		return nil, nil, status.Error
 	}
 
-	// Reload from disk (order handled later)
+	// Flatten map into slice
+	var files []gamesdb.GobEntry
+	for _, entries := range status.Idx {
+		files = append(files, entries...)
+	}
+
+	// keep your outline, but still load via loader
 	return loadingWindow(stdscr, loadMenuDb)
 }
 
@@ -175,7 +185,6 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 		stdscr.Clear()
 		stdscr.Refresh()
 
-		// Collect folders, then sort
 		var items []string
 		var folders []string
 		for name := range node.Children {
@@ -184,29 +193,13 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 		sort.Strings(folders)
 		items = append(items, folders...)
 
-		// 🔹 Sort node.Files directly by display name so launch order matches menu
-		sort.Slice(node.Files, func(i, j int) bool {
-			nameA := node.Files[i].Name
-			if node.Files[i].Ext != "" {
-				nameA = fmt.Sprintf("%s.%s", node.Files[i].Name, node.Files[i].Ext)
-			}
-			nameB := node.Files[j].Name
-			if node.Files[j].Ext != "" {
-				nameB = fmt.Sprintf("%s.%s", node.Files[j].Name, node.Files[j].Ext)
-			}
-			return strings.ToLower(nameA) < strings.ToLower(nameB)
-		})
-
-		// Build display names from sorted files
-		var fileNames []string
 		for _, f := range node.Files {
 			displayName := f.Name
 			if f.Ext != "" {
 				displayName = fmt.Sprintf("%s.%s", f.Name, f.Ext)
 			}
-			fileNames = append(fileNames, displayName)
+			items = append(items, displayName)
 		}
-		items = append(items, fileNames...)
 
 		title := node.Name
 		if title == "" {
@@ -258,46 +251,20 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 }
 
 // -------------------------
-// Options menu
-// -------------------------
-func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
-	stdscr.Clear()
-	stdscr.Refresh()
-
-	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
-		Title:         "Options",
-		Buttons:       []string{"Select", "Back"},
-		DefaultButton: 0,
-		ActionButton:  0,
-		ShowTotal:     false,
-		Width:         60,
-		Height:        10,
-		InitialIndex:  0,
-	}, []string{"Rebuild games database..."})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if button == 0 && selected == 0 {
-		return generateIndexWindow(cfg, stdscr)
-	}
-	return nil, nil, nil
-}
-
-// -------------------------
 // Main menu
 // -------------------------
 func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntry, idx gamesdb.GobIndex) error {
 	tree := buildTree(files)
 
-	// Collect and sort system names
-	var sysNames []string
-	for name := range tree.Children {
-		sysNames = append(sysNames, name)
+	var items []string
+	var sysIds []string
+	for sysId := range tree.Children {
+		sysIds = append(sysIds, sysId)
 	}
-	sort.Strings(sysNames)
-
-	items := append([]string{}, sysNames...)
+	sort.Strings(sysIds)
+	for _, sysId := range sysIds {
+		items = append(items, sysId)
+	}
 
 	startIndex := 0
 	for {
@@ -306,7 +273,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         "Systems",
-			Buttons:       []string{"PgUp", "PgDn", "", "Search", "Options", "Exit"},
+			Buttons:       []string{"PgUp", "PgDn", "", "Search", "Rebuild", "Exit"},
 			ActionButton:  2,
 			DefaultButton: 2,
 			ShowTotal:     true,
@@ -324,8 +291,8 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 		startIndex = selected
 		switch button {
 		case 2: // Open system
-			sysName := sysNames[selected]
-			_, err := browseNode(cfg, stdscr, tree.Children[sysName], 0)
+			sysId := sysIds[selected]
+			_, err := browseNode(cfg, stdscr, tree.Children[sysId], 0)
 			if err != nil {
 				return err
 			}
@@ -335,22 +302,22 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 			}
 			stdscr.Clear()
 			stdscr.Refresh()
-		case 4: // Options
-			newFiles, newIdx, err := optionsMenu(cfg, stdscr)
+		case 4: // Rebuild DB
+			newFiles, newIdx, err := generateIndexWindow(cfg, stdscr)
 			if err != nil {
 				return err
 			}
-			if newFiles != nil {
-				files = newFiles
-				idx = newIdx
-				tree = buildTree(files)
-
-				sysNames = sysNames[:0]
-				for name := range tree.Children {
-					sysNames = append(sysNames, name)
-				}
-				sort.Strings(sysNames)
-				items = append([]string{}, sysNames...)
+			files = newFiles
+			idx = newIdx
+			tree = buildTree(files)
+			sysIds = sysIds[:0]
+			items = items[:0]
+			for sysId := range tree.Children {
+				sysIds = append(sysIds, sysId)
+			}
+			sort.Strings(sysIds)
+			for _, sysId := range sysIds {
+				items = append(items, sysId)
 			}
 		case 5: // Exit
 			return nil
@@ -369,10 +336,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 	startIndex := 0
 
 	for {
-		gc.Cursor(1)
 		button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
-		gc.Cursor(0)
-
 		if err != nil || button == 1 {
 			return nil
 		}
@@ -384,10 +348,10 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 			continue
 		}
 
-		// 🔹 Build menu items in the same order as results slice
-		items := make([]string, len(results))
-		for i, r := range results {
-			items[i] = r.SearchName
+		// Build display items directly from SearchName
+		var items []string
+		for _, r := range results {
+			items = append(items, r.SearchName)
 		}
 
 		for {
@@ -409,14 +373,13 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 			}
 			startIndex = selected
 
-			if button == 2 {
-				// 🔹 Directly launch using results slice (same index as items)
+			if button == 2 { // Launch
 				game := results[selected]
 				sys, _ := games.GetSystem(game.SystemId)
 				_ = mister.LaunchGame(cfg, *sys, game.Path)
 				continue
 			}
-			if button == 3 {
+			if button == 3 { // Back
 				stdscr.Clear()
 				stdscr.Refresh()
 				break
@@ -515,10 +478,6 @@ func main() {
 	}
 	defer gc.End()
 
-	// Hide cursor globally, restore at exit
-	gc.Cursor(0)
-	defer gc.Cursor(1)
-
 	files, idx, err := loadingWindow(stdscr, loadMenuDb)
 	if err != nil {
 		files, idx, err = generateIndexWindow(cfg, stdscr)
@@ -532,7 +491,6 @@ func main() {
 			log.Fatal(err)
 		}
 	} else {
-		// Just print paths (unsorted, since MenuPath and names already sorted in menu flows)
 		for _, f := range files {
 			displayName := f.Name
 			if f.Ext != "" {
