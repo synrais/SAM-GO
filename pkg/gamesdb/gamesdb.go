@@ -78,8 +78,12 @@ func BuildGobIndex(
 	total := len(systems)
 	done := 0
 
+	// 🔹 enforce stable order by Name
+	sort.Slice(systems, func(i, j int) bool {
+		return systems[i].Name < systems[j].Name
+	})
+
 	for _, sys := range systems {
-		// 🔹 Fix: increment first, then update
 		done++
 		if update != nil {
 			update(sys.Name, done, total)
@@ -96,16 +100,13 @@ func BuildGobIndex(
 				ext := strings.TrimPrefix(filepath.Ext(base), ".")
 				name := strings.TrimSuffix(base, filepath.Ext(base))
 
-				// --- Build MenuPath with old TXT + ZIP logic ---
+				// --- Build MenuPath with TXT + ZIP logic ---
 				rel, _ := filepath.Rel(sp.Path, fullPath)
 				relParts := strings.Split(filepath.ToSlash(rel), "/")
 
-				// Case 1: collapse fake .zip folder
 				if len(relParts) > 0 && strings.HasSuffix(relParts[0], ".zip") {
 					relParts = relParts[1:]
 				}
-
-				// Case 2: listings/*.txt collapse to label
 				if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
 					label := strings.TrimSuffix(relParts[1], ".txt")
 					if len(label) > 0 {
@@ -113,8 +114,6 @@ func BuildGobIndex(
 					}
 					relParts = append([]string{label}, relParts[2:]...)
 				}
-
-				// Case 3: skip anything under top-level "media"
 				if len(relParts) > 0 && relParts[0] == "media" {
 					continue
 				}
@@ -122,7 +121,7 @@ func BuildGobIndex(
 				menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
 
 				// Precompute search fields
-				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext)) // "super mario bros .nes"
+				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext))
 				searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
 
 				entry := GobEntry{
