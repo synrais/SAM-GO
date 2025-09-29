@@ -18,12 +18,12 @@ import (
 
 // GobEntry stores full details for a single game file.
 type GobEntry struct {
-	SystemId   string
-	Name       string
-	Ext        string
-	Path       string
-	MenuPath   string
-	Search     string // normalized search string (name + ext as tokens)
+	SystemId   string // Internal system ID
+	Name       string // Base name without extension
+	Ext        string // File extension (e.g. "nes", "gg")
+	Path       string // Full path to file
+	MenuPath   string // "SystemName/<relative path under SystemFolder>"
+	Search     string // normalized search string (name + .ext as tokens)
 	SearchName string // "[System] Name.ext" for display
 }
 
@@ -123,7 +123,7 @@ func BuildGobIndex(
 			}
 		}
 
-		// ✅ Update after finishing each system
+		// Update after finishing each system
 		done++
 		if update != nil {
 			update(sys.Name, done, total)
