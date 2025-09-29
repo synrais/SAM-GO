@@ -69,8 +69,6 @@ func LoadGobIndex(filename string) (GobIndex, error) {
 
 // BuildGobIndex scans systems and builds both a sorted slice and an index map,
 // reporting progress via the optional update callback.
-// BuildGobIndex scans systems and builds both a sorted slice and an index map,
-// reporting progress via the optional update callback.
 func BuildGobIndex(
     cfg *config.UserConfig,
     systems []games.System,
