@@ -261,6 +261,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		return fmt.Errorf("no system paths")
 	}
 
+	// Try to "lock" onto a root by finding required files
 	var pseudoRoot string
 	required := []string{"CD32.rom", "CD32.hdf", "AmigaVision-Saves.hdf"}
 	for _, sp := range sysPaths {
@@ -275,6 +276,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		}
 	}
 	if pseudoRoot == "" {
+		// fallback: just use first system path
 		pseudoRoot = sysPaths[0].Path
 	}
 
@@ -287,14 +289,29 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	// Patch cfg
 	data, _ := os.ReadFile(tmpCfg)
 
-	// ROM (prefer AmigaVision.rom, else CD32.rom)
-	romPath := filepath.Join(pseudoRoot, "AmigaVision.rom")
-	if _, err := os.Stat(romPath); os.IsNotExist(err) {
+	// --- ROM (prefer AmigaVision.rom or MegaAGS.rom across all paths, else CD32.rom) ---
+	var romPath string
+	foundRom := false
+	for _, sp := range sysPaths {
+		for _, candidate := range []string{"AmigaVision.rom", "MegaAGS.rom"} {
+			cpath := filepath.Join(sp.Path, candidate)
+			if _, err := os.Stat(cpath); err == nil {
+				romPath = cpath
+				foundRom = true
+				break
+			}
+		}
+		if foundRom {
+			break
+		}
+	}
+	if !foundRom {
+		// fallback: CD32.rom in pseudoRoot
 		romPath, _ = seedAsset("CD32.rom", pseudoRoot)
 	}
 	_ = patchAt(data, offsetRomPath, cleanPath(romPath))
 
-	// HDF set (always seed if missing)
+	// --- HDF set (always seed if missing) ---
 	hdfNames := []string{
 		"CD32NoVolumeControl.hdf",
 		"CD32NoICache.hdf",
@@ -319,32 +336,28 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	hdfPath := filepath.Join(pseudoRoot, hdfToUse)
 	_ = patchAt(data, offsetHdfPath, cleanPath(hdfPath))
 
-	// Saves: prefer existing saves in *any* system path, else fallback
+	// --- Saves (prefer existing across all paths, else seed in pseudoRoot) ---
 	var savePath string
-	found := false
+	foundSave := false
 	for _, sp := range sysPaths {
-		candidate := filepath.Join(sp.Path, "AmigaVision-Saves.hdf")
-		if _, err := os.Stat(candidate); err == nil {
-			savePath = candidate
-			found = true
-			break
+		for _, candidate := range []string{"AmigaVision-Saves.hdf", "MegaAGS-Saves.hdf"} {
+			cpath := filepath.Join(sp.Path, candidate)
+			if _, err := os.Stat(cpath); err == nil {
+				savePath = cpath
+				foundSave = true
+				break
+			}
 		}
-		candidate = filepath.Join(sp.Path, "MegaAGS-Saves.hdf")
-		if _, err := os.Stat(candidate); err == nil {
-			savePath = candidate
-			found = true
+		if foundSave {
 			break
 		}
 	}
-	if !found {
-		savePath = filepath.Join(pseudoRoot, "AmigaVision-Saves.hdf")
-		if _, err := os.Stat(savePath); os.IsNotExist(err) {
-			savePath, _ = seedAsset("AmigaVision-Saves.hdf", pseudoRoot)
-		}
+	if !foundSave {
+		savePath, _ = seedAsset("AmigaVision-Saves.hdf", pseudoRoot)
 	}
 	_ = patchAt(data, offsetSavePath, cleanPath(savePath))
 
-	// Game path
+	// --- Game path ---
 	absGame, _ := filepath.Abs(path)
 	absGame = strings.TrimPrefix(absGame, "/media/")
 	_ = patchAt(data, offsetGamePath, absGame)
