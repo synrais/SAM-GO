@@ -25,9 +25,10 @@ const (
 // Helpers
 // -------------------------
 
-// Return the key for a game in the names index (triple key).
+// Return the key for a name in the names index.
+// Format: systemId:name:ext
 func NameKey(systemId, name, ext string) string {
-	return systemId + ":" + name + ":" + ext
+	return fmt.Sprintf("%s:%s:%s", systemId, name, ext)
 }
 
 // Check if the games.db exists on disk.
@@ -141,7 +142,7 @@ type fileinfo struct {
 	SystemName   string // Friendly system name (e.g. "Arcadia 2001")
 	SystemFolder string // Root folder on disk for this system
 	Name         string // Base name without extension
-	Ext          string // File extension (e.g. "gg")
+	Ext          string // File extension (e.g. "nes", "gg")
 	Path         string // Full path to file
 	FolderName   string // Parent folder name on disk
 	MenuPath     string // "SystemName/<relative path under SystemFolder>"
@@ -203,7 +204,7 @@ func NewNamesIndex(
 				parentFolder := filepath.Base(filepath.Dir(fullPath))
 
 				// -------------------------
-				// Build MenuPath (segment-based matching)
+				// Build MenuPath
 				// -------------------------
 				menuPath := ""
 				found := false
@@ -313,7 +314,6 @@ type SearchResult struct {
 	Name     string
 	Ext      string
 	Path     string
-	MenuPath string
 }
 
 func searchNamesGeneric(
@@ -339,28 +339,21 @@ func searchNamesGeneric(
 		for _, system := range systems {
 			pre := []byte(system.Id + ":")
 			c := bn.Cursor()
-			for k, v := c.Seek([]byte(pre)); k != nil && bytes.HasPrefix(k, pre); k, v = c.Next() {
+			for k, v := c.Seek(pre); k != nil && bytes.HasPrefix(k, pre); k, v = c.Next() {
+				// key = systemId:name:ext
 				parts := strings.SplitN(string(k), ":", 3)
-				if len(parts) < 3 {
+				if len(parts) != 3 {
 					continue
 				}
-				keyName := parts[1]
-				keyExt := parts[2]
+				name := parts[1]
+				ext := parts[2]
 
-				combined := keyName
-				if keyExt != "" {
-					combined = keyName + "." + keyExt
-				}
-
-				if test(query, combined) {
-					menuPath := filepath.Join(system.Name, combined)
-
+				if test(query, name) {
 					results = append(results, SearchResult{
 						SystemId: system.Id,
-						Name:     keyName,
-						Ext:      keyExt,
+						Name:     name,
+						Ext:      ext,
 						Path:     string(v),
-						MenuPath: menuPath,
 					})
 				}
 			}
@@ -377,24 +370,24 @@ func searchNamesGeneric(
 
 // Exact match (case-insensitive).
 func SearchNamesExact(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
-		return strings.EqualFold(query, keyName)
+	return searchNamesGeneric(systems, query, func(query, name string) bool {
+		return strings.EqualFold(query, name)
 	})
 }
 
 // Partial substring match (case-insensitive).
 func SearchNamesPartial(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
-		return strings.Contains(strings.ToLower(keyName), strings.ToLower(query))
+	return searchNamesGeneric(systems, query, func(query, name string) bool {
+		return strings.Contains(strings.ToLower(name), strings.ToLower(query))
 	})
 }
 
 // Word-by-word match (all words must be present).
 func SearchNamesWords(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
+	return searchNamesGeneric(systems, query, func(query, name string) bool {
 		qWords := strings.Fields(strings.ToLower(query))
 		for _, word := range qWords {
-			if !strings.Contains(strings.ToLower(keyName), word) {
+			if !strings.Contains(strings.ToLower(name), word) {
 				return false
 			}
 		}
@@ -404,12 +397,12 @@ func SearchNamesWords(systems []games.System, query string) ([]SearchResult, err
 
 // Regex-based match.
 func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, keyName string) bool {
+	return searchNamesGeneric(systems, query, func(query, name string) bool {
 		r, err := regexp.Compile(query)
 		if err != nil {
 			return false
 		}
-		return r.MatchString(keyName)
+		return r.MatchString(name)
 	})
 }
 
