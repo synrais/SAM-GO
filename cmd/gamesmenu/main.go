@@ -23,16 +23,21 @@ import (
 
 const appName = "gamesmenu"
 
+// --- MenuFile ---
+// Mirrors gamesdb.fileinfo (FolderName removed).
 type MenuFile struct {
 	SystemId     string
 	SystemName   string
 	SystemFolder string
 	Name         string // base name without extension
-	Ext          string // extension only (e.g. "gg", "nes")
-	Path         string
-	MenuPath     string
+	Ext          string // file extension (e.g. "nes", "gg")
+	Path         string // full path to file
+	MenuPath     string // "SystemName/<relative path under SystemFolder>"
 }
 
+// -------------------------
+// Database loading
+// -------------------------
 func loadMenuDb() ([]MenuFile, error) {
 	f, err := os.Open(config.MenuDb)
 	if err != nil {
@@ -48,6 +53,9 @@ func loadMenuDb() ([]MenuFile, error) {
 	return files, nil
 }
 
+// -------------------------
+// Index regeneration
+// -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
 	_ = os.Remove(config.MenuDb)
 	_ = os.Remove(config.GamesDb)
@@ -135,6 +143,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 	return loadingWindow(stdscr, loadMenuDb)
 }
 
+// -------------------------
+// Options
+// -------------------------
 func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
 	stdscr.Clear()
 	stdscr.Refresh()
@@ -159,6 +170,9 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) 
 	return nil, nil
 }
 
+// -------------------------
+// Tree navigation
+// -------------------------
 type Node struct {
 	Name     string
 	Files    []MenuFile
@@ -256,6 +270,9 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 	}
 }
 
+// -------------------------
+// Main menu
+// -------------------------
 func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error {
 	tree := buildTree(files)
 
@@ -329,6 +346,9 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 	}
 }
 
+// -------------------------
+// Search window
+// -------------------------
 func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	stdscr.Clear()
 	stdscr.Refresh()
@@ -427,6 +447,9 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	}
 }
 
+// -------------------------
+// Loader
+// -------------------------
 func loadingWindow(stdscr *gc.Window, loadFn func() ([]MenuFile, error)) ([]MenuFile, error) {
 	status := struct {
 		Done   bool
@@ -461,6 +484,9 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]MenuFile, error)) ([]Menu
 	return status.Result, nil
 }
 
+// -------------------------
+// Main
+// -------------------------
 func main() {
 	// --- Lockfile to prevent multiple instances ---
 	lockFile := "/tmp/gamesmenu.lock"
