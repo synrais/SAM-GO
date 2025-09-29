@@ -140,34 +140,32 @@ func BuildGobEntries(
 // Searching
 // -------------------------
 
-// SearchWords returns one entry per unique SearchName,
-// sorted by SearchName for consistent ordering.
-func (idx GobIndex) SearchWords(query string) []GobEntry {
+// SearchWords searches across the slice of entries,
+// returns one entry per unique SearchName, sorted by SearchName.
+func SearchWords(entries []GobEntry, query string) []GobEntry {
 	var results []GobEntry
 	words := strings.Fields(strings.ToLower(query))
 	seen := make(map[string]bool)
 
-	for _, entries := range idx {
-		for _, e := range entries {
-			lower := strings.ToLower(e.Search)
-			match := true
-			for _, w := range words {
-				if !strings.Contains(lower, w) {
-					match = false
-					break
-				}
+	for _, e := range entries {
+		lower := strings.ToLower(e.Search)
+		match := true
+		for _, w := range words {
+			if !strings.Contains(lower, w) {
+				match = false
+				break
 			}
-			if !match {
-				continue
-			}
-
-			// Deduplicate by SearchName
-			if seen[e.SearchName] {
-				continue
-			}
-			seen[e.SearchName] = true
-			results = append(results, e)
 		}
+		if !match {
+			continue
+		}
+
+		// Deduplicate by SearchName
+		if seen[e.SearchName] {
+			continue
+		}
+		seen[e.SearchName] = true
+		results = append(results, e)
 	}
 
 	// Sort once, by SearchName
