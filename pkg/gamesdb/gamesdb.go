@@ -68,7 +68,7 @@ func LoadGobIndex(filename string) (GobIndex, error) {
 func BuildGobIndex(
     cfg *config.UserConfig,
     systems []games.System,
-    update func(systemName string, done, total, filesSeen, grandTotal int),
+    update func(system string, done, total, files, grandTotal int),
 ) (GobIndex, error) {
     idx := make(GobIndex)
     total := len(systems)
@@ -76,7 +76,8 @@ func BuildGobIndex(
     grandTotal := 0
 
     for _, sys := range systems {
-        fileCount := 0
+        systemFileCount := 0
+
         paths := games.GetSystemPaths(cfg, []games.System{sys})
         for _, sp := range paths {
             files, err := games.GetFiles(sys.Id, sp.Path)
@@ -84,17 +85,13 @@ func BuildGobIndex(
                 return nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
             }
             for _, fullPath := range files {
-                fileCount++
-                grandTotal++
-
                 base := filepath.Base(fullPath)
                 ext := strings.TrimPrefix(filepath.Ext(base), ".")
                 name := strings.TrimSuffix(base, filepath.Ext(base))
 
-                // --- Build MenuPath with old TXT + ZIP logic ---
+                // --- existing menuPath logic ---
                 rel, _ := filepath.Rel(sp.Path, fullPath)
                 relParts := strings.Split(filepath.ToSlash(rel), "/")
-
                 if len(relParts) > 0 && strings.HasSuffix(relParts[0], ".zip") {
                     relParts = relParts[1:]
                 }
@@ -105,7 +102,6 @@ func BuildGobIndex(
                     }
                     relParts = append([]string{label}, relParts[2:]...)
                 }
-
                 menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
 
                 search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext))
@@ -122,16 +118,18 @@ func BuildGobIndex(
                 }
                 idx[name] = append(idx[name], entry)
 
-                // live file update
+                // 🔥 update counters
+                systemFileCount++
+                grandTotal++
                 if update != nil {
-                    update(sys.Name, done, total, fileCount, grandTotal)
+                    update(sys.Name, done, total, systemFileCount, grandTotal)
                 }
             }
         }
 
         done++
         if update != nil {
-            update(sys.Name, done, total, fileCount, grandTotal)
+            update(sys.Name, done, total, systemFileCount, grandTotal)
         }
     }
 
