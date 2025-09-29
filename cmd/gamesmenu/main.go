@@ -35,6 +35,10 @@ func loadMenuDb() ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
 	for _, entries := range idx {
 		files = append(files, entries...)
 	}
+	// sort once by MenuPath for consistent global order
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].MenuPath < files[j].MenuPath
+	})
 	return files, idx, nil
 }
 
@@ -56,7 +60,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 
 	_, width := win.MaxYX()
 
-	// Progress update structure
 	type progress struct {
 		system string
 		done   int
@@ -70,7 +73,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		Idx      gamesdb.GobIndex
 	}{}
 
-	// Worker goroutine: build index and push updates
 	go func() {
 		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
 			func(system string, done, total int) {
@@ -97,7 +99,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 			break
 		}
 
-		// Non-blocking receive
 		select {
 		case p, ok := <-updates:
 			if ok {
@@ -106,19 +107,15 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		default:
 		}
 
-		// Clear the text row, but leave last 3 cols (spinner area) untouched
 		win.MovePrint(1, 2, strings.Repeat(" ", width-6))
 
 		if lastProgress != nil {
-			// left-aligned system name
 			left := fmt.Sprintf("Indexing %s...", lastProgress.system)
-			// right-aligned totals with fixed width
 			right := fmt.Sprintf("(%3d/%-3d)", lastProgress.done, lastProgress.total)
 
 			win.MovePrint(1, 2, left)
-			win.MovePrint(1, width-len(right)-4, right) // stop before spinner column
+			win.MovePrint(1, width-len(right)-4, right)
 
-			// Progress bar (line 2 inside border)
 			progressWidth := width - 4
 			filled := int(float64(lastProgress.done) / float64(lastProgress.total) * float64(progressWidth))
 			for i := 0; i < filled; i++ {
@@ -128,7 +125,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 			win.MovePrint(1, 2, "Indexing games...")
 		}
 
-		// Spinner always at far right
 		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
 		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
 
@@ -144,13 +140,14 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		return nil, nil, status.Error
 	}
 
-	// Flatten map into slice
 	var files []gamesdb.GobEntry
 	for _, entries := range status.Idx {
 		files = append(files, entries...)
 	}
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].MenuPath < files[j].MenuPath
+	})
 
-	// keep your outline, but still load via loader
 	return loadingWindow(stdscr, loadMenuDb)
 }
 
@@ -194,7 +191,6 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 		for name := range node.Children {
 			folders = append(folders, name)
 		}
-		sort.Strings(folders)
 		items = append(items, folders...)
 
 		for _, f := range node.Files {
@@ -287,15 +283,15 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry,
 func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntry, idx gamesdb.GobIndex) error {
 	tree := buildTree(files)
 
-	var items []string
+	seen := make(map[string]bool)
 	var sysIds []string
-	for sysId := range tree.Children {
-		sysIds = append(sysIds, sysId)
+	for _, f := range files {
+		if !seen[f.SystemId] && tree.Children[f.SystemId] != nil {
+			seen[f.SystemId] = true
+			sysIds = append(sysIds, f.SystemId)
+		}
 	}
-	sort.Strings(sysIds)
-	for _, sysId := range sysIds {
-		items = append(items, sysId)
-	}
+	items := append([]string{}, sysIds...)
 
 	startIndex := 0
 	for {
@@ -338,19 +334,20 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 			if err != nil {
 				return err
 			}
-			if newFiles != nil && newIdx != nil {
+			if newFiles != nil {
 				files = newFiles
 				idx = newIdx
 				tree = buildTree(files)
+
+				seen = make(map[string]bool)
 				sysIds = sysIds[:0]
-				items = items[:0]
-				for sysId := range tree.Children {
-					sysIds = append(sysIds, sysId)
+				for _, f := range files {
+					if !seen[f.SystemId] && tree.Children[f.SystemId] != nil {
+						seen[f.SystemId] = true
+						sysIds = append(sysIds, f.SystemId)
+					}
 				}
-				sort.Strings(sysIds)
-				for _, sysId := range sysIds {
-					items = append(items, sysId)
-				}
+				items = append([]string{}, sysIds...)
 			}
 		case 5: // Exit
 			return nil
@@ -369,10 +366,8 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 	startIndex := 0
 
 	for {
-		// Show cursor while typing
 		gc.Cursor(1)
 		button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
-		// Hide cursor again after keyboard
 		gc.Cursor(0)
 
 		if err != nil || button == 1 {
@@ -386,7 +381,6 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 			continue
 		}
 
-		// Build display items directly from SearchName
 		var items []string
 		for _, r := range results {
 			items = append(items, r.SearchName)
@@ -411,13 +405,13 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 			}
 			startIndex = selected
 
-			if button == 2 { // Launch
+			if button == 2 {
 				game := results[selected]
 				sys, _ := games.GetSystem(game.SystemId)
 				_ = mister.LaunchGame(cfg, *sys, game.Path)
 				continue
 			}
-			if button == 3 { // Back
+			if button == 3 {
 				stdscr.Clear()
 				stdscr.Refresh()
 				break
@@ -469,7 +463,6 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]gamesdb.GobEntry, gamesdb
 // Main
 // -------------------------
 func main() {
-	// --- Lockfile to prevent multiple instances ---
 	lockFile := "/tmp/gamesmenu.lock"
 	f, err := os.OpenFile(lockFile, os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
@@ -500,7 +493,6 @@ func main() {
 	_, _ = f.WriteString(fmt.Sprintf("%d", os.Getpid()))
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 
-	// --- Normal startup ---
 	printPtr := flag.Bool("print", false, "Print game path instead of launching")
 	flag.Parse()
 	launchGame := !*printPtr
@@ -516,7 +508,6 @@ func main() {
 	}
 	defer gc.End()
 
-	// Hide cursor globally, restore at exit
 	gc.Cursor(0)
 	defer gc.Cursor(1)
 
