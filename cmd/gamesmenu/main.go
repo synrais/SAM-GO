@@ -61,9 +61,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		system     string
 		done       int // systems completed
 		total      int // total systems
-		files      int // files in this system (increments per file)
+		files      int // files in this system
 		grandTotal int // grand total files seen so far
-		sysFiles   int // total files expected in this system
+		totalFiles int // total files across all systems
 	}
 	updates := make(chan progress, 1)
 
@@ -75,9 +75,18 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 
 	// Worker goroutine: build index and push updates
 	go func() {
+		// --- pre-count all files across all systems ---
+		totalFiles := 0
+		for _, sys := range games.AllSystems() {
+			paths := games.GetSystemPaths(cfg, []games.System{sys})
+			for _, sp := range paths {
+				files, _ := games.GetFiles(sys.Id, sp.Path)
+				totalFiles += len(files)
+			}
+		}
+
 		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
 			func(system string, done, total, files, grandTotal int) {
-				// NOTE: files == number of files seen so far for this system
 				select {
 				case updates <- progress{
 					system:     system,
@@ -85,7 +94,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 					total:      total,
 					files:      files,
 					grandTotal: grandTotal,
-					sysFiles:   files, // re-use for now (we don’t know total upfront)
+					totalFiles: totalFiles,
 				}:
 				default:
 				}
@@ -131,14 +140,14 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 			)
 			win.MovePrint(1, 2, text)
 
-			// Progress bar (line 2 inside border)
+			// Progress bar (line 2 inside border) — continuous
 			progressWidth := width - 4
 			filled := 0
-			if lastProgress.sysFiles > 0 {
-				filled = int(float64(lastProgress.files) / float64(lastProgress.sysFiles) * float64(progressWidth))
+			if lastProgress.totalFiles > 0 {
+				filled = int(float64(lastProgress.grandTotal) / float64(lastProgress.totalFiles) * float64(progressWidth))
 			}
 			for i := 0; i < progressWidth; i++ {
-				ch := ' '
+				var ch gc.Char = gc.Char(' ')
 				if i < filled {
 					ch = gc.ACS_BLOCK
 				}
