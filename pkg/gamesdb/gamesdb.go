@@ -32,14 +32,18 @@ type GobIndex map[string][]GobEntry
 
 // SaveGobIndex encodes the index to disk.
 func SaveGobIndex(idx GobIndex, filename string) error {
-	f, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+    if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
+        return err
+    }
 
-	enc := gob.NewEncoder(f)
-	return enc.Encode(idx)
+    f, err := os.Create(filename)
+    if err != nil {
+        return err
+    }
+    defer f.Close()
+
+    enc := gob.NewEncoder(f)
+    return enc.Encode(idx)
 }
 
 // LoadGobIndex decodes the index from disk.
