@@ -32,18 +32,18 @@ type GobIndex map[string][]GobEntry
 
 // SaveGobIndex encodes the index to disk.
 func SaveGobIndex(idx GobIndex, filename string) error {
-    if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
-        return err
-    }
+	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
+		return err
+	}
 
-    f, err := os.Create(filename)
-    if err != nil {
-        return err
-    }
-    defer f.Close()
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
 
-    enc := gob.NewEncoder(f)
-    return enc.Encode(idx)
+	enc := gob.NewEncoder(f)
+	return enc.Encode(idx)
 }
 
 // LoadGobIndex decodes the index from disk.
@@ -79,6 +79,12 @@ func BuildGobIndex(
 	done := 0
 
 	for _, sys := range systems {
+		// 🔹 Announce before starting this system
+		done++
+		if update != nil {
+			update(sys.Name, done, total)
+		}
+
 		paths := games.GetSystemPaths(cfg, []games.System{sys})
 		for _, sp := range paths {
 			files, err := games.GetFiles(sys.Id, sp.Path)
@@ -90,7 +96,7 @@ func BuildGobIndex(
 				ext := strings.TrimPrefix(filepath.Ext(base), ".")
 				name := strings.TrimSuffix(base, filepath.Ext(base))
 
-				// --- Build MenuPath with old TXT + ZIP logic ---
+				// --- Build MenuPath with TXT + ZIP rules ---
 				rel, _ := filepath.Rel(sp.Path, fullPath)
 				relParts := strings.Split(filepath.ToSlash(rel), "/")
 
@@ -130,12 +136,6 @@ func BuildGobIndex(
 				}
 				idx[name] = append(idx[name], entry)
 			}
-		}
-
-		// ✅ Announce progress *after* finishing the system
-		done++
-		if update != nil {
-			update(sys.Name, done, total)
 		}
 	}
 
