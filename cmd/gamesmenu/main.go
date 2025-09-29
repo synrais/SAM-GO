@@ -58,11 +58,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 
 	// Progress update structure
 	type progress struct {
-		system     string
-		done       int // systems completed
-		total      int // total systems
-		files      int // files in this system
-		grandTotal int // grand total files seen so far
+		system string
+		done   int
+		total  int
 	}
 	updates := make(chan progress, 1)
 
@@ -75,9 +73,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 	// Worker goroutine: build index and push updates
 	go func() {
 		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
-			func(system string, done, total, files, grandTotal int) {
+			func(system string, done, total int) {
 				select {
-				case updates <- progress{system, done, total, files, grandTotal}:
+				case updates <- progress{system, done, total}:
 				default:
 				}
 			})
@@ -112,17 +110,11 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 
 		if lastProgress != nil {
-			// fixed-column layout to avoid bouncing numbers
-			text := fmt.Sprintf(
-				"%2d/%-2d  Indexing... %-12s  Games:%-6d  Total:%-8d",
-				lastProgress.done, lastProgress.total,
-				lastProgress.system,
-				lastProgress.files,
-				lastProgress.grandTotal,
-			)
+			text := fmt.Sprintf("Indexing %s... (%d/%d)",
+				lastProgress.system, lastProgress.done, lastProgress.total)
 			win.MovePrint(1, 2, text)
 
-			// Progress bar (line 2 inside border) → still system-level
+			// Progress bar (line 2 inside border)
 			progressWidth := width - 4
 			filled := int(float64(lastProgress.done) / float64(lastProgress.total) * float64(progressWidth))
 			for i := 0; i < filled; i++ {
@@ -154,7 +146,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		files = append(files, entries...)
 	}
 
-	// still load via loader to be consistent
+	// keep your outline, but still load via loader
 	return loadingWindow(stdscr, loadMenuDb)
 }
 
