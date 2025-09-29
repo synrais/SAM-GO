@@ -78,11 +78,7 @@ func BuildGobIndex(
 	total := len(systems)
 	done := 0
 
-	// 🔹 enforce stable order by Name
-	sort.Slice(systems, func(i, j int) bool {
-		return systems[i].Name < systems[j].Name
-	})
-
+	// 🔹 no enforced sort, just keep the incoming order
 	for _, sys := range systems {
 		done++
 		if update != nil {
