@@ -118,7 +118,7 @@ func BuildGobIndex(
                 }
                 idx[name] = append(idx[name], entry)
 
-                // 🔥 update counters
+                // update counters
                 systemFileCount++
                 grandTotal++
                 if update != nil {
