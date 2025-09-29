@@ -255,6 +255,33 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 }
 
 // -------------------------
+// Options menu
+// -------------------------
+func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
+	stdscr.Clear()
+	stdscr.Refresh()
+
+	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+		Title:         "Options",
+		Buttons:       []string{"Select", "Back"},
+		DefaultButton: 0,
+		ActionButton:  0,
+		ShowTotal:     false,
+		Width:         60,
+		Height:        10,
+		InitialIndex:  0,
+	}, []string{"Rebuild games database..."})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if button == 0 && selected == 0 {
+		return generateIndexWindow(cfg, stdscr)
+	}
+	return nil, nil, nil
+}
+
+// -------------------------
 // Main menu
 // -------------------------
 func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntry, idx gamesdb.GobIndex) error {
@@ -277,7 +304,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         "Systems",
-			Buttons:       []string{"PgUp", "PgDn", "", "Search", "Rebuild", "Exit"},
+			Buttons:       []string{"PgUp", "PgDn", "", "Search", "Options", "Exit"},
 			ActionButton:  2,
 			DefaultButton: 2,
 			ShowTotal:     true,
@@ -306,22 +333,24 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 			}
 			stdscr.Clear()
 			stdscr.Refresh()
-		case 4: // Rebuild DB
-			newFiles, newIdx, err := generateIndexWindow(cfg, stdscr)
+		case 4: // Options
+			newFiles, newIdx, err := optionsMenu(cfg, stdscr)
 			if err != nil {
 				return err
 			}
-			files = newFiles
-			idx = newIdx
-			tree = buildTree(files)
-			sysIds = sysIds[:0]
-			items = items[:0]
-			for sysId := range tree.Children {
-				sysIds = append(sysIds, sysId)
-			}
-			sort.Strings(sysIds)
-			for _, sysId := range sysIds {
-				items = append(items, sysId)
+			if newFiles != nil && newIdx != nil {
+				files = newFiles
+				idx = newIdx
+				tree = buildTree(files)
+				sysIds = sysIds[:0]
+				items = items[:0]
+				for sysId := range tree.Children {
+					sysIds = append(sysIds, sysId)
+				}
+				sort.Strings(sysIds)
+				for _, sysId := range sysIds {
+					items = append(items, sysId)
+				}
 			}
 		case 5: // Exit
 			return nil
