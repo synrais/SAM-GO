@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -30,15 +29,13 @@ func loadMenuDb() ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	// Flatten map into slice
+
+	// Flatten map into slice (unsorted, order handled later)
 	var files []gamesdb.GobEntry
 	for _, entries := range idx {
 		files = append(files, entries...)
 	}
-	// Sort once by MenuPath for consistent global order
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].MenuPath < files[j].MenuPath
-	})
+
 	return files, idx, nil
 }
 
@@ -139,7 +136,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		return nil, nil, status.Error
 	}
 
-	// Reload from disk → sorted
+	// Reload from disk (order handled later)
 	return loadingWindow(stdscr, loadMenuDb)
 }
 
@@ -178,21 +175,26 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 		stdscr.Clear()
 		stdscr.Refresh()
 
+		// Collect folders, then sort
 		var items []string
 		var folders []string
 		for name := range node.Children {
 			folders = append(folders, name)
 		}
-		// Already sorted globally by MenuPath
+		sort.Strings(folders)
 		items = append(items, folders...)
 
+		// Files sorted by displayName
+		var fileNames []string
 		for _, f := range node.Files {
 			displayName := f.Name
 			if f.Ext != "" {
 				displayName = fmt.Sprintf("%s.%s", f.Name, f.Ext)
 			}
-			items = append(items, displayName)
+			fileNames = append(fileNames, displayName)
 		}
+		sort.Strings(fileNames)
+		items = append(items, fileNames...)
 
 		title := node.Name
 		if title == "" {
@@ -276,13 +278,12 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry,
 func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntry, idx gamesdb.GobIndex) error {
 	tree := buildTree(files)
 
-	// Collect top-level system names directly from the tree
+	// Collect and sort system names
 	var sysNames []string
 	for name := range tree.Children {
 		sysNames = append(sysNames, name)
 	}
-	// They’re already stable from MenuPath sort, but you can force alpha here if you like:
-	// sort.Strings(sysNames)
+	sort.Strings(sysNames)
 
 	items := append([]string{}, sysNames...)
 
@@ -332,12 +333,11 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 				idx = newIdx
 				tree = buildTree(files)
 
-				// Rebuild system names after rebuild
 				sysNames = sysNames[:0]
 				for name := range tree.Children {
 					sysNames = append(sysNames, name)
 				}
-				// sort.Strings(sysNames) // optional
+				sort.Strings(sysNames)
 				items = append([]string{}, sysNames...)
 			}
 		case 5: // Exit
@@ -518,6 +518,7 @@ func main() {
 			log.Fatal(err)
 		}
 	} else {
+		// Just print paths (unsorted, since MenuPath and names already sorted in menu flows)
 		for _, f := range files {
 			displayName := f.Name
 			if f.Ext != "" {
