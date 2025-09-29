@@ -27,8 +27,18 @@ type GobEntry struct {
 	SearchName string // "[System] Name.ext" for display
 }
 
-// SaveGobEntries encodes the sorted slice to disk.
-func SaveGobEntries(entries []GobEntry, filename string) error {
+// GobIndex holds both the sorted slice and the search map.
+type GobIndex struct {
+	Entries []GobEntry               // Sorted slice (canonical order for menus)
+	Map     map[string][]GobEntry    // Fast lookup for search
+}
+
+// -------------------------
+// Saving / Loading
+// -------------------------
+
+// SaveGobIndex encodes only the sorted slice to disk.
+func SaveGobIndex(idx GobIndex, filename string) error {
 	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
 		return err
 	}
@@ -40,36 +50,43 @@ func SaveGobEntries(entries []GobEntry, filename string) error {
 	defer f.Close()
 
 	enc := gob.NewEncoder(f)
-	return enc.Encode(entries)
+	return enc.Encode(idx.Entries)
 }
 
-// LoadGobEntries decodes the slice from disk (already sorted).
-func LoadGobEntries(filename string) ([]GobEntry, error) {
+// LoadGobIndex decodes the slice from disk and rebuilds the map.
+func LoadGobIndex(filename string) (GobIndex, error) {
 	f, err := os.Open(filename)
 	if err != nil {
-		return nil, err
+		return GobIndex{}, err
 	}
 	defer f.Close()
 
 	var entries []GobEntry
 	dec := gob.NewDecoder(f)
 	if err := dec.Decode(&entries); err != nil {
-		return nil, err
+		return GobIndex{}, err
 	}
-	return entries, nil
+
+	// Rebuild the map from the sorted slice
+	m := make(map[string][]GobEntry)
+	for _, e := range entries {
+		m[e.Name] = append(m[e.Name], e)
+	}
+
+	return GobIndex{Entries: entries, Map: m}, nil
 }
 
 // -------------------------
 // Building
 // -------------------------
 
-// BuildGobEntries scans systems and returns a sorted slice of entries.
+// BuildGobIndex scans systems and builds both slice + map.
 // This is the *only* place we sort — truth for order is baked here.
-func BuildGobEntries(
+func BuildGobIndex(
 	cfg *config.UserConfig,
 	systems []games.System,
 	update func(systemName string, done, total int),
-) ([]GobEntry, error) {
+) (GobIndex, error) {
 	var all []GobEntry
 	total := len(systems)
 	done := 0
@@ -84,7 +101,7 @@ func BuildGobEntries(
 		for _, sp := range paths {
 			files, err := games.GetFiles(sys.Id, sp.Path)
 			if err != nil {
-				return nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
+				return GobIndex{}, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
 			}
 
 			for _, fullPath := range files {
@@ -133,39 +150,47 @@ func BuildGobEntries(
 		return strings.ToLower(all[i].MenuPath) < strings.ToLower(all[j].MenuPath)
 	})
 
-	return all, nil
+	// Build map from sorted slice
+	m := make(map[string][]GobEntry)
+	for _, e := range all {
+		m[e.Name] = append(m[e.Name], e)
+	}
+
+	return GobIndex{Entries: all, Map: m}, nil
 }
 
 // -------------------------
 // Searching
 // -------------------------
 
-// SearchWords searches across the slice of entries,
-// returns one entry per unique SearchName, sorted by SearchName.
-func SearchWords(entries []GobEntry, query string) []GobEntry {
+// SearchWords returns one entry per unique SearchName,
+// sorted by SearchName for consistent ordering.
+func (idx GobIndex) SearchWords(query string) []GobEntry {
 	var results []GobEntry
 	words := strings.Fields(strings.ToLower(query))
 	seen := make(map[string]bool)
 
-	for _, e := range entries {
-		lower := strings.ToLower(e.Search)
-		match := true
-		for _, w := range words {
-			if !strings.Contains(lower, w) {
-				match = false
-				break
+	for _, entries := range idx.Map {
+		for _, e := range entries {
+			lower := strings.ToLower(e.Search)
+			match := true
+			for _, w := range words {
+				if !strings.Contains(lower, w) {
+					match = false
+					break
+				}
 			}
-		}
-		if !match {
-			continue
-		}
+			if !match {
+				continue
+			}
 
-		// Deduplicate by SearchName
-		if seen[e.SearchName] {
-			continue
+			// Deduplicate by SearchName
+			if seen[e.SearchName] {
+				continue
+			}
+			seen[e.SearchName] = true
+			results = append(results, e)
 		}
-		seen[e.SearchName] = true
-		results = append(results, e)
 	}
 
 	// Sort once, by SearchName
