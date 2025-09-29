@@ -548,6 +548,11 @@ func main() {
 	}
 
 	if launchGame {
+		// silently prewarm search index in background
+		go func() {
+			_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
+		}()
+
 		if err := mainMenu(cfg, stdscr, files); err != nil {
 			log.Fatal(err)
 		}
@@ -561,3 +566,4 @@ func main() {
 		}
 	}
 }
+
