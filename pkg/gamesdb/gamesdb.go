@@ -79,8 +79,7 @@ func BuildGobIndex(
 	done := 0
 
 	for _, sys := range systems {
-		// 🔹 Announce before starting this system
-		done++
+		// 🔹 Announce system before work begins
 		if update != nil {
 			update(sys.Name, done, total)
 		}
@@ -96,7 +95,7 @@ func BuildGobIndex(
 				ext := strings.TrimPrefix(filepath.Ext(base), ".")
 				name := strings.TrimSuffix(base, filepath.Ext(base))
 
-				// --- Build MenuPath with TXT + ZIP rules ---
+				// --- Build MenuPath with old TXT + ZIP logic ---
 				rel, _ := filepath.Rel(sp.Path, fullPath)
 				relParts := strings.Split(filepath.ToSlash(rel), "/")
 
@@ -137,6 +136,9 @@ func BuildGobIndex(
 				idx[name] = append(idx[name], entry)
 			}
 		}
+
+		// 🔹 Only increment after finishing this system
+		done++
 	}
 
 	return idx, nil
