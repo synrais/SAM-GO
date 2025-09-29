@@ -75,6 +75,11 @@ func BuildGobIndex(
 	done := 0
 
 	for _, sys := range systems {
+		// 🔹 Let UI know we’re starting this system
+		if update != nil {
+			update(sys.Name, done, total)
+		}
+
 		paths := games.GetSystemPaths(cfg, []games.System{sys})
 		for _, sp := range paths {
 			files, err := games.GetFiles(sys.Id, sp.Path)
@@ -107,7 +112,7 @@ func BuildGobIndex(
 				menuPath := filepath.Join(append([]string{sys.Name}, relParts...)...)
 
 				// Precompute search fields
-				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext)) // "super mario bros .nes"
+				search := strings.ToLower(fmt.Sprintf("%s .%s", name, ext))
 				searchName := fmt.Sprintf("[%s] %s", sys.Name, base)
 
 				entry := GobEntry{
@@ -123,7 +128,7 @@ func BuildGobIndex(
 			}
 		}
 
-		// Update after finishing each system
+		// 🔹 Mark system finished
 		done++
 		if update != nil {
 			update(sys.Name, done, total)
