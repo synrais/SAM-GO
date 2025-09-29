@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/synrais/SAM-GO/pkg/config"
@@ -22,8 +23,8 @@ type GobEntry struct {
 	Ext        string
 	Path       string
 	MenuPath   string
-	Search     string // 🔑 lowercase "name + ext" for matching
-	SearchName string // 🔑 "[SystemName] Name.ext" for display
+	Search     string // normalized search string (name + ext as tokens)
+	SearchName string // "[System] Name.ext" for display
 }
 
 // GobIndex maps base names -> slice of entries (supports duplicates).
@@ -122,7 +123,7 @@ func BuildGobIndex(
 			}
 		}
 
-		// Update after finishing each system
+		// ✅ Update after finishing each system
 		done++
 		if update != nil {
 			update(sys.Name, done, total)
@@ -136,28 +137,40 @@ func BuildGobIndex(
 // Searching
 // -------------------------
 
-// SearchWords returns only the *first entry per unique name+ext* that matches query.
+// SearchWords returns one entry per unique SearchName,
+// sorted by SearchName for consistent ordering.
 func (idx GobIndex) SearchWords(query string) []GobEntry {
 	var results []GobEntry
 	words := strings.Fields(strings.ToLower(query))
 	seen := make(map[string]bool)
 
-outer:
 	for _, entries := range idx {
-		if len(entries) == 0 {
-			continue
-		}
-		first := entries[0]
-		for _, w := range words {
-			if !strings.Contains(first.Search, w) {
-				continue outer
+		for _, e := range entries {
+			lower := strings.ToLower(e.Search)
+			match := true
+			for _, w := range words {
+				if !strings.Contains(lower, w) {
+					match = false
+					break
+				}
 			}
-		}
-		key := fmt.Sprintf("%s.%s", first.Name, first.Ext)
-		if !seen[key] {
-			seen[key] = true
-			results = append(results, first)
+			if !match {
+				continue
+			}
+
+			// Deduplicate by SearchName
+			if seen[e.SearchName] {
+				continue
+			}
+			seen[e.SearchName] = true
+			results = append(results, e)
 		}
 	}
+
+	// Sort once, by SearchName
+	sort.Slice(results, func(i, j int) bool {
+		return strings.ToLower(results[i].SearchName) < strings.ToLower(results[j].SearchName)
+	})
+
 	return results
 }
