@@ -79,12 +79,6 @@ func BuildGobIndex(
 	done := 0
 
 	for _, sys := range systems {
-		// 🔹 Increment first, then announce this system
-		done++
-		if update != nil {
-			update(sys.Name, done, total)
-		}
-
 		paths := games.GetSystemPaths(cfg, []games.System{sys})
 		for _, sp := range paths {
 			files, err := games.GetFiles(sys.Id, sp.Path)
@@ -113,7 +107,7 @@ func BuildGobIndex(
 					}
 					relParts = append([]string{label}, relParts[2:]...)
 				}
-				
+
 				// Case 3: skip anything under top-level "media"
 				if len(relParts) > 0 && relParts[0] == "media" {
 					continue
@@ -136,6 +130,12 @@ func BuildGobIndex(
 				}
 				idx[name] = append(idx[name], entry)
 			}
+		}
+
+		// ✅ Announce progress *after* finishing the system
+		done++
+		if update != nil {
+			update(sys.Name, done, total)
 		}
 	}
 
