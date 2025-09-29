@@ -77,13 +77,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
 			func(system string, done, total, files, grandTotal int) {
 				select {
-				case updates <- progress{
-					system:     system,
-					done:       done,
-					total:      total,
-					files:      files,
-					grandTotal: grandTotal,
-				}:
+				case updates <- progress{system, done, total, files, grandTotal}:
 				default:
 				}
 			})
@@ -118,25 +112,21 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 
 		if lastProgress != nil {
-			// status line
+			// fixed-column layout to avoid bouncing numbers
 			text := fmt.Sprintf(
-				"%2d/%-2d  Indexing... %-12s  Games:%-6d  Total:%-8d",
-				lastProgress.done, lastProgress.total,
+				"Indexing... %-12s :%-6d :%2d/%-2d :%-8d",
 				lastProgress.system,
 				lastProgress.files,
+				lastProgress.done, lastProgress.total,
 				lastProgress.grandTotal,
 			)
 			win.MovePrint(1, 2, text)
 
-			// Progress bar (line 2 inside border) — just grows with grandTotal
+			// Progress bar (line 2 inside border) → still system-level
 			progressWidth := width - 4
-			filled := int(float64(lastProgress.grandTotal) / float64(lastProgress.grandTotal+1) * float64(progressWidth))
-			for i := 0; i < progressWidth; i++ {
-				var ch gc.Char = gc.Char(' ')
-				if i < filled {
-					ch = gc.ACS_BLOCK
-				}
-				win.MoveAddChar(2, 2+i, ch)
+			filled := int(float64(lastProgress.done) / float64(lastProgress.total) * float64(progressWidth))
+			for i := 0; i < filled; i++ {
+				win.MoveAddChar(2, 2+i, gc.ACS_BLOCK)
 			}
 		} else {
 			win.MovePrint(1, 2, "Indexing games...")
