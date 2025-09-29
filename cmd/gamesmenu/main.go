@@ -25,18 +25,11 @@ const appName = "gamesmenu"
 // Database loading
 // -------------------------
 func loadMenuDb() ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
-	idx, err := gamesdb.LoadGobIndex(config.MenuDb)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Flatten map into slice (order preserved by BuildGobIndex)
-	var files []gamesdb.GobEntry
-	for _, entries := range idx {
-		files = append(files, entries...)
-	}
-
-	return files, idx, nil
+    files, idx, err := gamesdb.LoadGobIndex(config.MenuDb)
+    if err != nil {
+        return nil, nil, err
+    }
+    return files, idx, nil
 }
 
 // -------------------------
