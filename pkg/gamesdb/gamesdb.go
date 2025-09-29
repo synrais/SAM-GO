@@ -1,4 +1,4 @@
-package main
+package gamesdb
 
 import (
 	"encoding/gob"
