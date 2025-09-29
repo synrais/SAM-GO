@@ -78,7 +78,6 @@ func BuildGobIndex(
 	total := len(systems)
 	done := 0
 
-	// Process systems in incoming order
 	for _, sys := range systems {
 		done++
 		if update != nil {
@@ -92,7 +91,6 @@ func BuildGobIndex(
 				return nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
 			}
 
-			// collect entries
 			var entries []GobEntry
 			for _, fullPath := range files {
 				base := filepath.Base(fullPath)
@@ -134,17 +132,12 @@ func BuildGobIndex(
 				})
 			}
 
-			// sort collected entries before inserting
+			// 🔹 Sort by MenuPath once
 			sort.Slice(entries, func(i, j int) bool {
-				a := strings.ToLower(entries[i].Name)
-				b := strings.ToLower(entries[j].Name)
-				if a == b {
-					return strings.ToLower(entries[i].Ext) < strings.ToLower(entries[j].Ext)
-				}
-				return a < b
+				return strings.ToLower(entries[i].MenuPath) < strings.ToLower(entries[j].MenuPath)
 			})
 
-			// insert into index
+			// Insert into index in sorted order
 			for _, e := range entries {
 				idx[e.Name] = append(idx[e.Name], e)
 			}
