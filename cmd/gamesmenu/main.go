@@ -24,15 +24,13 @@ import (
 const appName = "gamesmenu"
 
 // --- MenuFile ---
-// Mirrors gamesdb.fileinfo //
+// Mirrors gamesdb.fileinfo (slimmed down)
 type MenuFile struct {
-	SystemId     string // Internal system ID
-	SystemName   string // Friendly system name (e.g. "Arcadia 2001")
-	SystemFolder string // Root folder on disk for this system
-	Name         string // Base name without extension
-	Ext          string // File extension (e.g. "nes", "gg")
-	Path         string // Full path to file
-	MenuPath     string // "SystemName/<relative path under SystemFolder>"
+	SystemId string // Internal system ID
+	Name     string // Base name without extension
+	Ext      string // File extension (e.g. "nes", "gg")
+	Path     string // Full path to file
+	MenuPath string // "SystemName/<relative path under SystemFolder>"
 }
 
 // -------------------------
