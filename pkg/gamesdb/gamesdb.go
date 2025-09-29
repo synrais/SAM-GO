@@ -128,27 +128,7 @@ func BuildGobIndex(
 // Searching
 // -------------------------
 
-// SearchExact looks up games by exact name.
-func (idx GobIndex) SearchExact(name string) []GobEntry {
-	if entries, ok := idx[name]; ok {
-		return entries
-	}
-	return nil
-}
-
-// SearchPartial returns all entries where name contains the substring.
-func (idx GobIndex) SearchPartial(query string) []GobEntry {
-	var results []GobEntry
-	q := strings.ToLower(query)
-	for name, entries := range idx {
-		if strings.Contains(strings.ToLower(name), q) {
-			results = append(results, entries...)
-		}
-	}
-	return results
-}
-
-// SearchWords returns entries where all words in query appear in the name.
+// SearchWords returns only the *first entry* for each matching name (ignores duplicates).
 func (idx GobIndex) SearchWords(query string) []GobEntry {
 	var results []GobEntry
 	words := strings.Fields(strings.ToLower(query))
@@ -161,7 +141,9 @@ outer:
 				continue outer
 			}
 		}
-		results = append(results, entries...)
+		if len(entries) > 0 {
+			results = append(results, entries[0]) // only first entry
+		}
 	}
 	return results
 }
