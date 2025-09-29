@@ -61,47 +61,48 @@ func LoadGobIndex(filename string) (GobIndex, error) {
 // -------------------------
 
 // BuildGobIndex scans systems and builds the index fully in memory,
-// reporting progress via the optional update callback.
+// reporting progress once per completed system via the optional update callback.
 func BuildGobIndex(
-    cfg *config.UserConfig,
-    systems []games.System,
-    update func(systemName string, done, total int),
+	cfg *config.UserConfig,
+	systems []games.System,
+	update func(systemName string, done, total int),
 ) (GobIndex, error) {
-    idx := make(GobIndex)
-    total := len(systems)
-    done := 0
+	idx := make(GobIndex)
+	total := len(systems)
+	done := 0
 
-    for _, sys := range systems {
-        done++
-        if update != nil {
-            update(sys.Name, done, total)
-        }
+	for _, sys := range systems {
+		paths := games.GetSystemPaths(cfg, []games.System{sys})
+		for _, sp := range paths {
+			files, err := games.GetFiles(sys.Id, sp.Path)
+			if err != nil {
+				return nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
+			}
+			for _, fullPath := range files {
+				base := filepath.Base(fullPath)
+				ext := strings.TrimPrefix(filepath.Ext(base), ".")
+				name := strings.TrimSuffix(base, filepath.Ext(base))
+				menuPath := filepath.Join(sys.Name, base)
 
-        paths := games.GetSystemPaths(cfg, []games.System{sys})
-        for _, sp := range paths {
-            files, err := games.GetFiles(sys.Id, sp.Path)
-            if err != nil {
-                return nil, fmt.Errorf("error getting files for %s: %w", sys.Id, err)
-            }
-            for _, fullPath := range files {
-                base := filepath.Base(fullPath)
-                ext := strings.TrimPrefix(filepath.Ext(base), ".")
-                name := strings.TrimSuffix(base, filepath.Ext(base))
-                menuPath := filepath.Join(sys.Name, base)
+				entry := GobEntry{
+					SystemId: sys.Id,
+					Name:     name,
+					Ext:      ext,
+					Path:     fullPath,
+					MenuPath: filepath.ToSlash(menuPath),
+				}
+				idx[name] = append(idx[name], entry)
+			}
+		}
 
-                entry := GobEntry{
-                    SystemId: sys.Id,
-                    Name:     name,
-                    Ext:      ext,
-                    Path:     fullPath,
-                    MenuPath: filepath.ToSlash(menuPath),
-                }
-                idx[name] = append(idx[name], entry)
-            }
-        }
-    }
+		// ✅ Update after finishing each system
+		done++
+		if update != nil {
+			update(sys.Name, done, total)
+		}
+	}
 
-    return idx, nil
+	return idx, nil
 }
 
 // -------------------------
