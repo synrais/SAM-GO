@@ -79,7 +79,7 @@ func BuildGobIndex(
     done := 0
 
     for _, sys := range systems {
-        // 🔹 Count this system as "in progress" immediately
+        // 🔹 Mark this system as in-progress immediately
         done++
         if update != nil {
             update(sys.Name, done, total)
