@@ -276,15 +276,15 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry,
 func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntry, idx gamesdb.GobIndex) error {
 	tree := buildTree(files)
 
-	seen := make(map[string]bool)
-	var sysIds []string
-	for _, f := range files {
-		if !seen[f.SystemId] && tree.Children[f.SystemId] != nil {
-			seen[f.SystemId] = true
-			sysIds = append(sysIds, f.SystemId)
-		}
+	// Collect top-level system names directly from the tree
+	var sysNames []string
+	for name := range tree.Children {
+		sysNames = append(sysNames, name)
 	}
-	items := append([]string{}, sysIds...)
+	// They’re already stable from MenuPath sort, but you can force alpha here if you like:
+	// sort.Strings(sysNames)
+
+	items := append([]string{}, sysNames...)
 
 	startIndex := 0
 	for {
@@ -311,8 +311,8 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 		startIndex = selected
 		switch button {
 		case 2: // Open system
-			sysId := sysIds[selected]
-			_, err := browseNode(cfg, stdscr, tree.Children[sysId], 0)
+			sysName := sysNames[selected]
+			_, err := browseNode(cfg, stdscr, tree.Children[sysName], 0)
 			if err != nil {
 				return err
 			}
@@ -332,15 +332,13 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 				idx = newIdx
 				tree = buildTree(files)
 
-				seen = make(map[string]bool)
-				sysIds = sysIds[:0]
-				for _, f := range files {
-					if !seen[f.SystemId] && tree.Children[f.SystemId] != nil {
-						seen[f.SystemId] = true
-						sysIds = append(sysIds, f.SystemId)
-					}
+				// Rebuild system names after rebuild
+				sysNames = sysNames[:0]
+				for name := range tree.Children {
+					sysNames = append(sysNames, name)
 				}
-				items = append([]string{}, sysIds...)
+				// sort.Strings(sysNames) // optional
+				items = append([]string{}, sysNames...)
 			}
 		case 5: // Exit
 			return nil
