@@ -146,7 +146,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		files = append(files, entries...)
 	}
 
-	// 🔑 keep your outline, but still load via loader
+	// keep your outline, but still load via loader
 	return loadingWindow(stdscr, loadMenuDb)
 }
 
