@@ -24,23 +24,26 @@ const appName = "gamesmenu"
 // -------------------------
 // Database loading
 // -------------------------
-func loadMenuDb() ([]gamesdb.GobEntry, error) {
-	return gamesdb.LoadGobEntries(config.MenuDb)
+func loadMenuDb() ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
+	idx, err := gamesdb.LoadGobIndex(config.MenuDb)
+	if err != nil {
+		return nil, gamesdb.GobIndex{}, err
+	}
+	return idx.Entries, idx, nil
 }
 
 // -------------------------
 // Index regeneration
 // -------------------------
-func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry, error) {
+func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
 	_ = os.Remove(config.MenuDb)
 
 	stdscr.Clear()
 	stdscr.Refresh()
 
-	// Create a bordered subwindow for progress
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
-		return nil, err
+		return nil, gamesdb.GobIndex{}, err
 	}
 	defer win.Delete()
 
@@ -52,27 +55,26 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		total  int
 	}
 
-	// buffer big enough for all systems so we never drop an update
 	updates := make(chan progress, len(games.AllSystems()))
 
 	status := struct {
 		Complete bool
 		Error    error
-		Files    []gamesdb.GobEntry
+		Idx      gamesdb.GobIndex
 	}{}
 
-	// Worker goroutine: build index and push updates
+	// Worker goroutine
 	go func() {
-		files, err := gamesdb.BuildGobEntries(cfg, games.AllSystems(),
+		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
 			func(system string, done, total int) {
 				updates <- progress{system, done, total}
 			})
 		if err == nil {
-			err = gamesdb.SaveGobEntries(files, config.MenuDb)
+			err = gamesdb.SaveGobIndex(idx, config.MenuDb)
 		}
 		status.Error = err
 		status.Complete = true
-		status.Files = files
+		status.Idx = idx
 		close(updates)
 	}()
 
@@ -123,11 +125,10 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 	stdscr.Refresh()
 
 	if status.Error != nil {
-		return nil, status.Error
+		return nil, gamesdb.GobIndex{}, status.Error
 	}
 
-	// 🔹 Return the already sorted slice
-	return status.Files, nil
+	return status.Idx.Entries, status.Idx, nil
 }
 
 // -------------------------
@@ -152,7 +153,7 @@ func buildTree(files []gamesdb.GobEntry) *Node {
 			} else {
 				if curr.Children[part] == nil {
 					curr.Children[part] = &Node{Name: part, Children: make(map[string]*Node)}
-					curr.ChildNames = append(curr.ChildNames, part) // preserve order
+					curr.ChildNames = append(curr.ChildNames, part)
 				}
 				curr = curr.Children[part]
 			}
@@ -247,13 +248,13 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry,
 		InitialIndex:  0,
 	}, []string{"Rebuild games database..."})
 	if err != nil {
-		return nil, nil, err
+		return nil, gamesdb.GobIndex{}, err
 	}
 
 	if button == 0 && selected == 0 {
 		return generateIndexWindow(cfg, stdscr)
 	}
-	return nil, nil, nil
+	return nil, gamesdb.GobIndex{}, nil
 }
 
 // -------------------------
@@ -389,10 +390,10 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 // -------------------------
 func loadingWindow(stdscr *gc.Window, loadFn func() ([]gamesdb.GobEntry, gamesdb.GobIndex, error)) ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
 	status := struct {
-		Done   bool
-		Error  error
-		Files  []gamesdb.GobEntry
-		Idx    gamesdb.GobIndex
+		Done  bool
+		Error error
+		Files []gamesdb.GobEntry
+		Idx   gamesdb.GobIndex
 	}{}
 
 	go func() {
@@ -418,7 +419,7 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]gamesdb.GobEntry, gamesdb
 	}
 
 	if status.Error != nil {
-		return nil, nil, status.Error
+		return nil, gamesdb.GobIndex{}, status.Error
 	}
 	return status.Files, status.Idx, nil
 }
@@ -427,6 +428,7 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]gamesdb.GobEntry, gamesdb
 // Main
 // -------------------------
 func main() {
+	// Lockfile
 	lockFile := "/tmp/gamesmenu.lock"
 	f, err := os.OpenFile(lockFile, os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
@@ -457,6 +459,7 @@ func main() {
 	_, _ = f.WriteString(fmt.Sprintf("%d", os.Getpid()))
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 
+	// Startup
 	printPtr := flag.Bool("print", false, "Print game path instead of launching")
 	flag.Parse()
 	launchGame := !*printPtr
