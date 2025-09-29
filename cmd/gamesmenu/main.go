@@ -349,8 +349,19 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 			continue
 		}
 
+		// 🔑 Deduplicate by Name+Ext
+		seen := make(map[string]bool)
+		var uniqueResults []gamesdb.GobEntry
 		var items []string
+
 		for _, r := range results {
+			key := fmt.Sprintf("%s.%s", r.Name, r.Ext)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			uniqueResults = append(uniqueResults, r)
+
 			systemName := r.SystemId
 			if sys, err := games.GetSystem(r.SystemId); err == nil {
 				systemName = sys.Name
@@ -381,7 +392,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 			}
 			startIndex = selected
 			if button == 2 {
-				game := results[selected]
+				game := uniqueResults[selected]
 				sys, _ := games.GetSystem(game.SystemId)
 				_ = mister.LaunchGame(cfg, *sys, game.Path)
 				continue
