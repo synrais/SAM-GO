@@ -175,29 +175,15 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 		stdscr.Clear()
 		stdscr.Refresh()
 
-		// Collect folders, then sort
+		// Collect folders (no sorting)
 		var items []string
 		var folders []string
 		for name := range node.Children {
 			folders = append(folders, name)
 		}
-		sort.Strings(folders)
 		items = append(items, folders...)
 
-		// 🔹 Sort node.Files directly by display name so launch order matches menu
-		sort.Slice(node.Files, func(i, j int) bool {
-			nameA := node.Files[i].Name
-			if node.Files[i].Ext != "" {
-				nameA = fmt.Sprintf("%s.%s", node.Files[i].Name, node.Files[i].Ext)
-			}
-			nameB := node.Files[j].Name
-			if node.Files[j].Ext != "" {
-				nameB = fmt.Sprintf("%s.%s", node.Files[j].Name, node.Files[j].Ext)
-			}
-			return strings.ToLower(nameA) < strings.ToLower(nameB)
-		})
-
-		// Build display names from sorted files
+		// Collect files (no sorting)
 		var fileNames []string
 		for _, f := range node.Files {
 			displayName := f.Name
