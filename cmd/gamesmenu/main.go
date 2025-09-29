@@ -47,7 +47,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 	stdscr.Clear()
 	stdscr.Refresh()
 
-	// Create a bordered subwindow for progress
 	win, err := curses.NewWindow(stdscr, 4, 75, "", -1)
 	if err != nil {
 		return nil, nil, err
@@ -56,7 +55,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 
 	_, width := win.MaxYX()
 
-	// Progress update structure
 	type progress struct {
 		system string
 		done   int
@@ -70,7 +68,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		Idx      gamesdb.GobIndex
 	}{}
 
-	// Worker goroutine: build index and push updates
 	go func() {
 		idx, err := gamesdb.BuildGobIndex(cfg, games.AllSystems(),
 			func(system string, done, total int) {
@@ -96,8 +93,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		if status.Complete {
 			break
 		}
-
-		// Non-blocking receive
 		select {
 		case p, ok := <-updates:
 			if ok {
@@ -106,7 +101,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		default:
 		}
 
-		// Clear only the text row (line 1 inside border)
 		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
 
 		if lastProgress != nil {
@@ -114,7 +108,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 				lastProgress.system, lastProgress.done, lastProgress.total)
 			win.MovePrint(1, 2, text)
 
-			// Progress bar (line 2 inside border)
 			progressWidth := width - 4
 			filled := int(float64(lastProgress.done) / float64(lastProgress.total) * float64(progressWidth))
 			for i := 0; i < filled; i++ {
@@ -124,7 +117,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 			win.MovePrint(1, 2, "Indexing games...")
 		}
 
-		// Spinner in top-right corner
 		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
 		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
 
@@ -140,13 +132,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.G
 		return nil, nil, status.Error
 	}
 
-	// Flatten map into slice
-	var files []gamesdb.GobEntry
-	for _, entries := range status.Idx {
-		files = append(files, entries...)
-	}
-
-	// keep your outline, but still load via loader
 	return loadingWindow(stdscr, loadMenuDb)
 }
 
@@ -180,7 +165,6 @@ func buildTree(files []gamesdb.GobEntry) *Node {
 
 func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startIndex int) (int, error) {
 	currentIndex := startIndex
-
 	for {
 		stdscr.Clear()
 		stdscr.Refresh()
@@ -230,7 +214,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 
 		currentIndex = selected
 		switch button {
-		case 2: // Open/Launch
+		case 2:
 			if selected < len(folders) {
 				folderName := folders[selected]
 				childIdx, err := browseNode(cfg, stdscr, node.Children[folderName], 0)
@@ -244,10 +228,37 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 				sys, _ := games.GetSystem(file.SystemId)
 				_ = mister.LaunchGame(cfg, *sys, file.Path)
 			}
-		case 3: // Back
+		case 3:
 			return currentIndex, nil
 		}
 	}
+}
+
+// -------------------------
+// Options menu
+// -------------------------
+func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
+	stdscr.Clear()
+	stdscr.Refresh()
+
+	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
+		Title:         "Options",
+		Buttons:       []string{"Select", "Back"},
+		DefaultButton: 0,
+		ActionButton:  0,
+		ShowTotal:     false,
+		Width:         60,
+		Height:        10,
+		InitialIndex:  0,
+	}, []string{"Rebuild games database..."})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if button == 0 && selected == 0 {
+		return generateIndexWindow(cfg, stdscr)
+	}
+	return nil, nil, nil
 }
 
 // -------------------------
@@ -262,9 +273,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 		sysIds = append(sysIds, sysId)
 	}
 	sort.Strings(sysIds)
-	for _, sysId := range sysIds {
-		items = append(items, sysId)
-	}
+	items = append(items, sysIds...)
 
 	startIndex := 0
 	for {
@@ -273,7 +282,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         "Systems",
-			Buttons:       []string{"PgUp", "PgDn", "", "Search", "Rebuild", "Exit"},
+			Buttons:       []string{"PgUp", "PgDn", "", "Search", "Options", "Exit"},
 			ActionButton:  2,
 			DefaultButton: 2,
 			ShowTotal:     true,
@@ -302,22 +311,22 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []gamesdb.GobEntr
 			}
 			stdscr.Clear()
 			stdscr.Refresh()
-		case 4: // Rebuild DB
-			newFiles, newIdx, err := generateIndexWindow(cfg, stdscr)
+		case 4: // Options
+			newFiles, newIdx, err := optionsMenu(cfg, stdscr)
 			if err != nil {
 				return err
 			}
-			files = newFiles
-			idx = newIdx
-			tree = buildTree(files)
-			sysIds = sysIds[:0]
-			items = items[:0]
-			for sysId := range tree.Children {
-				sysIds = append(sysIds, sysId)
-			}
-			sort.Strings(sysIds)
-			for _, sysId := range sysIds {
-				items = append(items, sysId)
+			if newFiles != nil {
+				files = newFiles
+				idx = newIdx
+				tree = buildTree(files)
+				sysIds = sysIds[:0]
+				items = items[:0]
+				for sysId := range tree.Children {
+					sysIds = append(sysIds, sysId)
+				}
+				sort.Strings(sysIds)
+				items = append(items, sysIds...)
 			}
 		case 5: // Exit
 			return nil
@@ -348,7 +357,6 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 			continue
 		}
 
-		// Build display items directly from SearchName
 		var items []string
 		for _, r := range results {
 			items = append(items, r.SearchName)
@@ -373,13 +381,13 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 			}
 			startIndex = selected
 
-			if button == 2 { // Launch
+			if button == 2 {
 				game := results[selected]
 				sys, _ := games.GetSystem(game.SystemId)
 				_ = mister.LaunchGame(cfg, *sys, game.Path)
 				continue
 			}
-			if button == 3 { // Back
+			if button == 3 {
 				stdscr.Clear()
 				stdscr.Refresh()
 				break
@@ -393,10 +401,10 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window, idx gamesdb.GobInde
 // -------------------------
 func loadingWindow(stdscr *gc.Window, loadFn func() ([]gamesdb.GobEntry, gamesdb.GobIndex, error)) ([]gamesdb.GobEntry, gamesdb.GobIndex, error) {
 	status := struct {
-		Done   bool
-		Error  error
-		Files  []gamesdb.GobEntry
-		Idx    gamesdb.GobIndex
+		Done  bool
+		Error error
+		Files []gamesdb.GobEntry
+		Idx   gamesdb.GobIndex
 	}{}
 
 	go func() {
@@ -431,7 +439,6 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]gamesdb.GobEntry, gamesdb
 // Main
 // -------------------------
 func main() {
-	// --- Lockfile to prevent multiple instances ---
 	lockFile := "/tmp/gamesmenu.lock"
 	f, err := os.OpenFile(lockFile, os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
@@ -462,7 +469,6 @@ func main() {
 	_, _ = f.WriteString(fmt.Sprintf("%d", os.Getpid()))
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 
-	// --- Normal startup ---
 	printPtr := flag.Bool("print", false, "Print game path instead of launching")
 	flag.Parse()
 	launchGame := !*printPtr
