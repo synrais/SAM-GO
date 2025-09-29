@@ -328,8 +328,8 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			} else if newFiles != nil {
 				files := newFiles
 				tree = buildTree(files)
-				sysIds = sysIds[:0}
-				items = items[:0}
+				sysIds = sysIds[:0]
+				items = items[:0]
 				for sysId := range tree.Children {
 					sysIds = append(sysIds, sysId)
 				}
