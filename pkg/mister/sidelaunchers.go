@@ -406,6 +406,7 @@ func LaunchGameNWatch(cfg *config.UserConfig, system games.System, path string) 
     appendLog(fmt.Sprintf("Launching FDS title: %s", path))
 
     // Create virtual gamepad
+	time.Sleep(2 * time.Second)
     gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
     if err != nil {
         appendLog(fmt.Sprintf("ERROR: failed to create gamepad: %v", err))
