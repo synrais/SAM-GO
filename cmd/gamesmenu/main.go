@@ -204,12 +204,25 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 		stdscr.Clear()
 		stdscr.Refresh()
 
-		var items []string
+		// ---- Build folder list (sorted) ----
 		var folders []string
 		for name := range node.Children {
 			folders = append(folders, name)
 		}
 		sort.Strings(folders)
+
+		// ---- Sort files by Name (and Ext as tiebreaker) ----
+		if len(node.Files) > 1 {
+			sort.Slice(node.Files, func(i, j int) bool {
+				if node.Files[i].Name == node.Files[j].Name {
+					return node.Files[i].Ext < node.Files[j].Ext
+				}
+				return node.Files[i].Name < node.Files[j].Name
+			})
+		}
+
+		// ---- Build items (folders first, then files) ----
+		var items []string
 		items = append(items, folders...)
 		for _, f := range node.Files {
 			displayName := f.Name
@@ -264,7 +277,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 				stdscr.Clear()
 				stdscr.Refresh()
 			}
-		case 3:
+		case 3: // Back
 			stdscr.Clear()
 			stdscr.Refresh()
 			return currentIndex, nil
