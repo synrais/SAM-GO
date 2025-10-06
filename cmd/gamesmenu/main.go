@@ -82,16 +82,42 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
     _ = gamesdb.ResetDatabase()
 
     var count int
-    err := runWithSpinner(stdscr, "Indexing games...", func() error {
-        var err error
-        count, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(_ gamesdb.IndexStatus) {})
-        return err
-    })
+    var currentStatus gamesdb.IndexStatus
+    var done bool
+    var err error
+
+    go func() {
+        count, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
+            currentStatus = is
+        })
+        done = true
+    }()
+
+    spinnerSeq := []string{"|", "/", "-", "\\"}
+    spinnerCount := 0
+    for {
+        if done {
+            break
+        }
+
+        sysName := currentStatus.SystemId
+        if sys, serr := games.GetSystem(currentStatus.SystemId); serr == nil {
+            sysName = sys.Name
+        }
+
+        text := fmt.Sprintf("Indexing %s... (%d files)", sysName, currentStatus.Files)
+        label := fmt.Sprintf("%s %s", text, spinnerSeq[spinnerCount])
+        _ = curses.InfoBox(stdscr, "", label, false, false)
+
+        spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+        _ = gc.Update()
+        gc.Nap(100)
+    }
+
     if err != nil {
         return nil, err
     }
 
-    // show count feedback at the end
     _ = curses.InfoBox(stdscr, "", fmt.Sprintf("Indexed %d games successfully.", count), false, true)
 
     files, err := loadMenuDb()
