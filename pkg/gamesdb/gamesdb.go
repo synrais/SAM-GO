@@ -187,10 +187,10 @@ func NewNamesIndex(cfg *config.UserConfig, systems []games.System, update func(I
 }
 
 // -------------------------
-// Searching (deduplicated + supports .ext queries combined with names)
+// Searching
 // -------------------------
 
-func searchGeneric(query string, test func(string, string, string) bool) ([]SearchResult, error) {
+func searchGeneric(query string, test func(name, ext string) bool) ([]SearchResult, error) {
 	files, err := loadAll()
 	if err != nil {
 		return nil, err
@@ -200,7 +200,7 @@ func searchGeneric(query string, test func(string, string, string) bool) ([]Sear
 	seen := make(map[string]bool) // key = name|ext
 
 	for _, f := range files {
-		if test(query, f.Name, f.Ext) {
+		if test(f.Name, f.Ext) {
 			key := strings.ToLower(fmt.Sprintf("%s|%s", f.Name, f.Ext))
 			if seen[key] {
 				continue
@@ -221,14 +221,42 @@ func searchGeneric(query string, test func(string, string, string) bool) ([]Sear
 func SearchNamesWords(_ []games.System, query string) ([]SearchResult, error) {
 	words := strings.Fields(strings.ToLower(query))
 
-	return searchGeneric(query, func(_ string, name string, ext string) bool {
-		full := strings.ToLower(fmt.Sprintf("%s.%s", name, ext))
-		for _, w := range words {
-			// allow ".ext" or "ext" matches anywhere in full string
-			if !strings.Contains(full, strings.TrimPrefix(w, ".")) {
+	// Extract any explicit extension filters (e.g. ".nes")
+	var extFilters []string
+	for _, w := range words {
+		if strings.HasPrefix(w, ".") && len(w) > 1 {
+			extFilters = append(extFilters, strings.TrimPrefix(w, "."))
+		}
+	}
+
+	return searchGeneric(query, func(name, ext string) bool {
+		nameLow := strings.ToLower(name)
+		extLow := strings.ToLower(ext)
+
+		// If user included ".ext" in the query → strict extension filter
+		if len(extFilters) > 0 {
+			match := false
+			for _, e := range extFilters {
+				if e == extLow {
+					match = true
+					break
+				}
+			}
+			if !match {
 				return false
 			}
 		}
+
+		// Must match all remaining non-extension words in the name
+		for _, w := range words {
+			if strings.HasPrefix(w, ".") {
+				continue // skip explicit extensions
+			}
+			if !strings.Contains(nameLow, w) {
+				return false
+			}
+		}
+
 		return true
 	})
 }
