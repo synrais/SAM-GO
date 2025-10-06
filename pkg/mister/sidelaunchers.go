@@ -432,7 +432,8 @@ func LaunchGameNWatch(cfg *config.UserConfig, system games.System, path string) 
 		} else {
 			appendLog("Successfully pressed Button A.")
 		}
-
+		
+		time.Sleep(1 * time.Second)
 		_ = g.Close()
 		appendLog("Virtual gamepad closed.")
 	}(gpd)
