@@ -187,7 +187,7 @@ func NewNamesIndex(cfg *config.UserConfig, systems []games.System, update func(I
 }
 
 // -------------------------
-// Searching
+// Searching (deduplicated + by extension)
 // -------------------------
 
 func searchGeneric(query string, test func(string, string) bool) ([]SearchResult, error) {
@@ -200,8 +200,7 @@ func searchGeneric(query string, test func(string, string) bool) ([]SearchResult
 	seen := make(map[string]bool) // key = name|ext
 
 	for _, f := range files {
-		if test(query, f.Name) {
-			// Build a normalized key for deduplication
+		if test(query, f.Name) || test(query, f.Ext) {
 			key := strings.ToLower(fmt.Sprintf("%s|%s", f.Name, f.Ext))
 			if seen[key] {
 				continue
