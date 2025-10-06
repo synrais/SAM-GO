@@ -392,55 +392,24 @@ func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
 // --------------------------------------------------
 
 func LaunchGameNWatch(cfg *config.UserConfig, system games.System, path string) error {
-	logFile := "/tmp/gamenwatch_sidelauncher.log"
-
-	appendLog := func(msg string) {
-		f, _ := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-		if f != nil {
-			defer f.Close()
-			ts := time.Now().Format("2006-01-02 15:04:05")
-			_, _ = fmt.Fprintf(f, "[%s] %s\n", ts, msg)
-		}
-	}
-
-	appendLog(fmt.Sprintf("Launching Game & Watch title: %s", path))
-
-	// Launch the game core first
-	if err := launchTempMgl(cfg, &system, path); err != nil {
-		appendLog(fmt.Sprintf("ERROR: failed to launch Game & Watch game: %v", err))
+	gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
+	if err != nil {
 		return err
 	}
 
-	appendLog("Core launched successfully. Starting gamepad sequence in background...")
-
-	// Non-blocking goroutine (identical behavior to FDS)
-	go func() {
-		appendLog("Waiting 2 seconds before creating gamepad...")
-		time.Sleep(2 * time.Second)
-
-		gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
-		if err != nil {
-			appendLog(fmt.Sprintf("ERROR: failed to create gamepad: %v", err))
-			return
-		}
-		appendLog("Virtual gamepad created successfully.")
-
-		appendLog("Waiting 5 seconds before pressing Button A...")
-		time.Sleep(5 * time.Second)
-
-		appendLog("Attempting to press Button A (ButtonEast)...")
-		if err := gpd.Press(uinput.ButtonEast); err != nil {
-			appendLog(fmt.Sprintf("ERROR: failed to press Button A: %v", err))
-		} else {
-			appendLog("Successfully pressed Button A.")
-		}
-
-		appendLog("Holding for 1 second before closing gamepad...")
-		time.Sleep(1 * time.Second)
-
+	if err := launchTempMgl(cfg, &system, path); err != nil {
 		_ = gpd.Close()
-		appendLog("Virtual gamepad closed.")
-	}()
+		return err
+	}
 
-	return nil // ← Menu can return instantly
+	go func(g virtualinput.Gamepad) {
+		time.Sleep(10 * time.Second)
+		_ = g.Press(uinput.ButtonEast)
+		time.Sleep(1 * time.Second)
+		_ = g.Press(uinput.ButtonSouth)
+		time.Sleep(1 * time.Second)
+		_ = g.Close()
+	}(gpd)
+
+	return nil
 }
