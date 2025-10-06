@@ -23,13 +23,11 @@ import (
 
 const appName = "gamesmenu"
 
-// -------------------------
-// MenuFile (from gamesdb)
-// -------------------------
+// alias of gamesdb.FileInfo for clarity
 type MenuFile = gamesdb.FileInfo
 
 // -------------------------
-// Database loading
+// Load Gob index
 // -------------------------
 func loadMenuDb() ([]MenuFile, error) {
 	f, err := os.Open(config.MenuDb)
@@ -37,10 +35,8 @@ func loadMenuDb() ([]MenuFile, error) {
 		return nil, err
 	}
 	defer f.Close()
-
 	var files []MenuFile
-	dec := gob.NewDecoder(f)
-	if err := dec.Decode(&files); err != nil {
+	if err := gob.NewDecoder(f).Decode(&files); err != nil {
 		return nil, err
 	}
 	return files, nil
@@ -62,7 +58,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 	defer win.Delete()
 
 	_, width := win.MaxYX()
-
 	drawProgressBar := func(current, total int) {
 		if total == 0 {
 			return
@@ -77,14 +72,10 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 		}
 		win.NoutRefresh()
 	}
-
-	clearText := func() {
-		win.MovePrint(1, 2, strings.Repeat(" ", width-4))
-	}
+	clearText := func() { win.MovePrint(1, 2, strings.Repeat(" ", width-4)) }
 
 	status := struct {
-		Step        int
-		Total       int
+		Step, Total int
 		DisplayText string
 		Complete    bool
 		Error       error
@@ -92,22 +83,18 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 
 	go func() {
 		_, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(is gamesdb.IndexStatus) {
-			systemName := is.SystemId
+			sysName := is.SystemId
 			if sys, err := games.GetSystem(is.SystemId); err == nil {
-				systemName = sys.Name
+				sysName = sys.Name
 			}
-			text := fmt.Sprintf("Indexing %s... (%d files)", systemName, is.Files)
-			status.Step = is.Step
-			status.Total = is.Total
-			status.DisplayText = text
+			text := fmt.Sprintf("Indexing %s... (%d files)", sysName, is.Files)
+			status.Step, status.Total, status.DisplayText = is.Step, is.Total, text
 		})
-		status.Error = err
-		status.Complete = true
+		status.Error, status.Complete = err, true
 	}()
 
 	spinnerSeq := []string{"|", "/", "-", "\\"}
 	spinnerCount := 0
-
 	for {
 		if status.Complete {
 			break
@@ -124,11 +111,9 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 
 	stdscr.Clear()
 	stdscr.Refresh()
-
 	if status.Error != nil {
 		return nil, status.Error
 	}
-
 	return loadingWindow(stdscr, loadMenuDb)
 }
 
@@ -147,11 +132,12 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) 
 		ShowTotal:     false,
 		Width:         60,
 		Height:        10,
-		InitialIndex:  0,
 	}, []string{"Rebuild games database..."})
 	if err != nil {
 		return nil, err
 	}
+	stdscr.Clear()
+	stdscr.Refresh()
 
 	if button == 0 && selected == 0 {
 		return generateIndexWindow(cfg, stdscr)
@@ -189,7 +175,6 @@ func buildTree(files []MenuFile) *Node {
 
 func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startIndex int) (int, error) {
 	currentIndex := startIndex
-
 	for {
 		stdscr.Clear()
 		stdscr.Refresh()
@@ -201,7 +186,6 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 		}
 		sort.Strings(folders)
 		items = append(items, folders...)
-
 		for _, f := range node.Files {
 			displayName := f.Name
 			if f.Ext != "" {
@@ -216,7 +200,6 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 		}
 
 		buttons := []string{"PgUp", "PgDn", "", "Back"}
-
 		button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         title,
 			Buttons:       buttons,
@@ -239,21 +222,26 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 
 		currentIndex = selected
 		switch button {
-		case 2: // Open or Launch
+		case 2: // Open/Launch
+			stdscr.Clear()
+			stdscr.Refresh()
 			if selected < len(folders) {
-				folderName := folders[selected]
-				childIdx, err := browseNode(cfg, stdscr, node.Children[folderName], 0)
+				childName := folders[selected]
+				childIdx, err := browseNode(cfg, stdscr, node.Children[childName], 0)
 				if err != nil {
 					return currentIndex, err
 				}
-				currentIndex = selected
-				_ = childIdx
+				currentIndex = childIdx
 			} else {
 				file := node.Files[selected-len(folders)]
 				sys, _ := games.GetSystem(file.SystemId)
 				_ = mister.LaunchGame(cfg, *sys, file.Path)
+				stdscr.Clear()
+				stdscr.Refresh()
 			}
-		case 3: // Back
+		case 3:
+			stdscr.Clear()
+			stdscr.Refresh()
 			return currentIndex, nil
 		}
 	}
@@ -264,15 +252,16 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 // -------------------------
 func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error {
 	tree := buildTree(files)
-
-	var items []string
 	var sysIds []string
-	for sysId := range tree.Children {
-		sysIds = append(sysIds, sysId)
+	for id := range tree.Children {
+		sysIds = append(sysIds, id)
 	}
 	sort.Strings(sysIds)
-	for _, sysId := range sysIds {
-		items = append(items, sysId)
+
+	makeList := func() []string {
+		items := make([]string, len(sysIds))
+		copy(items, sysIds)
+		return items
 	}
 
 	startIndex := 0
@@ -289,41 +278,48 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			Width:         70,
 			Height:        20,
 			InitialIndex:  startIndex,
-			DynamicActionLabel: func(idx int) string { return "Open" },
-		}, items)
+			DynamicActionLabel: func(_ int) string { return "Open" },
+		}, makeList())
 		if err != nil {
 			return err
 		}
 
 		startIndex = selected
+		stdscr.Clear()
+		stdscr.Refresh()
+
 		switch button {
-		case 2: // Open
+		case 2: // open
 			sysId := sysIds[selected]
 			_, err := browseNode(cfg, stdscr, tree.Children[sysId], 0)
 			if err != nil {
 				return err
 			}
-		case 3: // Search
+			stdscr.Clear()
+			stdscr.Refresh()
+		case 3: // search
 			if err := searchWindow(cfg, stdscr); err != nil {
 				return err
 			}
-		case 4: // Options
+			stdscr.Clear()
+			stdscr.Refresh()
+		case 4: // options
 			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
 				return err
 			} else if newFiles != nil {
 				files = newFiles
 				tree = buildTree(files)
 				sysIds = sysIds[:0]
-				items = items[:0]
-				for sysId := range tree.Children {
-					sysIds = append(sysIds, sysId)
+				for id := range tree.Children {
+					sysIds = append(sysIds, id)
 				}
 				sort.Strings(sysIds)
-				for _, sysId := range sysIds {
-					items = append(items, sysId)
-				}
 			}
-		case 5: // Exit
+			stdscr.Clear()
+			stdscr.Refresh()
+		case 5:
+			stdscr.Clear()
+			stdscr.Refresh()
 			return nil
 		}
 	}
@@ -341,10 +337,11 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	for {
 		button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
 		if err != nil || button == 1 {
+			stdscr.Clear()
+			stdscr.Refresh()
 			return nil
 		}
 		text = query
-
 		_ = curses.InfoBox(stdscr, "", "Searching...", false, false)
 
 		status := struct {
@@ -355,14 +352,11 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 
 		go func() {
 			results, err := gamesdb.SearchNamesWords(games.AllSystems(), query)
-			status.Result = results
-			status.Error = err
-			status.Done = true
+			status.Result, status.Error, status.Done = results, err, true
 		}()
 
 		spinnerSeq := []string{"|", "/", "-", "\\"}
 		spinnerCount := 0
-
 		for {
 			if status.Done {
 				break
@@ -374,6 +368,9 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 			gc.Nap(100)
 		}
 
+		stdscr.Clear()
+		stdscr.Refresh()
+
 		if status.Error != nil {
 			return status.Error
 		}
@@ -381,6 +378,8 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 		results := status.Result
 		if len(results) == 0 {
 			_ = curses.InfoBox(stdscr, "", "No results found.", false, true)
+			stdscr.Clear()
+			stdscr.Refresh()
 			continue
 		}
 
@@ -390,17 +389,16 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 			if sys, err := games.GetSystem(r.SystemId); err == nil {
 				systemName = sys.Name
 			}
-			displayName := r.Name
+			display := r.Name
 			if r.Ext != "" {
-				displayName = fmt.Sprintf("%s.%s", r.Name, r.Ext)
+				display = fmt.Sprintf("%s.%s", r.Name, r.Ext)
 			}
-			items = append(items, fmt.Sprintf("[%s] %s", systemName, displayName))
+			items = append(items, fmt.Sprintf("[%s] %s", systemName, display))
 		}
 
 		for {
 			stdscr.Clear()
 			stdscr.Refresh()
-
 			button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 				Title:         "Search Results",
 				Buttons:       []string{"PgUp", "PgDn", "Launch", "Back"},
@@ -419,7 +417,11 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 				game := results[selected]
 				sys, _ := games.GetSystem(game.SystemId)
 				_ = mister.LaunchGame(cfg, *sys, game.Path)
+				stdscr.Clear()
+				stdscr.Refresh()
 			} else if button == 3 {
+				stdscr.Clear()
+				stdscr.Refresh()
 				break
 			}
 		}
@@ -438,14 +440,11 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]MenuFile, error)) ([]Menu
 
 	go func() {
 		files, err := loadFn()
-		status.Result = files
-		status.Error = err
-		status.Done = true
+		status.Result, status.Error, status.Done = files, err, true
 	}()
 
 	spinnerSeq := []string{"|", "/", "-", "\\"}
 	spinnerCount := 0
-
 	for {
 		if status.Done {
 			break
@@ -457,6 +456,8 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]MenuFile, error)) ([]Menu
 		gc.Nap(100)
 	}
 
+	stdscr.Clear()
+	stdscr.Refresh()
 	if status.Error != nil {
 		return nil, status.Error
 	}
@@ -467,7 +468,6 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]MenuFile, error)) ([]Menu
 // Main
 // -------------------------
 func main() {
-	// --- Lockfile to prevent multiple instances ---
 	lockFile := "/tmp/gamesmenu.lock"
 	f, err := os.OpenFile(lockFile, os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
@@ -475,10 +475,7 @@ func main() {
 	}
 	defer f.Close()
 
-	tryLock := func() error {
-		return syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-	}
-
+	tryLock := func() error { return syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) }
 	if err := tryLock(); err != nil {
 		buf := make([]byte, 32)
 		n, _ := f.ReadAt(buf, 0)
@@ -496,10 +493,8 @@ func main() {
 	_ = f.Truncate(0)
 	_, _ = f.Seek(0, 0)
 	_, _ = f.WriteString(fmt.Sprintf("%d", os.Getpid()))
-
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 
-	// --- Normal startup ---
 	printPtr := flag.Bool("print", false, "Print game path instead of launching")
 	flag.Parse()
 	launchGame := !*printPtr
