@@ -21,14 +21,16 @@ import (
 	"github.com/synrais/SAM-GO/pkg/mister"
 )
 
-const appName = "gamesmenu"
+// -------------------------
+// Aliases
+// -------------------------
 
-// alias of gamesdb.FileInfo for clarity
 type MenuFile = gamesdb.FileInfo
 
 // -------------------------
-// Load Gob index
+// Load Gob Index
 // -------------------------
+
 func loadMenuDb() ([]MenuFile, error) {
 	f, err := os.Open(config.MenuDb)
 	if err != nil {
@@ -43,8 +45,9 @@ func loadMenuDb() ([]MenuFile, error) {
 }
 
 // -------------------------
-// Index regeneration
+// Index Generation
 // -------------------------
+
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
 	_ = os.Remove(config.MenuDb)
 
@@ -114,12 +117,14 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 	if status.Error != nil {
 		return nil, status.Error
 	}
+
 	return loadingWindow(stdscr, loadMenuDb)
 }
 
 // -------------------------
-// Options
+// Options Menu
 // -------------------------
+
 func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
 	stdscr.Clear()
 	stdscr.Refresh()
@@ -146,8 +151,9 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) 
 }
 
 // -------------------------
-// Tree navigation
+// Tree Navigation
 // -------------------------
+
 type Node struct {
 	Name     string
 	Files    []MenuFile
@@ -222,7 +228,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 
 		currentIndex = selected
 		switch button {
-		case 2: // Open/Launch
+		case 2: // Open / Launch
 			stdscr.Clear()
 			stdscr.Refresh()
 			if selected < len(folders) {
@@ -248,8 +254,9 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 }
 
 // -------------------------
-// Main menu
+// Main Menu
 // -------------------------
+
 func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error {
 	tree := buildTree(files)
 	var sysIds []string
@@ -289,7 +296,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 		stdscr.Refresh()
 
 		switch button {
-		case 2: // open
+		case 2: // Open
 			sysId := sysIds[selected]
 			_, err := browseNode(cfg, stdscr, tree.Children[sysId], 0)
 			if err != nil {
@@ -297,13 +304,15 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			}
 			stdscr.Clear()
 			stdscr.Refresh()
-		case 3: // search
+
+		case 3: // Search
 			if err := searchWindow(cfg, stdscr); err != nil {
 				return err
 			}
 			stdscr.Clear()
 			stdscr.Refresh()
-		case 4: // options
+
+		case 4: // Options
 			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
 				return err
 			} else if newFiles != nil {
@@ -317,6 +326,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			}
 			stdscr.Clear()
 			stdscr.Refresh()
+
 		case 5:
 			stdscr.Clear()
 			stdscr.Refresh()
@@ -326,8 +336,9 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 }
 
 // -------------------------
-// Search window
+// Search Window (uses cached gamesdb search)
 // -------------------------
+
 func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	stdscr.Clear()
 	stdscr.Refresh()
@@ -429,8 +440,9 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 }
 
 // -------------------------
-// Loader
+// Loading Spinner
 // -------------------------
+
 func loadingWindow(stdscr *gc.Window, loadFn func() ([]MenuFile, error)) ([]MenuFile, error) {
 	status := struct {
 		Done   bool
@@ -465,8 +477,9 @@ func loadingWindow(stdscr *gc.Window, loadFn func() ([]MenuFile, error)) ([]Menu
 }
 
 // -------------------------
-// Main
+// Main Entry
 // -------------------------
+
 func main() {
 	lockFile := "/tmp/gamesmenu.lock"
 	f, err := os.OpenFile(lockFile, os.O_CREATE|os.O_RDWR, 0666)
@@ -499,7 +512,7 @@ func main() {
 	flag.Parse()
 	launchGame := !*printPtr
 
-	cfg, err := config.LoadUserConfig(appName, &config.UserConfig{})
+	cfg, err := config.LoadUserConfig("gamesmenu", &config.UserConfig{})
 	if err != nil && !os.IsNotExist(err) {
 		log.Fatal(err)
 	}
