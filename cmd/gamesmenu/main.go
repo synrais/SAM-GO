@@ -61,6 +61,7 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 	defer win.Delete()
 
 	_, width := win.MaxYX()
+
 	drawProgressBar := func(current, total int) {
 		if total == 0 {
 			return
@@ -75,11 +76,13 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 		}
 		win.NoutRefresh()
 	}
+
 	clearText := func() { win.MovePrint(1, 2, strings.Repeat(" ", width-4)) }
 
 	status := struct {
 		Step, Total int
-		DisplayText string
+		SystemName  string
+		Files       int
 		Complete    bool
 		Error       error
 	}{}
@@ -90,22 +93,38 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 			if sys, err := games.GetSystem(is.SystemId); err == nil {
 				sysName = sys.Name
 			}
-			text := fmt.Sprintf("Indexing %s... (%d files)", sysName, is.Files)
-			status.Step, status.Total, status.DisplayText = is.Step, is.Total, text
+			status.Step, status.Total, status.SystemName, status.Files = is.Step, is.Total, sysName, is.Files
 		})
 		status.Error, status.Complete = err, true
 	}()
 
 	spinnerSeq := []string{"|", "/", "-", "\\"}
 	spinnerCount := 0
+
 	for {
 		if status.Complete {
 			break
 		}
+
 		clearText()
 		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
+
+		// Spinner stays at far right
 		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
-		win.MovePrint(1, 2, status.DisplayText)
+
+		// Pin the file count at a fixed column (does not move)
+		countText := fmt.Sprintf("%6d files", status.Files)
+		countCol := width - len(countText) - 6 // adjust padding if needed
+		win.MovePrint(1, countCol, countText)
+
+		// Print system name on the left, trimmed so it never reaches count
+		maxSysWidth := countCol - 10
+		sysText := fmt.Sprintf("Indexing %s...", status.SystemName)
+		if len(sysText) > maxSysWidth {
+			sysText = sysText[:maxSysWidth]
+		}
+		win.MovePrint(1, 2, sysText)
+
 		drawProgressBar(status.Step, status.Total)
 		win.NoutRefresh()
 		_ = gc.Update()
