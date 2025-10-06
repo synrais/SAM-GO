@@ -49,13 +49,24 @@ var cacheLoaded bool
 // Helpers
 // -------------------------
 
+// DbExists returns true if the Gob file exists.
 func DbExists() bool {
 	_, err := os.Stat(config.MenuDb)
 	return err == nil
 }
 
+// ResetDatabase removes the on-disk Gob file and clears any in-memory cache.
+func ResetDatabase() error {
+	if err := os.Remove(config.MenuDb); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	cachedFiles = nil
+	cacheLoaded = false
+	return nil
+}
+
+// loadAll loads all FileInfo records from disk (or cache if already loaded).
 func loadAll() ([]FileInfo, error) {
-	// If we've already loaded the Gob file once, return the cached version instantly.
 	if cacheLoaded {
 		return cachedFiles, nil
 	}
@@ -77,6 +88,7 @@ func loadAll() ([]FileInfo, error) {
 	return cachedFiles, nil
 }
 
+// saveAll writes all FileInfo records to disk.
 func saveAll(files []FileInfo) error {
 	if err := os.MkdirAll(filepath.Dir(config.MenuDb), 0755); err != nil {
 		return err
@@ -155,7 +167,6 @@ func NewNamesIndex(cfg *config.UserConfig, systems []games.System, update func(I
 					}
 				}
 
-				// Fallback if no system folder matched
 				if !found {
 					menuPath = filepath.ToSlash(filepath.Join(sys.Name, base))
 				}
@@ -179,7 +190,7 @@ func NewNamesIndex(cfg *config.UserConfig, systems []games.System, update func(I
 		return len(allFiles), err
 	}
 
-	// Update in-memory cache immediately after building
+	// Update cache immediately
 	cachedFiles = allFiles
 	cacheLoaded = true
 
@@ -210,6 +221,7 @@ func searchGeneric(query string, test func(string, string) bool) ([]SearchResult
 	return results, nil
 }
 
+// SearchNamesWords performs a simple multi-word substring match.
 func SearchNamesWords(_ []games.System, query string) ([]SearchResult, error) {
 	words := strings.Fields(strings.ToLower(query))
 	return searchGeneric(query, func(_ string, n string) bool {
