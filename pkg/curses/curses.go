@@ -1,14 +1,9 @@
 package curses
 
 import (
-	"fmt"
 	"strings"
 	gc "github.com/rthornton128/goncurses"
 )
-
-// -------------------------
-// Types & Setup
-// -------------------------
 
 type Coords struct {
 	Y int
@@ -23,7 +18,6 @@ func (e *SetupWindowError) Error() string {
 	return e.Ctx.Error()
 }
 
-// Setup initializes ncurses with sane defaults.
 func Setup() (*gc.Window, error) {
 	stdscr, err := gc.Init()
 	if err != nil {
@@ -40,14 +34,11 @@ func Setup() (*gc.Window, error) {
 	return stdscr, nil
 }
 
-// -------------------------
-// Window helpers
-// -------------------------
-
 func NewWindow(stdscr *gc.Window, height int, width int, title string, timeout int) (*gc.Window, error) {
 	rows, cols := stdscr.MaxYX()
 	y, x := (rows-height)/2, (cols-width)/2
 
+	var win *gc.Window
 	win, err := gc.NewWindow(height, width, y, x)
 	if err != nil {
 		return nil, &SetupWindowError{Ctx: err}
@@ -122,10 +113,6 @@ func DrawActionButtons(win *gc.Window, buttons []string, selected int, _ int) {
 	win.NoutRefresh()
 }
 
-// -------------------------
-// Info Box
-// -------------------------
-
 func InfoBox(stdscr *gc.Window, title string, text string, clear bool, ok bool) error {
 	if clear {
 		stdscr.Erase()
@@ -134,6 +121,10 @@ func InfoBox(stdscr *gc.Window, title string, text string, clear bool, ok bool) 
 	}
 
 	height := 3
+	// if ok {
+	// 	height = 5
+	// }
+
 	win, err := NewWindow(stdscr, height, len(text)+4, title, -1)
 	if err != nil {
 		return err
@@ -141,7 +132,13 @@ func InfoBox(stdscr *gc.Window, title string, text string, clear bool, ok bool) 
 	defer win.Delete()
 
 	gc.Cursor(0)
+
 	win.MovePrint(1, 2, text)
+
+	// if ok {
+	// 	DrawActionButtons(win, []string{"OK"}, 0)
+	// }
+
 	win.NoutRefresh()
 	gc.Update()
 
@@ -150,36 +147,4 @@ func InfoBox(stdscr *gc.Window, title string, text string, clear bool, ok bool) 
 	}
 
 	return nil
-}
-
-// -------------------------
-// New Utilities
-// -------------------------
-
-// ShowCursor toggles cursor visibility (true = show, false = hide)
-func ShowCursor(visible bool) {
-	if visible {
-		gc.Cursor(1)
-	} else {
-		gc.Cursor(0)
-	}
-}
-
-// SpinnerUntilDone shows a centered spinner animation until *done == true.
-// Great for long-running async loads or indexing jobs.
-func SpinnerUntilDone(stdscr *gc.Window, label string, done *bool) {
-	spinnerSeq := []string{"|", "/", "-", "\\"}
-	spinnerCount := 0
-
-	for {
-		if *done {
-			break
-		}
-
-		_ = InfoBox(stdscr, "", fmt.Sprintf("%s %s", label, spinnerSeq[spinnerCount]), false, false)
-		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
-
-		_ = gc.Update()
-		gc.Nap(100)
-	}
 }
