@@ -424,7 +424,7 @@ func LaunchGameNWatch(cfg *config.UserConfig, system games.System, path string) 
 
 	// Run delayed input in background
 	go func(g virtualinput.Gamepad) {
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 		appendLog("Attempting to press Button A (ButtonEast)...")
 
 		if err := g.Press(uinput.ButtonEast); err != nil {
