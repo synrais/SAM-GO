@@ -90,7 +90,7 @@ func saveAll(files []FileInfo) error {
 }
 
 // -------------------------
-// Indexing (Gob-only)
+// Indexing
 // -------------------------
 
 func NewNamesIndex(cfg *config.UserConfig, systems []games.System, update func(IndexStatus)) (int, error) {
@@ -187,7 +187,7 @@ func NewNamesIndex(cfg *config.UserConfig, systems []games.System, update func(I
 }
 
 // -------------------------
-// Searching (in-memory)
+// Searching
 // -------------------------
 
 func searchGeneric(query string, test func(string, string) bool) ([]SearchResult, error) {
@@ -196,9 +196,18 @@ func searchGeneric(query string, test func(string, string) bool) ([]SearchResult
 		return nil, err
 	}
 
-	var results []SearchResult
+	results := make([]SearchResult, 0, 128)
+	seen := make(map[string]bool) // key = name|ext
+
 	for _, f := range files {
 		if test(query, f.Name) {
+			// Build a normalized key for deduplication
+			key := strings.ToLower(fmt.Sprintf("%s|%s", f.Name, f.Ext))
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+
 			results = append(results, SearchResult{
 				SystemId: f.SystemId,
 				Name:     f.Name,
