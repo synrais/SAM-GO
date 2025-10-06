@@ -385,7 +385,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 			}
 			defer kbd.Close()
 
-			time.Sleep(10 * time.Second)
+			time.Sleep(11 * time.Second)
 
 			if code, ok := virtualinput.ToKeyboardCode("b"); ok {
 				_ = kbd.Press(code)
