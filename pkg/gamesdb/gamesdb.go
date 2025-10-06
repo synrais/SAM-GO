@@ -39,6 +39,13 @@ type SearchResult struct {
 }
 
 // -------------------------
+// Global in-memory cache
+// -------------------------
+
+var cachedFiles []FileInfo
+var cacheLoaded bool
+
+// -------------------------
 // Helpers
 // -------------------------
 
@@ -48,17 +55,26 @@ func DbExists() bool {
 }
 
 func loadAll() ([]FileInfo, error) {
+	// If we've already loaded the Gob file once, return the cached version instantly.
+	if cacheLoaded {
+		return cachedFiles, nil
+	}
+
 	f, err := os.Open(config.MenuDb)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+
 	var files []FileInfo
 	dec := gob.NewDecoder(f)
 	if err := dec.Decode(&files); err != nil {
 		return nil, err
 	}
-	return files, nil
+
+	cachedFiles = files
+	cacheLoaded = true
+	return cachedFiles, nil
 }
 
 func saveAll(files []FileInfo) error {
@@ -103,7 +119,7 @@ func NewNamesIndex(cfg *config.UserConfig, systems []games.System, update func(I
 				ext := strings.TrimPrefix(filepath.Ext(base), ".")
 				name := strings.TrimSuffix(base, filepath.Ext(base))
 
-				// --- Recreate original MenuPath logic ---
+				// --- Original MenuPath logic restored ---
 				menuPath := ""
 				found := false
 				parts := strings.Split(filepath.ToSlash(fullPath), "/")
@@ -162,6 +178,11 @@ func NewNamesIndex(cfg *config.UserConfig, systems []games.System, update func(I
 	if err := saveAll(allFiles); err != nil {
 		return len(allFiles), err
 	}
+
+	// Update in-memory cache immediately after building
+	cachedFiles = allFiles
+	cacheLoaded = true
+
 	return len(allFiles), nil
 }
 
@@ -174,6 +195,7 @@ func searchGeneric(query string, test func(string, string) bool) ([]SearchResult
 	if err != nil {
 		return nil, err
 	}
+
 	var results []SearchResult
 	for _, f := range files {
 		if test(query, f.Name) {
