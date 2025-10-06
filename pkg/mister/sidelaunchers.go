@@ -405,6 +405,7 @@ func LaunchGameNWatch(cfg *config.UserConfig, system games.System, path string) 
 	go func(g virtualinput.Gamepad) {
 		time.Sleep(10 * time.Second)
 		_ = g.Press(uinput.ButtonEast)
+		time.Sleep(1 * time.Second)
 		_ = g.Close()
 	}(gpd)
 
