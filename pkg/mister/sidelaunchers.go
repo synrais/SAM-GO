@@ -40,10 +40,6 @@ func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bo
 	if !ok {
 		return false, nil
 	}
-
-	// cleanName := utils.RemoveFileExt(filepath.Base(path))
-	// fmt.Printf("[SIDELAUNCHER] %s: %s\n", system.Id, cleanName)
-
 	return true, fn(cfg, system, path)
 }
 
@@ -52,8 +48,6 @@ func SideLaunchers(cfg *config.UserConfig, system games.System, path string) (bo
 // --------------------------------------------------
 
 func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string) error {
-	// fmt.Println("[SIDELAUNCHER] AmigaVision launch starting…")
-
 	if !strings.EqualFold(filepath.Ext(path), ".ags") {
 		return nil
 	}
@@ -80,7 +74,6 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		return nil
 	}
 
-	// --- Prepare tmp work dir
 	tmpDir := "/tmp/.SAM_tmp/AmigaVision"
 	if _, err := os.Stat(tmpDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(tmpDir, 0755); err != nil {
@@ -91,13 +84,11 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		}
 	}
 
-	// --- Locate system folders
 	sysPaths := games.GetSystemPaths(cfg, []games.System{system})
 	if len(sysPaths) == 0 {
 		return fmt.Errorf("no valid system paths found for %s", system.Name)
 	}
 
-	// Pick pseudoRoot
 	var pseudoRoot string
 	required := []string{"AmigaVision.hdf", "AmigaVision.rom", "MegaAGS.hdf", "AmigaVision-Saves.hdf", "MegaAGS-Saves.hdf"}
 	for _, sp := range sysPaths {
@@ -115,7 +106,6 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		pseudoRoot = sysPaths[0].Path
 	}
 
-	// --- Patch config
 	misterCfg := "/media/fat/config/AmigaVision.cfg"
 	tmpCfg := filepath.Join(tmpDir, "AmigaVision.cfg")
 
@@ -124,7 +114,6 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		return err
 	}
 
-	// ROM (fallback to embedded if missing)
 	romPath := filepath.Join(pseudoRoot, "AmigaVision.rom")
 	if _, err := os.Stat(romPath); os.IsNotExist(err) {
 		srcRom := filepath.Join(tmpDir, "AmigaVision.rom")
@@ -132,7 +121,6 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 	}
 	_ = patchAt(data, offsetRomPath, cleanPath(romPath))
 
-	// HDF (prefer AmigaVision, else MegaAGS)
 	hdfPath := filepath.Join(pseudoRoot, "AmigaVision.hdf")
 	if _, err := os.Stat(hdfPath); err == nil {
 		_ = patchAt(data, offsetHdfPath, cleanPath(hdfPath))
@@ -143,7 +131,6 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		}
 	}
 
-	// Saves (prefer AmigaVision, else MegaAGS, else seed from CD32.zip)
 	savePath := filepath.Join(pseudoRoot, "AmigaVision-Saves.hdf")
 	if _, err := os.Stat(savePath); os.IsNotExist(err) {
 		megaSave := filepath.Join(pseudoRoot, "MegaAGS-Saves.hdf")
@@ -159,7 +146,6 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 
 	_ = os.WriteFile(tmpCfg, data, 0644)
 
-	// Copy or bind-mount cfg
 	if _, err := os.Stat(misterCfg); os.IsNotExist(err) {
 		_ = exec.Command("/bin/cp", tmpCfg, misterCfg).Run()
 	} else {
@@ -167,7 +153,6 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 		_ = exec.Command("mount", "--bind", tmpCfg, misterCfg).Run()
 	}
 
-	// Shared dir
 	sharedDir := filepath.Join(pseudoRoot, "shared")
 	tmpShared := filepath.Join(tmpDir, "shared")
 	if _, err := os.Stat(sharedDir); os.IsNotExist(err) {
@@ -180,7 +165,6 @@ func LaunchAmigaVision(cfg *config.UserConfig, system games.System, path string)
 	_ = exec.Command("umount", sharedDir).Run()
 	_ = exec.Command("mount", "--bind", tmpShared, sharedDir).Run()
 
-	// Build MGL
 	mgl := `<mistergamedescription>
 	<rbf>_computer/minimig</rbf>
 	<setname same_dir="1">AmigaVision</setname>
@@ -229,7 +213,6 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		return dest, nil
 	}
 
-	// Compat map: title substring → alternate HDF
 	compatHDF := map[string]string{
 		"chaos engine":            "CD32NoFastMem.hdf",
 		"dangerous streets":       "CD32NoFastMem.hdf",
@@ -250,19 +233,16 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		"fields of glory":         "CD32Winboot.hdf",
 	}
 
-	// Tmp cfg
 	tmpDir := "/tmp/.SAM_tmp/AmigaCD32"
 	_ = os.MkdirAll(tmpDir, 0755)
 	tmpCfg := filepath.Join(tmpDir, "AmigaCD32.cfg")
 	_ = assets.ExtractZipFile(assets.AmigaCD32Zip, "AmigaCD32.cfg", tmpCfg)
 
-	// Locate system paths
 	sysPaths := games.GetSystemPaths(cfg, []games.System{system})
 	if len(sysPaths) == 0 {
 		return fmt.Errorf("no system paths")
 	}
 
-	// Try to "lock" onto a root by finding required files
 	var pseudoRoot string
 	required := []string{"CD32.rom", "CD32.hdf", "AmigaVision-Saves.hdf"}
 	for _, sp := range sysPaths {
@@ -277,20 +257,16 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		}
 	}
 	if pseudoRoot == "" {
-		// fallback: just use first system path
 		pseudoRoot = sysPaths[0].Path
 	}
 
-	// FAT cfg
 	misterCfg := "/media/fat/config/AmigaCD32.cfg"
 	if _, err := os.Stat(misterCfg); os.IsNotExist(err) {
 		_ = assets.ExtractZipFile(assets.AmigaCD32Zip, "AmigaCD32.cfg", misterCfg)
 	}
 
-	// Patch cfg
 	data, _ := os.ReadFile(tmpCfg)
 
-	// --- ROM (prefer AmigaVision.rom or MegaAGS.rom across all paths, else CD32.rom) ---
 	var romPath string
 	foundRom := false
 	for _, sp := range sysPaths {
@@ -307,12 +283,10 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		}
 	}
 	if !foundRom {
-		// fallback: CD32.rom in pseudoRoot
 		romPath, _ = seedAsset("CD32.rom", pseudoRoot)
 	}
 	_ = patchAt(data, offsetRomPath, cleanPath(romPath))
 
-	// --- HDF set (always seed if missing) ---
 	hdfNames := []string{
 		"CD32NoVolumeControl.hdf",
 		"CD32NoICache.hdf",
@@ -325,7 +299,6 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 		_, _ = seedAsset(h, pseudoRoot)
 	}
 
-	// Pick correct HDF based on game name
 	gameName := strings.ToLower(filepath.Base(path))
 	hdfToUse := "CD32.hdf"
 	for key, alt := range compatHDF {
@@ -334,10 +307,10 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 			break
 		}
 	}
+
 	hdfPath := filepath.Join(pseudoRoot, hdfToUse)
 	_ = patchAt(data, offsetHdfPath, cleanPath(hdfPath))
 
-	// --- Saves (prefer existing across all paths, else seed in pseudoRoot) ---
 	var savePath string
 	foundSave := false
 	for _, sp := range sysPaths {
@@ -358,18 +331,14 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	}
 	_ = patchAt(data, offsetSavePath, cleanPath(savePath))
 
-	// --- Game path ---
 	absGame, _ := filepath.Abs(path)
 	absGame = strings.TrimPrefix(absGame, "/media/")
 	_ = patchAt(data, offsetGamePath, absGame)
 
 	_ = os.WriteFile(tmpCfg, data, 0644)
-
-	// Copy/bind cfg
 	_ = exec.Command("umount", misterCfg).Run()
 	_ = exec.Command("mount", "--bind", tmpCfg, misterCfg).Run()
 
-	// Build MGL
 	mgl := `<mistergamedescription>
 	<rbf>_computer/minimig</rbf>
 	<setname same_dir="1">AmigaCD32</setname>
@@ -377,7 +346,6 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 	tmpMgl := config.LastLaunchFile
 	_ = os.WriteFile(tmpMgl, []byte(mgl), 0644)
 
-	// Handle Winboot auto-keypress with new virtualinput
 	if hdfToUse == "CD32Winboot.hdf" {
 		go func() {
 			kbd, err := virtualinput.NewKeyboard(40 * time.Millisecond)
@@ -385,9 +353,7 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 				return
 			}
 			defer kbd.Close()
-
 			time.Sleep(11 * time.Second)
-
 			if code, ok := virtualinput.ToKeyboardCode("b"); ok {
 				_ = kbd.Press(code)
 			}
@@ -402,52 +368,23 @@ func LaunchCD32(cfg *config.UserConfig, system games.System, path string) error 
 // --------------------------------------------------
 
 func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
-    logFile := "/tmp/fds_sidelauncher.log"
+	gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
+	if err != nil {
+		return err
+	}
 
-    appendLog := func(msg string) {
-        f, _ := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-        if f != nil {
-            defer f.Close()
-            ts := time.Now().Format("2006-01-02 15:04:05")
-            _, _ = fmt.Fprintf(f, "[%s] %s\n", ts, msg)
-        }
-    }
+	if err := launchTempMgl(cfg, &system, path); err != nil {
+		_ = gpd.Close()
+		return err
+	}
 
-    appendLog(fmt.Sprintf("Launching FDS title: %s", path))
+	go func(g virtualinput.Gamepad) {
+		time.Sleep(10 * time.Second)
+		_ = g.Press(uinput.ButtonEast)
+		_ = g.Close()
+	}(gpd)
 
-    // Create virtual gamepad
-    gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
-    if err != nil {
-        appendLog(fmt.Sprintf("ERROR: failed to create gamepad: %v", err))
-        return err
-    }
-    appendLog("Virtual gamepad created successfully.")
-
-    // Launch the game normally
-    if err := launchTempMgl(cfg, &system, path); err != nil {
-        appendLog(fmt.Sprintf("ERROR: failed to launch FDS game: %v", err))
-        _ = gpd.Close()
-        return err
-    }
-
-    appendLog("Game launched, waiting 10 seconds before skipping BIOS...")
-
-    // Run BIOS skip in background
-    go func(g virtualinput.Gamepad) {
-        time.Sleep(10 * time.Second)
-        appendLog("Attempting to press Button A (Button 1)...")
-
-        if err := g.Press(uinput.ButtonEast); err != nil {
-            appendLog(fmt.Sprintf("ERROR: failed to press Button A: %v", err))
-        } else {
-            appendLog("Successfully pressed Button A to skip BIOS.")
-        }
-
-        // NOW close the gamepad
-        _ = g.Close()
-    }(gpd)
-
-    return nil
+	return nil
 }
 
 // --------------------------------------------------
@@ -455,51 +392,21 @@ func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
 // --------------------------------------------------
 
 func LaunchGameNWatch(cfg *config.UserConfig, system games.System, path string) error {
-    logFile := "/tmp/fds_sidelauncher.log"
+	gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
+	if err != nil {
+		return err
+	}
 
-    appendLog := func(msg string) {
-        f, _ := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-        if f != nil {
-            defer f.Close()
-            ts := time.Now().Format("2006-01-02 15:04:05")
-            _, _ = fmt.Fprintf(f, "[%s] %s\n", ts, msg)
-        }
-    }
+	if err := launchTempMgl(cfg, &system, path); err != nil {
+		_ = gpd.Close()
+		return err
+	}
 
-    appendLog(fmt.Sprintf("Launching FDS title: %s", path))
+	go func(g virtualinput.Gamepad) {
+		time.Sleep(8 * time.Second)
+		_ = g.Press(uinput.ButtonEast)
+		_ = g.Close()
+	}(gpd)
 
-    // Create virtual gamepad
-    gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
-    if err != nil {
-        appendLog(fmt.Sprintf("ERROR: failed to create gamepad: %v", err))
-        return err
-    }
-    appendLog("Virtual gamepad created successfully.")
-
-    // Launch the game normally
-    if err := launchTempMgl(cfg, &system, path); err != nil {
-        appendLog(fmt.Sprintf("ERROR: failed to launch GameNWatch game: %v", err))
-        _ = gpd.Close()
-        return err
-    }
-
-    appendLog("Game launched, waiting 10 seconds before skipping BIOS...")
-
-    // Run BIOS skip in background
-    go func(g virtualinput.Gamepad) {
-        time.Sleep(5 * time.Second)
-        appendLog("Attempting to press Button A (Button 1)...")
-
-        if err := g.Press(uinput.ButtonEast); err != nil {
-            appendLog(fmt.Sprintf("ERROR: failed to press Button A: %v", err))
-        } else {
-            appendLog("Successfully pressed Button A to skip BIOS.")
-        }
-
-        // NOW close the gamepad
-        _ = g.Close()
-    }(gpd)
-
-    return nil
+	return nil
 }
-
