@@ -32,7 +32,7 @@ func clearScreen(stdscr *gc.Window) {
 	stdscr.Refresh()
 }
 
-func launchGame(cfg *config.UserConfig, f MenuFile) {
+func launchGame(cfg *config.UserConfig, stdscr *gc.Window, f MenuFile) {
 	sys, _ := games.GetSystem(f.SystemId)
 	_ = mister.LaunchGame(cfg, *sys, f.Path)
 	clearScreen(stdscr)
@@ -79,24 +79,27 @@ func loadMenuDb() ([]MenuFile, error) {
 }
 
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
-	_ = gamesdb.ResetDatabase()
-	var count int
+    _ = gamesdb.ResetDatabase()
 
-	err := runWithSpinner(stdscr, "Indexing games...", func() error {
-		var err error
-		count, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(_ gamesdb.IndexStatus) {})
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
+    var count int
+    err := runWithSpinner(stdscr, "Indexing games...", func() error {
+        var err error
+        count, err = gamesdb.NewNamesIndex(cfg, games.AllSystems(), func(_ gamesdb.IndexStatus) {})
+        return err
+    })
+    if err != nil {
+        return nil, err
+    }
 
-	files, err := loadMenuDb()
-	if err != nil {
-		return nil, err
-	}
-	clearScreen(stdscr)
-	return files, nil
+    // show count feedback at the end
+    _ = curses.InfoBox(stdscr, "", fmt.Sprintf("Indexed %d games successfully.", count), false, true)
+
+    files, err := loadMenuDb()
+    if err != nil {
+        return nil, err
+    }
+    clearScreen(stdscr)
+    return files, nil
 }
 
 // -------------------------
@@ -211,7 +214,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 				currentIndex = childIdx
 			} else {
 				file := node.Files[selected-len(folders)]
-				launchGame(cfg, file)
+				launchGame(cfg, stdscr, file)
 			}
 		case 3:
 			clearScreen(stdscr)
@@ -352,7 +355,12 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 			startIndex = selected
 			if button == 2 {
 				game := results[selected]
-				launchGame(cfg, gamesdb.FileInfo(game))
+				launchGame(cfg, stdscr, gamesdb.FileInfo{
+					SystemId: game.SystemId,
+					Name:     game.Name,
+					Ext:      game.Ext,
+					Path:     game.Path,
+				})
 			} else if button == 3 {
 				clearScreen(stdscr)
 				break
