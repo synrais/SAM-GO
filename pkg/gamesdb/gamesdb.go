@@ -119,7 +119,7 @@ func NewNamesIndex(cfg *config.UserConfig, systems []games.System, update func(I
 				ext := strings.TrimPrefix(filepath.Ext(base), ".")
 				name := strings.TrimSuffix(base, filepath.Ext(base))
 
-				// --- Original MenuPath logic restored ---
+				// --- MenuPath logic ---
 				menuPath := ""
 				found := false
 				parts := strings.Split(filepath.ToSlash(fullPath), "/")
@@ -187,7 +187,7 @@ func NewNamesIndex(cfg *config.UserConfig, systems []games.System, update func(I
 }
 
 // -------------------------
-// Searching (deduplicated + by extension)
+// Searching
 // -------------------------
 
 func searchGeneric(query string, test func(string, string) bool) ([]SearchResult, error) {
