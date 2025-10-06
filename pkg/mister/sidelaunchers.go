@@ -388,7 +388,7 @@ func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
 }
 
 // --------------------------------------------------
-// GameNWatch Sidelauncher (with logging and timing adjustments)
+// GameNWatch Sidelauncher (non-blocking + logging)
 // --------------------------------------------------
 
 func LaunchGameNWatch(cfg *config.UserConfig, system games.System, path string) error {
@@ -405,38 +405,42 @@ func LaunchGameNWatch(cfg *config.UserConfig, system games.System, path string) 
 
 	appendLog(fmt.Sprintf("Launching Game & Watch title: %s", path))
 
-	// Launch the game first
+	// Launch the game core first
 	if err := launchTempMgl(cfg, &system, path); err != nil {
 		appendLog(fmt.Sprintf("ERROR: failed to launch Game & Watch game: %v", err))
 		return err
 	}
 
-	appendLog("Core launched, waiting 5 seconds before creating gamepad...")
-	time.Sleep(5 * time.Second)
+	appendLog("Core launched successfully. Starting gamepad sequence in background...")
 
-	// Create virtual gamepad
-	gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
-	if err != nil {
-		appendLog(fmt.Sprintf("ERROR: failed to create gamepad: %v", err))
-		return err
-	}
-	appendLog("Virtual gamepad created successfully.")
+	// Non-blocking goroutine (identical behavior to FDS)
+	go func() {
+		appendLog("Waiting 2 seconds before creating gamepad...")
+		time.Sleep(2 * time.Second)
 
-	appendLog("Waiting 10 seconds before sending Button A press...")
-	time.Sleep(10 * time.Second)
+		gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
+		if err != nil {
+			appendLog(fmt.Sprintf("ERROR: failed to create gamepad: %v", err))
+			return
+		}
+		appendLog("Virtual gamepad created successfully.")
 
-	appendLog("Attempting to press Button A (ButtonEast)...")
-	if err := gpd.Press(uinput.ButtonEast); err != nil {
-		appendLog(fmt.Sprintf("ERROR: failed to press Button A: %v", err))
-	} else {
-		appendLog("Successfully pressed Button A.")
-	}
+		appendLog("Waiting 5 seconds before pressing Button A...")
+		time.Sleep(5 * time.Second)
 
-	appendLog("Holding for 2 second before closing gamepad...")
-	time.Sleep(2 * time.Second)
+		appendLog("Attempting to press Button A (ButtonEast)...")
+		if err := gpd.Press(uinput.ButtonEast); err != nil {
+			appendLog(fmt.Sprintf("ERROR: failed to press Button A: %v", err))
+		} else {
+			appendLog("Successfully pressed Button A.")
+		}
 
-	_ = gpd.Close()
-	appendLog("Virtual gamepad closed. Done.")
+		appendLog("Holding for 1 second before closing gamepad...")
+		time.Sleep(1 * time.Second)
 
-	return nil
+		_ = gpd.Close()
+		appendLog("Virtual gamepad closed.")
+	}()
+
+	return nil // ← Menu can return instantly
 }
