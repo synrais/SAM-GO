@@ -336,7 +336,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 }
 
 // -------------------------
-// Search Window (uses cached gamesdb search)
+// Search Window
 // -------------------------
 
 func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
@@ -346,7 +346,11 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	text := ""
 	startIndex := 0
 	for {
+		// Show cursor only during keyboard input
+		gc.Cursor(1)
 		button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
+		gc.Cursor(0) // Hide cursor again after keyboard closes
+
 		if err != nil || button == 1 {
 			stdscr.Clear()
 			stdscr.Refresh()
@@ -522,6 +526,9 @@ func main() {
 		log.Fatal(err)
 	}
 	defer gc.End()
+
+	// Hide cursor globally by default
+	gc.Cursor(0)
 
 	files, err := loadingWindow(stdscr, loadMenuDb)
 	if err != nil {
