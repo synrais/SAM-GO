@@ -31,6 +31,7 @@ func init() {
 	registerSideLauncher("AmigaVision", LaunchAmigaVision)
 	registerSideLauncher("AmigaCD32", LaunchCD32)
 	registerSideLauncher("FDS", LaunchFDS)
+	registerSideLauncher("GameNWatch", LaunchGameNWatch)
 }
 
 // SideLaunchers checks if system.Id has a sidelauncher
@@ -434,6 +435,59 @@ func LaunchFDS(cfg *config.UserConfig, system games.System, path string) error {
     // Run BIOS skip in background
     go func(g virtualinput.Gamepad) {
         time.Sleep(10 * time.Second)
+        appendLog("Attempting to press Button A (Button 1)...")
+
+        if err := g.Press(uinput.ButtonEast); err != nil {
+            appendLog(fmt.Sprintf("ERROR: failed to press Button A: %v", err))
+        } else {
+            appendLog("Successfully pressed Button A to skip BIOS.")
+        }
+
+        // NOW close the gamepad
+        _ = g.Close()
+    }(gpd)
+
+    return nil
+}
+
+// --------------------------------------------------
+// GameNWatch Sidelauncher
+// --------------------------------------------------
+
+func LaunchGameNWatch(cfg *config.UserConfig, system games.System, path string) error {
+    logFile := "/tmp/fds_sidelauncher.log"
+
+    appendLog := func(msg string) {
+        f, _ := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+        if f != nil {
+            defer f.Close()
+            ts := time.Now().Format("2006-01-02 15:04:05")
+            _, _ = fmt.Fprintf(f, "[%s] %s\n", ts, msg)
+        }
+    }
+
+    appendLog(fmt.Sprintf("Launching FDS title: %s", path))
+
+    // Create virtual gamepad
+    gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
+    if err != nil {
+        appendLog(fmt.Sprintf("ERROR: failed to create gamepad: %v", err))
+        return err
+    }
+    appendLog("Virtual gamepad created successfully.")
+
+    // Launch the game normally
+    if err := launchTempMgl(cfg, &system, path); err != nil {
+        appendLog(fmt.Sprintf("ERROR: failed to launch GameNWatch game: %v", err))
+        _ = gpd.Close()
+        return err
+    }
+
+    appendLog("Game launched, waiting 10 seconds before skipping BIOS...")
+
+    // Run BIOS skip in background
+    go func(g virtualinput.Gamepad) {
+        time.Sleep(5 * time.Second)
         appendLog("Attempting to press Button A (Button 1)...")
 
         if err := g.Press(uinput.ButtonEast); err != nil {
