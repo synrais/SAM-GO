@@ -1,7 +1,6 @@
 package gamesdb
 
 import (
-	"bytes"
 	"encoding/gob"
 	"fmt"
 	"os"
@@ -9,126 +8,25 @@ import (
 	"regexp"
 	"strings"
 
-	bolt "go.etcd.io/bbolt"
-
 	"github.com/synrais/SAM-GO/pkg/config"
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/utils"
 )
 
-const (
-	BucketNames       = "names"
-	indexedSystemsKey = "meta:indexedSystems"
-)
-
 // -------------------------
-// Helpers
+// Types
 // -------------------------
 
-// Return the key for a name in the names index.
-// Format: systemId:name:ext
-func NameKey(systemId, name, ext string) string {
-	return fmt.Sprintf("%s:%s:%s", systemId, name, ext)
+// FileInfo represents one indexed game file.
+type FileInfo struct {
+	SystemId string // Internal system ID
+	Name     string // Base name without extension
+	Ext      string // File extension (e.g. "nes", "gg")
+	Path     string // Full path to file
+	MenuPath string // "SystemName/<relative path>"
 }
 
-// Check if the games.db exists on disk.
-func DbExists() bool {
-	_, err := os.Stat(config.GamesDb)
-	return err == nil
-}
-
-// -------------------------
-// DB Management
-// -------------------------
-
-// Open the games.db with the given options. Creates the DB if missing.
-func open(options *bolt.Options) (*bolt.DB, error) {
-	err := os.MkdirAll(filepath.Dir(config.GamesDb), 0755)
-	if err != nil {
-		return nil, err
-	}
-
-	db, err := bolt.Open(config.GamesDb, 0600, options)
-	if err != nil {
-		return nil, err
-	}
-
-	// Ensure required buckets exist
-	db.Update(func(txn *bolt.Tx) error {
-		for _, bucket := range []string{BucketNames} {
-			_, err := txn.CreateBucketIfNotExists([]byte(bucket))
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-
-	return db, nil
-}
-
-// Open the games.db with default options for generating names index.
-func openNames() (*bolt.DB, error) {
-	return open(&bolt.Options{
-		NoSync:         true,
-		NoFreelistSync: true,
-	})
-}
-
-func readIndexedSystems(db *bolt.DB) ([]string, error) {
-	var systems []string
-
-	err := db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(BucketNames))
-		v := b.Get([]byte(indexedSystemsKey))
-		if v != nil {
-			systems = strings.Split(string(v), ",")
-		}
-		return nil
-	})
-
-	return systems, err
-}
-
-func writeIndexedSystems(db *bolt.DB, systems []string) error {
-	return db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(BucketNames))
-		v := b.Get([]byte(indexedSystemsKey))
-		if v == nil {
-			v = []byte(strings.Join(systems, ","))
-			return b.Put([]byte(indexedSystemsKey), v)
-		} else {
-			existing := strings.Split(string(v), ",")
-			for _, s := range systems {
-				if !utils.Contains(existing, s) {
-					existing = append(existing, s)
-				}
-			}
-			return b.Put([]byte(indexedSystemsKey), []byte(strings.Join(existing, ",")))
-		}
-	})
-}
-
-// -------------------------
-// Indexing
-// -------------------------
-
-// Update the names index with the given files.
-func updateNames(db *bolt.DB, files []fileinfo) error {
-	return db.Batch(func(tx *bolt.Tx) error {
-		bns := tx.Bucket([]byte(BucketNames))
-
-		for _, file := range files {
-			nk := NameKey(file.SystemId, file.Name, file.Ext)
-			err := bns.Put([]byte(nk), []byte(file.Path))
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
+// IndexStatus is used for progress reporting during rebuild.
 type IndexStatus struct {
 	Total    int
 	Step     int
@@ -136,172 +34,7 @@ type IndexStatus struct {
 	Files    int
 }
 
-// Enriched file information (also written into menu.db Gob).
-type fileinfo struct {
-	SystemId     string // Internal system ID
-	Name         string // Base name without extension
-	Ext          string // File extension (e.g. "nes", "gg")
-	Path         string // Full path to file
-	MenuPath     string // "SystemName/<relative path under SystemFolder>"
-}
-
-// Build a new names index and Gob file from all systems and their game files.
-func NewNamesIndex(
-	cfg *config.UserConfig,
-	systems []games.System,
-	update func(IndexStatus),
-) (int, error) {
-	status := IndexStatus{
-		Total: len(systems) + 2, // +1 for games.db write, +1 for menu.db write
-		Step:  1,
-	}
-
-	db, err := openNames()
-	if err != nil {
-		return status.Files, fmt.Errorf("error opening games.db: %s", err)
-	}
-	defer db.Close()
-
-	update(status)
-
-	// Collect all paths per system
-	systemPaths := make(map[string][]string, 0)
-	for _, v := range games.GetSystemPaths(cfg, systems) {
-		systemPaths[v.System.Id] = append(systemPaths[v.System.Id], v.Path)
-	}
-
-	var allFiles []fileinfo
-
-	for _, k := range utils.AlphaMapKeys(systemPaths) {
-		status.SystemId = k
-		status.Step++
-		update(status)
-
-		sys, err := games.GetSystem(k)
-		if err != nil {
-			return status.Files, fmt.Errorf("unknown system: %s", k)
-		}
-
-		files := make([]fileinfo, 0)
-
-		for _, path := range systemPaths[k] {
-			pathFiles, err := games.GetFiles(k, path)
-			if err != nil {
-				return status.Files, fmt.Errorf("error getting files: %s", err)
-			}
-
-			if len(pathFiles) == 0 {
-				continue
-			}
-
-			for _, fullPath := range pathFiles {
-				base := filepath.Base(fullPath)
-				ext := strings.TrimPrefix(filepath.Ext(base), ".")
-				name := strings.TrimSuffix(base, filepath.Ext(base))
-
-				// -------------------------
-				// Build MenuPath
-				// -------------------------
-				menuPath := ""
-				found := false
-				parts := strings.Split(filepath.ToSlash(fullPath), "/")
-
-				for i, part := range parts {
-					for _, folder := range sys.Folder {
-						if part == folder {
-							// everything after the system folder
-							relParts := parts[i+1:]
-
-							if len(relParts) > 0 {
-								// Case 1: collapse fake .zip folder
-								if strings.HasSuffix(relParts[0], ".zip") {
-									relParts = relParts[1:]
-								}
-
-								// Case 2: listings/*.txt collapse to label
-								if len(relParts) > 1 && relParts[0] == "listings" && strings.HasSuffix(relParts[1], ".txt") {
-									label := strings.TrimSuffix(relParts[1], ".txt")
-									if len(label) > 0 {
-										label = strings.ToUpper(label[:1]) + label[1:]
-									}
-									relParts = append([]string{label}, relParts[2:]...)
-								}
-							}
-
-							menuPath = filepath.ToSlash(filepath.Join(append([]string{sys.Name}, relParts...)...))
-							found = true
-							break
-						}
-					}
-					if found {
-						break
-					}
-				}
-
-				// Fallback if no folder matched
-				if !found {
-					menuPath = filepath.ToSlash(filepath.Join(sys.Name, base))
-				}
-
-				files = append(files, fileinfo{
-					SystemId: sys.Id,
-					Name:     name,
-					Ext:      ext,
-					Path:     fullPath,
-					MenuPath: menuPath,
-				})
-			}
-		}
-
-		if len(files) == 0 {
-			continue
-		}
-
-		status.Files += len(files)
-		allFiles = append(allFiles, files...)
-
-		// Update Bolt DB
-		if err := updateNames(db, files); err != nil {
-			return status.Files, err
-		}
-	}
-
-	// --- Finalize Bolt ---
-	status.Step++
-	status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.GamesDb))
-	update(status)
-
-	if err := writeIndexedSystems(db, utils.AlphaMapKeys(systemPaths)); err != nil {
-		return status.Files, fmt.Errorf("error writing indexed systems: %s", err)
-	}
-
-	if err := db.Sync(); err != nil {
-		return status.Files, fmt.Errorf("error syncing database: %s", err)
-	}
-
-	// --- Write Gob (menu.db) ---
-	status.Step++
-	status.SystemId = fmt.Sprintf("writing %s", filepath.Base(config.MenuDb))
-	update(status)
-
-	gobFile, err := os.Create(config.MenuDb)
-	if err != nil {
-		return status.Files, fmt.Errorf("error creating gob file: %s", err)
-	}
-	defer gobFile.Close()
-
-	encoder := gob.NewEncoder(gobFile)
-	if err := encoder.Encode(allFiles); err != nil {
-		return status.Files, fmt.Errorf("error writing gob file: %s", err)
-	}
-
-	return status.Files, nil
-}
-
-// -------------------------
-// Searching
-// -------------------------
-
+// SearchResult mirrors FileInfo but is used for search returns.
 type SearchResult struct {
 	SystemId string
 	Name     string
@@ -309,78 +42,145 @@ type SearchResult struct {
 	Path     string
 }
 
-func searchNamesGeneric(
-	systems []games.System,
-	query string,
-	test func(string, string) bool,
-) ([]SearchResult, error) {
-	if !DbExists() {
-		return nil, fmt.Errorf("games.db does not exist")
-	}
+// -------------------------
+// Helpers
+// -------------------------
 
-	db, err := open(&bolt.Options{ReadOnly: true})
+// DbExists checks if the Gob database (menu.db) exists.
+func DbExists() bool {
+	_, err := os.Stat(config.MenuDb)
+	return err == nil
+}
+
+// loadAll loads the full Gob index into memory.
+func loadAll() ([]FileInfo, error) {
+	f, err := os.Open(config.MenuDb)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer f.Close()
 
-	var results []SearchResult
+	var files []FileInfo
+	dec := gob.NewDecoder(f)
+	if err := dec.Decode(&files); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
 
-	err = db.View(func(tx *bolt.Tx) error {
-		bn := tx.Bucket([]byte(BucketNames))
+// saveAll overwrites menu.db with the full set of indexed files.
+func saveAll(files []FileInfo) error {
+	if err := os.MkdirAll(filepath.Dir(config.MenuDb), 0755); err != nil {
+		return err
+	}
+	f, err := os.Create(config.MenuDb)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
 
-		for _, system := range systems {
-			pre := []byte(system.Id + ":")
-			c := bn.Cursor()
-			for k, v := c.Seek(pre); k != nil && bytes.HasPrefix(k, pre); k, v = c.Next() {
-				// key = systemId:name:ext
-				parts := strings.SplitN(string(k), ":", 3)
-				if len(parts) != 3 {
-					continue
-				}
-				name := parts[1]
-				ext := parts[2]
+	enc := gob.NewEncoder(f)
+	return enc.Encode(files)
+}
 
-				if test(query, name) {
-					results = append(results, SearchResult{
-						SystemId: system.Id,
-						Name:     name,
-						Ext:      ext,
-						Path:     string(v),
-					})
-				}
+// -------------------------
+// Indexing (Gob-only)
+// -------------------------
+
+// NewNamesIndex scans all system folders, collects games, and writes menu.db.
+func NewNamesIndex(cfg *config.UserConfig, systems []games.System, update func(IndexStatus)) (int, error) {
+	status := IndexStatus{
+		Total: len(systems) + 1,
+		Step:  1,
+	}
+	update(status)
+
+	var allFiles []FileInfo
+	for _, sys := range systems {
+		status.SystemId = sys.Id
+		status.Step++
+		update(status)
+
+		paths := games.GetSystemPaths(cfg, []games.System{sys})
+		for _, sp := range paths {
+			files, err := games.GetFiles(sys.Id, sp.Path)
+			if err != nil {
+				return len(allFiles), fmt.Errorf("error reading files for %s: %v", sys.Id, err)
+			}
+			for _, full := range files {
+				base := filepath.Base(full)
+				ext := strings.TrimPrefix(filepath.Ext(base), ".")
+				name := strings.TrimSuffix(base, filepath.Ext(base))
+				menuPath := filepath.ToSlash(filepath.Join(sys.Name, base))
+
+				allFiles = append(allFiles, FileInfo{
+					SystemId: sys.Id,
+					Name:     name,
+					Ext:      ext,
+					Path:     full,
+					MenuPath: menuPath,
+				})
 			}
 		}
-		return nil
-	})
+		status.Files = len(allFiles)
+	}
 
+	status.Step++
+	update(status)
+
+	if err := saveAll(allFiles); err != nil {
+		return len(allFiles), err
+	}
+	return len(allFiles), nil
+}
+
+// -------------------------
+// Searching (in-memory)
+// -------------------------
+
+// searchGeneric runs a flexible in-memory search over all files.
+func searchGeneric(query string, test func(string, string) bool) ([]SearchResult, error) {
+	files, err := loadAll()
 	if err != nil {
 		return nil, err
 	}
 
+	var results []SearchResult
+	for _, f := range files {
+		if test(query, f.Name) {
+			results = append(results, SearchResult{
+				SystemId: f.SystemId,
+				Name:     f.Name,
+				Ext:      f.Ext,
+				Path:     f.Path,
+			})
+		}
+	}
 	return results, nil
 }
 
-// Exact match (case-insensitive).
-func SearchNamesExact(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, name string) bool {
-		return strings.EqualFold(query, name)
+// SearchNamesExact — case-insensitive exact match.
+func SearchNamesExact(_ []games.System, query string) ([]SearchResult, error) {
+	return searchGeneric(query, func(q, n string) bool {
+		return strings.EqualFold(q, n)
 	})
 }
 
-// Partial substring match (case-insensitive).
-func SearchNamesPartial(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, name string) bool {
-		return strings.Contains(strings.ToLower(name), strings.ToLower(query))
+// SearchNamesPartial — substring match, case-insensitive.
+func SearchNamesPartial(_ []games.System, query string) ([]SearchResult, error) {
+	q := strings.ToLower(query)
+	return searchGeneric(query, func(_ string, n string) bool {
+		return strings.Contains(strings.ToLower(n), q)
 	})
 }
 
-// Word-by-word match (all words must be present).
-func SearchNamesWords(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, name string) bool {
-		qWords := strings.Fields(strings.ToLower(query))
-		for _, word := range qWords {
-			if !strings.Contains(strings.ToLower(name), word) {
+// SearchNamesWords — all words must appear in the name.
+func SearchNamesWords(_ []games.System, query string) ([]SearchResult, error) {
+	words := strings.Fields(strings.ToLower(query))
+	return searchGeneric(query, func(_ string, n string) bool {
+		lower := strings.ToLower(n)
+		for _, w := range words {
+			if !strings.Contains(lower, w) {
 				return false
 			}
 		}
@@ -388,14 +188,14 @@ func SearchNamesWords(systems []games.System, query string) ([]SearchResult, err
 	})
 }
 
-// Regex-based match.
-func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, error) {
-	return searchNamesGeneric(systems, query, func(query, name string) bool {
-		r, err := regexp.Compile(query)
+// SearchNamesRegexp — regex-based name match.
+func SearchNamesRegexp(_ []games.System, query string) ([]SearchResult, error) {
+	return searchGeneric(query, func(q, n string) bool {
+		r, err := regexp.Compile(q)
 		if err != nil {
 			return false
 		}
-		return r.MatchString(name)
+		return r.MatchString(n)
 	})
 }
 
@@ -403,42 +203,29 @@ func SearchNamesRegexp(systems []games.System, query string) ([]SearchResult, er
 // System Index Helpers
 // -------------------------
 
-// Return true if a specific system is indexed.
-func SystemIndexed(system games.System) bool {
-	if !DbExists() {
-		return false
-	}
-
-	db, err := open(&bolt.Options{ReadOnly: true})
+// IndexedSystems returns all system IDs found in the Gob index.
+func IndexedSystems() ([]string, error) {
+	files, err := loadAll()
 	if err != nil {
-		return false
+		return nil, err
 	}
-	defer db.Close()
-
-	systems, err := readIndexedSystems(db)
-	if err != nil {
-		return false
+	seen := make(map[string]bool)
+	for _, f := range files {
+		seen[f.SystemId] = true
 	}
-
-	return utils.Contains(systems, system.Id)
+	return utils.AlphaMapKeys(seen), nil
 }
 
-// Return all indexed system IDs.
-func IndexedSystems() ([]string, error) {
-	if !DbExists() {
-		return nil, fmt.Errorf("games.db does not exist")
-	}
-
-	db, err := open(&bolt.Options{ReadOnly: true})
+// SystemIndexed returns true if any file in menu.db belongs to the system.
+func SystemIndexed(system games.System) bool {
+	files, err := loadAll()
 	if err != nil {
-		return nil, err
+		return false
 	}
-	defer db.Close()
-
-	systems, err := readIndexedSystems(db)
-	if err != nil {
-		return nil, err
+	for _, f := range files {
+		if f.SystemId == system.Id {
+			return true
+		}
 	}
-
-	return systems, nil
+	return false
 }
