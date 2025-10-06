@@ -200,7 +200,11 @@ func searchGeneric(query string, test func(string, string) bool) ([]SearchResult
 	seen := make(map[string]bool) // key = name|ext
 
 	for _, f := range files {
-		if test(query, f.Name) || test(query, f.Ext) {
+		// normalize ext with and without dot
+		ext := f.Ext
+		extWithDot := "." + f.Ext
+
+		if test(query, f.Name) || test(query, ext) || test(query, extWithDot) {
 			key := strings.ToLower(fmt.Sprintf("%s|%s", f.Name, f.Ext))
 			if seen[key] {
 				continue
