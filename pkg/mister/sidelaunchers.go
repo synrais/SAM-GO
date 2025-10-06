@@ -411,8 +411,8 @@ func LaunchGameNWatch(cfg *config.UserConfig, system games.System, path string) 
 		return err
 	}
 
-	appendLog("Core launched, waiting 2 seconds before creating gamepad...")
-	time.Sleep(2 * time.Second)
+	appendLog("Core launched, waiting 5 seconds before creating gamepad...")
+	time.Sleep(5 * time.Second)
 
 	// Create virtual gamepad
 	gpd, err := virtualinput.NewGamepad(40 * time.Millisecond)
@@ -432,8 +432,8 @@ func LaunchGameNWatch(cfg *config.UserConfig, system games.System, path string) 
 		appendLog("Successfully pressed Button A.")
 	}
 
-	appendLog("Holding for 1 second before closing gamepad...")
-	time.Sleep(1 * time.Second)
+	appendLog("Holding for 2 second before closing gamepad...")
+	time.Sleep(2 * time.Second)
 
 	_ = gpd.Close()
 	appendLog("Virtual gamepad closed. Done.")
