@@ -187,10 +187,10 @@ func NewNamesIndex(cfg *config.UserConfig, systems []games.System, update func(I
 }
 
 // -------------------------
-// Searching
+// Searching (deduplicated + supports .ext queries combined with names)
 // -------------------------
 
-func searchGeneric(query string, test func(string, string) bool) ([]SearchResult, error) {
+func searchGeneric(query string, test func(string, string, string) bool) ([]SearchResult, error) {
 	files, err := loadAll()
 	if err != nil {
 		return nil, err
@@ -200,11 +200,7 @@ func searchGeneric(query string, test func(string, string) bool) ([]SearchResult
 	seen := make(map[string]bool) // key = name|ext
 
 	for _, f := range files {
-		// normalize ext with and without dot
-		ext := f.Ext
-		extWithDot := "." + f.Ext
-
-		if test(query, f.Name) || test(query, ext) || test(query, extWithDot) {
+		if test(query, f.Name, f.Ext) {
 			key := strings.ToLower(fmt.Sprintf("%s|%s", f.Name, f.Ext))
 			if seen[key] {
 				continue
@@ -224,10 +220,12 @@ func searchGeneric(query string, test func(string, string) bool) ([]SearchResult
 
 func SearchNamesWords(_ []games.System, query string) ([]SearchResult, error) {
 	words := strings.Fields(strings.ToLower(query))
-	return searchGeneric(query, func(_ string, n string) bool {
-		low := strings.ToLower(n)
+
+	return searchGeneric(query, func(_ string, name string, ext string) bool {
+		full := strings.ToLower(fmt.Sprintf("%s.%s", name, ext))
 		for _, w := range words {
-			if !strings.Contains(low, w) {
+			// allow ".ext" or "ext" matches anywhere in full string
+			if !strings.Contains(full, strings.TrimPrefix(w, ".")) {
 				return false
 			}
 		}
