@@ -23,15 +23,10 @@ import (
 
 const appName = "gamesmenu"
 
-// --- MenuFile ---
-// Mirrors gamesdb.fileinfo (slimmed down)
-type MenuFile struct {
-	SystemId string // Internal system ID
-	Name     string // Base name without extension
-	Ext      string // File extension (e.g. "nes", "gg")
-	Path     string // Full path to file
-	MenuPath string // "SystemName/<relative path under SystemFolder>"
-}
+// -------------------------
+// MenuFile (from gamesdb)
+// -------------------------
+type MenuFile = gamesdb.FileInfo
 
 // -------------------------
 // Database loading
@@ -56,7 +51,6 @@ func loadMenuDb() ([]MenuFile, error) {
 // -------------------------
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
 	_ = os.Remove(config.MenuDb)
-	_ = os.Remove(config.GamesDb)
 
 	stdscr.Clear()
 	stdscr.Refresh()
@@ -103,9 +97,6 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 				systemName = sys.Name
 			}
 			text := fmt.Sprintf("Indexing %s... (%d files)", systemName, is.Files)
-			if is.Step == 1 {
-				text = "Finding games folders..."
-			}
 			status.Step = is.Step
 			status.Total = is.Total
 			status.DisplayText = text
@@ -248,7 +239,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 
 		currentIndex = selected
 		switch button {
-		case 2: // Open/Launch
+		case 2: // Open or Launch
 			if selected < len(folders) {
 				folderName := folders[selected]
 				childIdx, err := browseNode(cfg, stdscr, node.Children[folderName], 0)
@@ -298,9 +289,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			Width:         70,
 			Height:        20,
 			InitialIndex:  startIndex,
-			DynamicActionLabel: func(idx int) string {
-				return "Open"
-			},
+			DynamicActionLabel: func(idx int) string { return "Open" },
 		}, items)
 		if err != nil {
 			return err
@@ -308,7 +297,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 
 		startIndex = selected
 		switch button {
-		case 2: // Open system
+		case 2: // Open
 			sysId := sysIds[selected]
 			_, err := browseNode(cfg, stdscr, tree.Children[sysId], 0)
 			if err != nil {
@@ -318,13 +307,11 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			if err := searchWindow(cfg, stdscr); err != nil {
 				return err
 			}
-			stdscr.Clear()
-			stdscr.Refresh()
 		case 4: // Options
 			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
 				return err
 			} else if newFiles != nil {
-				files := newFiles
+				files = newFiles
 				tree = buildTree(files)
 				sysIds = sysIds[:0]
 				items = items[:0]
@@ -335,8 +322,6 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 				for _, sysId := range sysIds {
 					items = append(items, sysId)
 				}
-				stdscr.Clear()
-				stdscr.Refresh()
 			}
 		case 5: // Exit
 			return nil
@@ -434,11 +419,7 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 				game := results[selected]
 				sys, _ := games.GetSystem(game.SystemId)
 				_ = mister.LaunchGame(cfg, *sys, game.Path)
-				continue
-			}
-			if button == 3 {
-				stdscr.Clear()
-				stdscr.Refresh()
+			} else if button == 3 {
 				break
 			}
 		}
@@ -498,25 +479,20 @@ func main() {
 		return syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	}
 
-	// First attempt
 	if err := tryLock(); err != nil {
-		// Someone else holds the lock → kill it
 		buf := make([]byte, 32)
 		n, _ := f.ReadAt(buf, 0)
 		if n > 0 {
 			if pid, err := strconv.Atoi(strings.TrimSpace(string(buf[:n]))); err == nil {
 				_ = syscall.Kill(pid, syscall.SIGKILL)
-				// Give kernel time to drop the lock
 				gc.Nap(500)
 			}
 		}
-		// Try again
 		if err := tryLock(); err != nil {
 			log.Fatal("failed to acquire lock even after killing old process")
 		}
 	}
 
-	// Write our PID to the lockfile
 	_ = f.Truncate(0)
 	_, _ = f.Seek(0, 0)
 	_, _ = f.WriteString(fmt.Sprintf("%d", os.Getpid()))
@@ -548,11 +524,6 @@ func main() {
 	}
 
 	if launchGame {
-		// silently prewarm search index in background
-		go func() {
-			_, _ = gamesdb.SearchNamesWords(games.AllSystems(), "")
-		}()
-
 		if err := mainMenu(cfg, stdscr, files); err != nil {
 			log.Fatal(err)
 		}
@@ -566,4 +537,3 @@ func main() {
 		}
 	}
 }
-
