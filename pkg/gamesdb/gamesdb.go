@@ -189,19 +189,6 @@ func searchGeneric(query string, test func(string, string) bool) ([]SearchResult
 	return results, nil
 }
 
-func SearchNamesExact(_ []games.System, query string) ([]SearchResult, error) {
-	return searchGeneric(query, func(q, n string) bool {
-		return strings.EqualFold(q, n)
-	})
-}
-
-func SearchNamesPartial(_ []games.System, query string) ([]SearchResult, error) {
-	q := strings.ToLower(query)
-	return searchGeneric(query, func(_ string, n string) bool {
-		return strings.Contains(strings.ToLower(n), q)
-	})
-}
-
 func SearchNamesWords(_ []games.System, query string) ([]SearchResult, error) {
 	words := strings.Fields(strings.ToLower(query))
 	return searchGeneric(query, func(_ string, n string) bool {
@@ -212,16 +199,6 @@ func SearchNamesWords(_ []games.System, query string) ([]SearchResult, error) {
 			}
 		}
 		return true
-	})
-}
-
-func SearchNamesRegexp(_ []games.System, query string) ([]SearchResult, error) {
-	return searchGeneric(query, func(q, n string) bool {
-		r, err := regexp.Compile(q)
-		if err != nil {
-			return false
-		}
-		return r.MatchString(n)
 	})
 }
 
