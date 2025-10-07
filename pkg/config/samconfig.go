@@ -1,21 +1,15 @@
 package config
 
 import (
-	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"gopkg.in/ini.v1"
+
+	"github.com/synrais/SAM-GO/pkg/assets"
 )
-
-// --------------------------------------------------
-//  Embed default.ini
-// --------------------------------------------------
-
-//go:embed default.ini
-var defaultINI []byte
 
 // --------------------------------------------------
 //  Structs
@@ -69,9 +63,9 @@ func LoadINI() (*Config, error) {
 	baseDir := filepath.Dir(exe)
 	userPath := filepath.Join(baseDir, "SAM.ini")
 
-	// If SAM.ini missing → write embedded default.ini
+	// If SAM.ini missing → write embedded default.ini from assets
 	if _, err := os.Stat(userPath); os.IsNotExist(err) {
-		if err := os.WriteFile(userPath, defaultINI, 0644); err != nil {
+		if err := os.WriteFile(userPath, assets.DefaultINI, 0644); err != nil {
 			return nil, fmt.Errorf("failed to write default ini: %w", err)
 		}
 		fmt.Printf("Created %s from embedded default.ini\n", userPath)
