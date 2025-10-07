@@ -20,3 +20,5 @@ const NfcDatabaseFile = SdFolder + "/nfc.csv"
 const NfcLastScanFile = TempFolder + "/NFCSCAN"
 
 const LastLaunchFile = "/tmp/.LASTLAUNCH.mgl"
+
+const MenuDb = SAMConfigFolder + "/menu.db"
