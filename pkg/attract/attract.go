@@ -12,24 +12,21 @@ import (
 	"github.com/synrais/SAM-GO/pkg/mister"
 )
 
-// StartAttractMode runs random games from the already-loaded menu slice.
-// It never touches disk, and it uses the same launch path as the menu.
+// StartAttractMode picks and plays random games endlessly using the existing menu database.
 func StartAttractMode(userCfg *config.UserConfig, files []gamesdb.FileInfo) error {
 	fmt.Println("=== Starting Attract Mode ===")
 
-	// load attract-mode INI (creates default if missing)
 	cfg, err := config.LoadINI()
 	if err != nil {
 		return fmt.Errorf("failed to load attract config: %w", err)
 	}
 
-	// filter by include/exclude systems
 	filtered := filterSystems(files, cfg)
 	if len(filtered) == 0 {
 		return fmt.Errorf("no games available after filtering")
 	}
 
-	// parse playtime range inline
+	// inline playtime parser
 	minTime, maxTime := 40, 40
 	raw := strings.TrimSpace(cfg.Attract.PlayTime)
 	if raw != "" {
@@ -56,37 +53,30 @@ func StartAttractMode(userCfg *config.UserConfig, files []gamesdb.FileInfo) erro
 	rand.Seed(time.Now().UnixNano())
 
 	for {
-		if cfg.Attract.Random {
-			rand.Shuffle(len(filtered), func(i, j int) {
-				filtered[i], filtered[j] = filtered[j], filtered[i]
-			})
+		// choose a completely random game each iteration
+		game := filtered[rand.Intn(len(filtered))]
+
+		sys, err := games.GetSystem(game.SystemId)
+		if err != nil || sys == nil {
+			continue
 		}
 
-		for _, g := range filtered {
-			sys, err := games.GetSystem(g.SystemId)
-			if err != nil || sys == nil {
-				continue
-			}
-
-			display := g.Name
-			if g.Ext != "" {
-				display += "." + g.Ext
-			}
-			fmt.Printf("[Attract] Launching %s (%s)\n", display, sys.Name)
-
-			// launch exactly like the menu does
-			if err := mister.LaunchGame(userCfg, *sys, g.Path); err != nil {
-				fmt.Printf("[Attract] failed to launch %s: %v\n", display, err)
-				continue
-			}
-
-			// choose playtime and wait
-			playTime := minTime
-			if minTime != maxTime {
-				playTime = rand.Intn(maxTime-minTime+1) + minTime
-			}
-			time.Sleep(time.Duration(playTime) * time.Second)
+		display := game.Name
+		if game.Ext != "" {
+			display += "." + game.Ext
 		}
+		fmt.Printf("[Attract] Launching %s (%s)\n", display, sys.Name)
+
+		if err := mister.LaunchGame(userCfg, *sys, game.Path); err != nil {
+			fmt.Printf("[Attract] failed to launch %s: %v\n", display, err)
+			continue
+		}
+
+		playTime := minTime
+		if minTime != maxTime {
+			playTime = rand.Intn(maxTime-minTime+1) + minTime
+		}
+		time.Sleep(time.Duration(playTime) * time.Second)
 	}
 }
 
