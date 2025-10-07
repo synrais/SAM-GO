@@ -159,7 +159,7 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) 
 		Height:        10,
 	}, []string{
 		"Rebuild games database...",
-		"Start Attract Mode", // NEW
+		"Start Attract Mode", 
 	})
 	if err != nil {
 		return nil, err
@@ -171,10 +171,10 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) 
 		switch selected {
 		case 0:
 			return generateIndexWindow(cfg, stdscr)
-		case 1: // NEW: start attract mode
+		case 1: 
 			stdscr.Clear()
 			stdscr.Refresh()
-			if err := attract.StartAttractMode(cfg, stdscr); err != nil {
+			if err := attract.StartAttractMode(cfg, files); err != nil {
 				_ = curses.InfoBox(stdscr, "Error", fmt.Sprintf("Failed to start attract mode: %v", err), false, true)
 			}
 		}
