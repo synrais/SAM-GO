@@ -12,24 +12,24 @@ import (
 	"github.com/synrais/SAM-GO/pkg/mister"
 )
 
-// StartAttractMode runs an endless random game loop using
-// the already-loaded menu database. It reads Attract mode
-// settings from SAM.ini (using embedded default.ini if missing).
-func StartAttractMode(files []gamesdb.FileInfo) error {
+// StartAttractMode runs random games from the already-loaded menu slice.
+// It never touches disk, and it uses the same launch path as the menu.
+func StartAttractMode(userCfg *config.UserConfig, files []gamesdb.FileInfo) error {
 	fmt.Println("=== Starting Attract Mode ===")
 
-	// Load our embedded SAM.ini configuration
+	// load attract-mode INI (creates default if missing)
 	cfg, err := config.LoadINI()
 	if err != nil {
-		return fmt.Errorf("failed to load SAM.ini: %w", err)
+		return fmt.Errorf("failed to load attract config: %w", err)
 	}
 
+	// filter by include/exclude systems
 	filtered := filterSystems(files, cfg)
 	if len(filtered) == 0 {
 		return fmt.Errorf("no games available after filtering")
 	}
 
-	// --- Inline playtime parsing ---
+	// parse playtime range inline
 	minTime, maxTime := 40, 40
 	raw := strings.TrimSpace(cfg.Attract.PlayTime)
 	if raw != "" {
@@ -52,12 +52,10 @@ func StartAttractMode(files []gamesdb.FileInfo) error {
 			}
 		}
 	}
-	// ------------------------------
 
 	rand.Seed(time.Now().UnixNano())
 
 	for {
-		// Shuffle each cycle if Random = true
 		if cfg.Attract.Random {
 			rand.Shuffle(len(filtered), func(i, j int) {
 				filtered[i], filtered[j] = filtered[j], filtered[i]
@@ -66,7 +64,7 @@ func StartAttractMode(files []gamesdb.FileInfo) error {
 
 		for _, g := range filtered {
 			sys, err := games.GetSystem(g.SystemId)
-			if err != nil {
+			if err != nil || sys == nil {
 				continue
 			}
 
@@ -74,11 +72,15 @@ func StartAttractMode(files []gamesdb.FileInfo) error {
 			if g.Ext != "" {
 				display += "." + g.Ext
 			}
-
 			fmt.Printf("[Attract] Launching %s (%s)\n", display, sys.Name)
-			_ = mister.LaunchGame(nil, *sys, g.Path)
 
-			// Inline random playtime
+			// launch exactly like the menu does
+			if err := mister.LaunchGame(userCfg, *sys, g.Path); err != nil {
+				fmt.Printf("[Attract] failed to launch %s: %v\n", display, err)
+				continue
+			}
+
+			// choose playtime and wait
 			playTime := minTime
 			if minTime != maxTime {
 				playTime = rand.Intn(maxTime-minTime+1) + minTime
@@ -88,8 +90,6 @@ func StartAttractMode(files []gamesdb.FileInfo) error {
 	}
 }
 
-// filterSystems filters the games slice using Include/Exclude
-// rules from the Attract section of SAM.ini
 func filterSystems(files []gamesdb.FileInfo, cfg *config.Config) []gamesdb.FileInfo {
 	var out []gamesdb.FileInfo
 	include := make(map[string]bool)
