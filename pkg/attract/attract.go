@@ -12,14 +12,16 @@ import (
 	"github.com/synrais/SAM-GO/pkg/mister"
 )
 
-// StartAttractMode runs an endless random game loop using the
-// already-loaded menu database. It never touches disk.
-func StartAttractMode(userCfg *config.UserConfig, files []gamesdb.FileInfo) error {
+// StartAttractMode runs an endless random game loop using
+// the already-loaded menu database. It reads Attract mode
+// settings from SAM.ini (using embedded default.ini if missing).
+func StartAttractMode(files []gamesdb.FileInfo) error {
 	fmt.Println("=== Starting Attract Mode ===")
 
+	// Load our embedded SAM.ini configuration
 	cfg, err := config.LoadINI()
 	if err != nil {
-		return fmt.Errorf("failed to load attract config: %w", err)
+		return fmt.Errorf("failed to load SAM.ini: %w", err)
 	}
 
 	filtered := filterSystems(files, cfg)
@@ -55,7 +57,7 @@ func StartAttractMode(userCfg *config.UserConfig, files []gamesdb.FileInfo) erro
 	rand.Seed(time.Now().UnixNano())
 
 	for {
-		// Shuffle each cycle for randomness
+		// Shuffle each cycle if Random = true
 		if cfg.Attract.Random {
 			rand.Shuffle(len(filtered), func(i, j int) {
 				filtered[i], filtered[j] = filtered[j], filtered[i]
@@ -74,20 +76,20 @@ func StartAttractMode(userCfg *config.UserConfig, files []gamesdb.FileInfo) erro
 			}
 
 			fmt.Printf("[Attract] Launching %s (%s)\n", display, sys.Name)
-			_ = mister.LaunchGame(userCfg, *sys, g.Path)
+			_ = mister.LaunchGame(nil, *sys, g.Path)
 
-			// --- Inline random playtime ---
+			// Inline random playtime
 			playTime := minTime
 			if minTime != maxTime {
 				playTime = rand.Intn(maxTime-minTime+1) + minTime
 			}
 			time.Sleep(time.Duration(playTime) * time.Second)
-			// -------------------------------
 		}
 	}
 }
 
-// generic filtering (shared logic)
+// filterSystems filters the games slice using Include/Exclude
+// rules from the Attract section of SAM.ini
 func filterSystems(files []gamesdb.FileInfo, cfg *config.Config) []gamesdb.FileInfo {
 	var out []gamesdb.FileInfo
 	include := make(map[string]bool)
