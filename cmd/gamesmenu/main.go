@@ -168,7 +168,7 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) ([
 			return generateIndexWindow(cfg, stdscr)
 		case 1:
 			gc.End()
-			if err := attract.StartAttractMode(files); err != nil {
+			if err := attract.StartAttractMode(cfg, files); err != nil {
 				_ = curses.InfoBox(stdscr, "Error",
 					fmt.Sprintf("Failed to start attract mode: %v", err), false, true)
 			}
