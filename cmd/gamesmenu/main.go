@@ -19,6 +19,7 @@ import (
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/gamesdb"
 	"github.com/synrais/SAM-GO/pkg/mister"
+	"github.com/synrais/SAM-GO/pkg/attract" // NEW
 )
 
 // -------------------------
@@ -147,6 +148,7 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) 
 	stdscr.Clear()
 	stdscr.Refresh()
 
+	// NEW: Added "Start Attract Mode" option
 	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 		Title:         "Options",
 		Buttons:       []string{"Select", "Back"},
@@ -155,15 +157,27 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) 
 		ShowTotal:     false,
 		Width:         60,
 		Height:        10,
-	}, []string{"Rebuild games database..."})
+	}, []string{
+		"Rebuild games database...",
+		"Start Attract Mode", // NEW
+	})
 	if err != nil {
 		return nil, err
 	}
 	stdscr.Clear()
 	stdscr.Refresh()
 
-	if button == 0 && selected == 0 {
-		return generateIndexWindow(cfg, stdscr)
+	if button == 0 {
+		switch selected {
+		case 0:
+			return generateIndexWindow(cfg, stdscr)
+		case 1: // NEW: start attract mode
+			stdscr.Clear()
+			stdscr.Refresh()
+			if err := attract.StartAttractMode(cfg, stdscr); err != nil {
+				_ = curses.InfoBox(stdscr, "Error", fmt.Sprintf("Failed to start attract mode: %v", err), false, true)
+			}
+		}
 	}
 	return nil, nil
 }
@@ -203,14 +217,12 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 		stdscr.Clear()
 		stdscr.Refresh()
 
-		// ---- Build folder list (sorted) ----
 		var folders []string
 		for name := range node.Children {
 			folders = append(folders, name)
 		}
 		sort.Strings(folders)
 
-		// ---- Sort files by Name (and Ext as tiebreaker) ----
 		if len(node.Files) > 1 {
 			sort.Slice(node.Files, func(i, j int) bool {
 				if node.Files[i].Name == node.Files[j].Name {
@@ -220,7 +232,6 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 			})
 		}
 
-		// ---- Build items (folders first, then files) ----
 		var items []string
 		items = append(items, folders...)
 		for _, f := range node.Files {
@@ -377,10 +388,9 @@ func searchWindow(cfg *config.UserConfig, stdscr *gc.Window) error {
 	text := ""
 	startIndex := 0
 	for {
-		// Show cursor only during keyboard input
 		gc.Cursor(1)
 		button, query, err := curses.OnScreenKeyboard(stdscr, "Search", []string{"Search", "Back"}, text, 0)
-		gc.Cursor(0) // Hide cursor again after keyboard closes
+		gc.Cursor(0)
 
 		if err != nil || button == 1 {
 			stdscr.Clear()
@@ -558,7 +568,6 @@ func main() {
 	}
 	defer gc.End()
 
-	// Hide cursor globally by default
 	gc.Cursor(0)
 
 	files, err := loadingWindow(stdscr, loadMenuDb)
