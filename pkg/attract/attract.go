@@ -12,23 +12,17 @@ import (
 	"github.com/synrais/SAM-GO/pkg/mister"
 )
 
-// StartAttractMode runs an endless random game loop using config rules.
-// It continues indefinitely until the process is stopped.
-func StartAttractMode(userCfg *config.UserConfig) error {
-	// Load Attract config (from SAM.ini or embedded default)
+// StartAttractMode runs an endless random game loop using the
+// already-loaded menu database. It never touches disk.
+func StartAttractMode(userCfg *config.UserConfig, files []gamesdb.FileInfo) error {
+	fmt.Println("=== Starting Attract Mode ===")
+
 	cfg, err := config.LoadINI()
 	if err != nil {
 		return fmt.Errorf("failed to load attract config: %w", err)
 	}
 
-	fmt.Println("=== Starting Attract Mode ===")
-
-	allGames, err := gamesdb.LoadAllGames()
-	if err != nil {
-		return fmt.Errorf("failed to load games database: %w", err)
-	}
-
-	filtered := filterSystems(allGames, cfg)
+	filtered := filterSystems(files, cfg)
 	if len(filtered) == 0 {
 		return fmt.Errorf("no games available after filtering")
 	}
@@ -61,7 +55,7 @@ func StartAttractMode(userCfg *config.UserConfig) error {
 	rand.Seed(time.Now().UnixNano())
 
 	for {
-		// Shuffle for each cycle if Random enabled
+		// Shuffle each cycle for randomness
 		if cfg.Attract.Random {
 			rand.Shuffle(len(filtered), func(i, j int) {
 				filtered[i], filtered[j] = filtered[j], filtered[i]
@@ -78,23 +72,22 @@ func StartAttractMode(userCfg *config.UserConfig) error {
 			if g.Ext != "" {
 				display += "." + g.Ext
 			}
+
 			fmt.Printf("[Attract] Launching %s (%s)\n", display, sys.Name)
 			_ = mister.LaunchGame(userCfg, *sys, g.Path)
 
-			// --- Inline random playtime selection ---
+			// --- Inline random playtime ---
 			playTime := minTime
 			if minTime != maxTime {
 				playTime = rand.Intn(maxTime-minTime+1) + minTime
 			}
-			// ----------------------------------------
-
 			time.Sleep(time.Duration(playTime) * time.Second)
+			// -------------------------------
 		}
 	}
 }
 
-// Keep this one tiny helper because it’s genuinely shared logic
-// (filter rules are reused elsewhere too)
+// generic filtering (shared logic)
 func filterSystems(files []gamesdb.FileInfo, cfg *config.Config) []gamesdb.FileInfo {
 	var out []gamesdb.FileInfo
 	include := make(map[string]bool)
