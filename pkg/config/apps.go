@@ -19,7 +19,4 @@ const ArcadeDBFile = SAMConfigFolder + "/ArcadeDatabase.csv"
 const NfcDatabaseFile = SdFolder + "/nfc.csv"
 const NfcLastScanFile = TempFolder + "/NFCSCAN"
 
-const GamesDb = SAMConfigFolder + "/games.db"
-const MenuDb = SAMConfigFolder + "/menu.db"
-
 const LastLaunchFile = "/tmp/.LASTLAUNCH.mgl"
