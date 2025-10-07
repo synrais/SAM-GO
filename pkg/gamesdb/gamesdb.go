@@ -94,6 +94,7 @@ func saveAll(files []FileInfo) error {
 // -------------------------
 
 func NewNamesIndex(cfg *config.UserConfig, systems []games.System, update func(IndexStatus)) (int, error) {
+	_ = os.Remove(config.MenuDb)
 	status := IndexStatus{
 		Total: len(systems) + 1,
 		Step:  1,
