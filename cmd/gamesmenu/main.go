@@ -19,7 +19,7 @@ import (
 	"github.com/synrais/SAM-GO/pkg/games"
 	"github.com/synrais/SAM-GO/pkg/gamesdb"
 	"github.com/synrais/SAM-GO/pkg/mister"
-	"github.com/synrais/SAM-GO/pkg/attract" // NEW
+	"github.com/synrais/SAM-GO/pkg/attract"
 )
 
 // -------------------------
@@ -50,7 +50,6 @@ func loadMenuDb() ([]MenuFile, error) {
 // -------------------------
 
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
-
 	stdscr.Clear()
 	stdscr.Refresh()
 
@@ -109,15 +108,12 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 		clearText()
 		spinnerCount = (spinnerCount + 1) % len(spinnerSeq)
 
-		// Spinner stays at far right
 		win.MovePrint(1, width-3, spinnerSeq[spinnerCount])
 
-		// Pin the file count at a fixed column (does not move)
 		countText := fmt.Sprintf("%6d files", status.Files)
-		countCol := width - len(countText) - 6 // adjust padding if needed
+		countCol := width - len(countText) - 6
 		win.MovePrint(1, countCol, countText)
 
-		// Print system name on the left, trimmed so it never reaches count
 		maxSysWidth := countCol - 10
 		sysText := fmt.Sprintf("Indexing %s...", status.SystemName)
 		if len(sysText) > maxSysWidth {
@@ -173,7 +169,8 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) ([
 		case 1:
 			gc.End()
 			if err := attract.StartAttractMode(files); err != nil {
-				_ = curses.InfoBox(stdscr, "Error", fmt.Sprintf("Failed to start attract mode: %v", err), false, true)
+				_ = curses.InfoBox(stdscr, "Error",
+					fmt.Sprintf("Failed to start attract mode: %v", err), false, true)
 			}
 		}
 	}
@@ -268,7 +265,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 
 		currentIndex = selected
 		switch button {
-		case 2: // Open / Launch
+		case 2:
 			stdscr.Clear()
 			stdscr.Refresh()
 			if selected < len(folders) {
@@ -285,7 +282,7 @@ func browseNode(cfg *config.UserConfig, stdscr *gc.Window, node *Node, startInde
 				stdscr.Clear()
 				stdscr.Refresh()
 			}
-		case 3: // Back
+		case 3:
 			stdscr.Clear()
 			stdscr.Refresh()
 			return currentIndex, nil
@@ -336,7 +333,7 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 		stdscr.Refresh()
 
 		switch button {
-		case 2: // Open
+		case 2:
 			sysId := sysIds[selected]
 			_, err := browseNode(cfg, stdscr, tree.Children[sysId], 0)
 			if err != nil {
@@ -345,15 +342,15 @@ func mainMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) error
 			stdscr.Clear()
 			stdscr.Refresh()
 
-		case 3: // Search
+		case 3:
 			if err := searchWindow(cfg, stdscr); err != nil {
 				return err
 			}
 			stdscr.Clear()
 			stdscr.Refresh()
 
-		case 4: // Options
-			if newFiles, err := optionsMenu(cfg, stdscr); err != nil {
+		case 4:
+			if newFiles, err := optionsMenu(cfg, stdscr, files); err != nil {
 				return err
 			} else if newFiles != nil {
 				files = newFiles
