@@ -49,7 +49,6 @@ func loadMenuDb() ([]MenuFile, error) {
 // -------------------------
 
 func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
-	_ = os.Remove(config.MenuDb)
 
 	stdscr.Clear()
 	stdscr.Refresh()
