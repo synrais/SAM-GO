@@ -144,11 +144,10 @@ func generateIndexWindow(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile,
 // Options Menu
 // -------------------------
 
-func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) {
+func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window, files []MenuFile) ([]MenuFile, error) {
 	stdscr.Clear()
 	stdscr.Refresh()
 
-	// NEW: Added "Start Attract Mode" option
 	button, selected, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 		Title:         "Options",
 		Buttons:       []string{"Select", "Back"},
@@ -159,7 +158,7 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) 
 		Height:        10,
 	}, []string{
 		"Rebuild games database...",
-		"Start Attract Mode", 
+		"Start Attract Mode",
 	})
 	if err != nil {
 		return nil, err
@@ -171,10 +170,9 @@ func optionsMenu(cfg *config.UserConfig, stdscr *gc.Window) ([]MenuFile, error) 
 		switch selected {
 		case 0:
 			return generateIndexWindow(cfg, stdscr)
-		case 1: 
-			stdscr.Clear()
-			stdscr.Refresh()
-			if err := attract.StartAttractMode(cfg, files); err != nil {
+		case 1:
+			gc.End()
+			if err := attract.StartAttractMode(files); err != nil {
 				_ = curses.InfoBox(stdscr, "Error", fmt.Sprintf("Failed to start attract mode: %v", err), false, true)
 			}
 		}
