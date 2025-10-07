@@ -11,6 +11,9 @@ import (
 
 // --- Embeds ---
 
+//go:embed default.ini
+var defaultINI []byte
+
 //go:embed gamecontrollerdb.txt
 var GameControllerDB string
 
