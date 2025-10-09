@@ -609,13 +609,12 @@ var Systems = map[string]System{
 				Exts: []string{".jag", ".j64", ".rom", ".bin"},
 				Mgl: &MglParams{
 					Delay:  1,
-					Method: "s",
+					Method: "f",
 					Index:  1,
 				},
 			},
 		},
 	},
-	// TODO: Jaguar
 	"MasterSystem": {
 		Id:           "MasterSystem",
 		Name:         "Master System",
