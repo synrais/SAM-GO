@@ -1,0 +1,501 @@
+package mister
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	s "strings"
+
+	"github.com/synrais/SAM-GO/pkg/config"
+	"github.com/synrais/SAM-GO/pkg/games"
+	"github.com/synrais/SAM-GO/pkg/utils"
+)
+
+func GenerateMgl(cfg *config.Config, system *games.System, path string, override string) (string, error) {
+	// override the system rbf with the user specified one
+	for _, setCore := range cfg.Systems.SetCore {
+		parts := s.SplitN(setCore, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		if s.EqualFold(parts[0], system.Id) {
+			system.Rbf = parts[1]
+			break
+		}
+	}
+
+	mgl := fmt.Sprintf("<mistergamedescription>\n\t<rbf>%s</rbf>\n", system.Rbf)
+
+	if system.SetName != "" {
+		sameDir := ""
+		if system.SetNameSameDir {
+			sameDir = " same_dir=\"1\""
+		}
+
+		mgl += fmt.Sprintf("\t<setname%s>%s</setname>\n", sameDir, system.SetName)
+	}
+
+	if path == "" {
+		mgl += "</mistergamedescription>"
+		return mgl, nil
+	} else if override != "" {
+		mgl += override
+		mgl += "</mistergamedescription>"
+		return mgl, nil
+	}
+
+	mglDef, err := games.PathToMglDef(*system, path)
+	if err != nil {
+		return "", err
+	}
+
+	mgl += fmt.Sprintf("<file delay=\"%d\" type=\"%s\" index=\"%d\" path=\"../../../../..%s\"/>\n", mglDef.Delay, mglDef.Method, mglDef.Index, path)
+	mgl += "</mistergamedescription>"
+	return mgl, nil
+}
+
+func writeTempFile(content string) (string, error) {
+	tmpFile, err := os.Create(config.LastLaunchFile)
+	if err != nil {
+		return "", err
+	}
+	defer tmpFile.Close()
+
+	_, err = tmpFile.WriteString(content)
+	if err != nil {
+		return "", err
+	}
+	return tmpFile.Name(), nil
+}
+
+func launchFile(path string) error {
+	_, err := os.Stat(config.CmdInterface)
+	if err != nil {
+		return fmt.Errorf("command interface not accessible: %s", err)
+	}
+
+	if !(s.HasSuffix(s.ToLower(path), ".mgl") || s.HasSuffix(s.ToLower(path), ".mra") || s.HasSuffix(s.ToLower(path), ".rbf")) {
+		return fmt.Errorf("not a valid launch file: %s", path)
+	}
+
+	cmd, err := os.OpenFile(config.CmdInterface, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer cmd.Close()
+
+	cmd.WriteString(fmt.Sprintf("load_core %s\n", path))
+
+	return nil
+}
+
+func launchTempMgl(cfg *config.Config, system *games.System, path string) error {
+	override, err := games.RunSystemHook(cfg, *system, path)
+	if err != nil {
+		return err
+	}
+
+	mgl, err := GenerateMgl(cfg, system, path, override)
+	if err != nil {
+		return err
+	}
+
+	tmpFile, err := writeTempFile(mgl)
+	if err != nil {
+		return err
+	}
+
+	return launchFile(tmpFile)
+}
+
+// LaunchShortCore attempts to launch a core with a short path, as per what's
+// allowed in an MGL file.
+func LaunchShortCore(path string) error {
+	mgl := fmt.Sprintf(
+		"<mistergamedescription>\n\t<rbf>%s</rbf>\n</mistergamedescription>\n",
+		path,
+	)
+
+	tmpFile, err := writeTempFile(mgl)
+	if err != nil {
+		return err
+	}
+
+	return launchFile(tmpFile)
+}
+
+func LaunchGame(cfg *config.Config, system games.System, path string) error {
+	// [BiosSkip]: create the virtual pad before the game loads.
+	startAutoInput(cfg, system)
+
+	// check if sidelaunchers wants to handle this system specially
+	if handled, err := SideLaunchers(cfg, system, path); handled {
+		return err
+	}
+
+	switch s.ToLower(filepath.Ext(path)) {
+	case ".mra":
+		// Arcade launchers are already valid files
+		err := launchFile(path)
+		if err != nil {
+			return err
+		}
+	case ".mgl":
+		// Pre-made .mgl file → just launch
+		err := launchFile(path)
+		if err != nil {
+			return err
+		}
+		if ActiveGameEnabled() {
+			SetActiveGame(path)
+		}
+	default:
+		// Generic game file → build temporary MGL and launch
+		err := launchTempMgl(cfg, &system, path)
+		if err != nil {
+			return err
+		}
+		if ActiveGameEnabled() {
+			SetActiveGame(path)
+		}
+	}
+
+	return nil
+}
+
+func GetLauncherFilename(system *games.System, folder string, name string) string {
+	if system.Id == "Arcade" {
+		return filepath.Join(folder, name+".mra")
+	} else {
+		return filepath.Join(folder, name+".mgl")
+	}
+}
+
+func TrySetupArcadeCoresLink(path string) error {
+	folder, err := os.Stat(path)
+	if err != nil {
+		return err
+	} else if !folder.IsDir() {
+		return fmt.Errorf("parent is not a directory: %s", path)
+	}
+
+	coresLinkPath := filepath.Join(path, filepath.Base(config.ArcadeCoresFolder))
+	coresLink, err := os.Lstat(coresLinkPath)
+
+	coresLinkExists := false
+	if err == nil {
+		if coresLink.Mode()&os.ModeSymlink != 0 {
+			coresLinkExists = true
+		} else {
+			// cores exists but it's not a symlink. not touching this!
+			return nil
+		}
+	} else if os.IsNotExist(err) {
+		coresLinkExists = false
+	} else {
+		return err
+	}
+
+	files, err := os.ReadDir(path)
+	if err != nil {
+		return err
+	}
+
+	mraCount := 0
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+
+		if s.HasSuffix(s.ToLower(file.Name()), ".mra") {
+			mraCount++
+		}
+	}
+
+	if mraCount > 0 && !coresLinkExists {
+		err = os.Symlink(config.ArcadeCoresFolder, coresLinkPath)
+		if err != nil {
+			return err
+		}
+	} else if mraCount == 0 && coresLinkExists {
+		err = os.Remove(coresLinkPath)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func DeleteLauncher(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		err := os.Remove(path)
+		if err != nil {
+			return fmt.Errorf("failed to remove launcher: %s", err)
+		}
+	}
+
+	return TrySetupArcadeCoresLink(filepath.Dir(path))
+}
+
+func CreateLauncher(cfg *config.Config, system *games.System, gameFile string, folder string, name string) (string, error) {
+	if system == nil {
+		return "", fmt.Errorf("no system specified")
+	}
+
+	if system.Id == "Arcade" {
+		mraPath := GetLauncherFilename(system, folder, name)
+		if _, err := os.Lstat(mraPath); err == nil {
+			err := os.Remove(mraPath)
+			if err != nil {
+				return "", fmt.Errorf("failed to remove existing link: %s", err)
+			}
+		}
+
+		err := os.Symlink(gameFile, mraPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to create game link: %s", err)
+		}
+
+		err = TrySetupArcadeCoresLink(filepath.Dir(mraPath))
+		if err != nil {
+			return "", err
+		}
+
+		return mraPath, nil
+	} else {
+		mglPath := GetLauncherFilename(system, folder, name)
+
+		override, err := games.RunSystemHook(cfg, *system, gameFile)
+		if err != nil {
+			return "", err
+		}
+
+		mgl, err := GenerateMgl(cfg, system, gameFile, override)
+		if err != nil {
+			return "", err
+		}
+
+		err = os.WriteFile(mglPath, []byte(mgl), 0644)
+		if err != nil {
+			return "", fmt.Errorf("failed to write mgl file: %s", err)
+		}
+
+		return mglPath, nil
+	}
+}
+
+// LaunchCore Launch a core given a possibly partial path, as per MGL files.
+func LaunchCore(cfg *config.Config, system games.System) error {
+	if _, err := os.Stat(config.CmdInterface); err != nil {
+		return fmt.Errorf("command interface not accessible: %s", err)
+	}
+
+	if system.SetName != "" {
+		return LaunchGame(cfg, system, "")
+	}
+
+	var path string
+	rbfs := games.SystemsWithRbf()
+	if _, ok := rbfs[system.Id]; ok {
+		path = rbfs[system.Id].Path
+	} else {
+		return fmt.Errorf("no core found for system %s", system.Id)
+	}
+
+	cmd, err := os.OpenFile(config.CmdInterface, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer cmd.Close()
+
+	cmd.WriteString(fmt.Sprintf("load_core %s\n", path))
+
+	return nil
+}
+
+func LaunchMenu() error {
+	if _, err := os.Stat(config.CmdInterface); err != nil {
+		return fmt.Errorf("command interface not accessible: %s", err)
+	}
+
+	cmd, err := os.OpenFile(config.CmdInterface, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer cmd.Close()
+
+	// TODO: don't hardcode here
+	cmd.WriteString(fmt.Sprintf("load_core %s\n", filepath.Join(config.SdFolder, "menu.rbf")))
+
+	return nil
+}
+
+// LaunchGenericFile Given a generic file path, launch it using the correct method, if possible.
+func LaunchGenericFile(cfg *config.Config, path string) error {
+	
+    system, _ := games.BestSystemMatch(cfg, path)
+
+    // check if sidelaunchers wants to handle this system specially
+    if system.Id != "" {
+        if handled, err := SideLaunchers(cfg, system, path); handled {
+            return err
+        }
+    }
+
+    var err error
+    isGame := false
+    ext := s.ToLower(filepath.Ext(path))
+
+    switch ext {
+    case ".mra":
+        err = launchFile(path)
+    case ".mgl":
+        err = launchFile(path)
+        isGame = true
+    case ".rbf":
+        err = launchFile(path)
+    default:
+        if system.Id == "" {
+            return fmt.Errorf("unknown file type: %s", ext)
+        }
+        err = launchTempMgl(cfg, &system, path)
+        isGame = true
+    }
+    if err != nil {
+        return err
+    }
+
+    // Track active game if applicable
+    if ActiveGameEnabled() && isGame {
+        if err := SetActiveGame(path); err != nil {
+            return err
+        }
+    }
+
+    return nil
+}
+
+// TryPickRandomGame recursively searches through given folder for a valid game
+// file for that system.
+func TryPickRandomGame(system *games.System, folder string) (string, error) {
+	files, err := os.ReadDir(folder)
+	if err != nil {
+		return "", err
+	}
+
+	if len(files) == 0 {
+		return "", fmt.Errorf("no files in %s", folder)
+	}
+
+	var validFiles []os.DirEntry
+	for _, file := range files {
+		if file.IsDir() {
+			validFiles = append(validFiles, file)
+		} else if utils.IsZip(file.Name()) {
+			validFiles = append(validFiles, file)
+		} else if games.MatchSystemFile(*system, file.Name()) {
+			validFiles = append(validFiles, file)
+		}
+	}
+
+	if len(validFiles) == 0 {
+		return "", fmt.Errorf("no valid files in %s", folder)
+	}
+
+	file, err := utils.RandomElem(validFiles)
+	if err != nil {
+		return "", err
+	}
+
+	path := filepath.Join(folder, file.Name())
+	if file.IsDir() {
+		return TryPickRandomGame(system, path)
+	} else if utils.IsZip(path) {
+		// zip files
+		zipFiles, err := utils.ListZip(path)
+		if err != nil {
+			return "", err
+		}
+		if len(zipFiles) == 0 {
+			return "", fmt.Errorf("no files in %s", path)
+		}
+		// just shoot our shot on a zip instead of checking every file
+		randomZip, err := utils.RandomElem(zipFiles)
+		if err != nil {
+			return "", err
+		}
+		zipPath := filepath.Join(path, randomZip)
+		if games.MatchSystemFile(*system, zipPath) {
+			return zipPath, nil
+		} else {
+			return "", fmt.Errorf("invalid file picked in %s", path)
+		}
+	} else {
+		return path, nil
+	}
+}
+
+func LaunchRandomGame(cfg *config.Config, systems []games.System) error {
+	const maxTries = 100
+
+	populated := games.GetPopulatedGamesFolders(cfg, systems)
+	if len(populated) == 0 {
+		return fmt.Errorf("no populated games folders found")
+	}
+
+	for i := 0; i < maxTries; i++ {
+		systemId, err := utils.RandomElem(utils.MapKeys(populated))
+		if err != nil {
+			return err
+		}
+
+		folders := populated[systemId]
+		var files []string
+		for _, folder := range folders {
+			results, err := games.GetFiles(systemId, folder)
+			if err != nil {
+				return err
+			}
+			files = append(files, results...)
+		}
+
+		if len(files) == 0 {
+			continue
+		}
+
+		system, err := games.GetSystem(systemId)
+		if err != nil {
+			return err
+		}
+
+		game, err := utils.RandomElem(files)
+		if err != nil {
+			return err
+		}
+
+		return LaunchGame(cfg, *system, game)
+	}
+
+	return fmt.Errorf("failed to find a random game")
+}
+
+func RelaunchIfInMenu() error {
+	if _, err := os.Stat(config.CoreNameFile); err == nil {
+		name, err := os.ReadFile(config.CoreNameFile)
+		if err != nil {
+			err := LaunchMenu()
+			if err != nil {
+				return err
+			}
+		} else if string(name) == config.MenuCore {
+			err := LaunchMenu()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
