@@ -42,12 +42,30 @@ type SearchResult struct {
 	Path     string
 }
 
+// FileName is the game's file name: its name plus the extension, if any.
+func (f FileInfo) FileName() string { return fileName(f.Name, f.Ext) }
+
+// FileName is the game's file name: its name plus the extension, if any.
+func (r SearchResult) FileName() string { return fileName(r.Name, r.Ext) }
+
+func fileName(name, ext string) string {
+	if ext == "" {
+		return name
+	}
+	return name + "." + ext
+}
+
 // -------------------------
 // Global in-memory cache
 // -------------------------
 
 var cachedFiles []FileInfo
 var cacheLoaded bool
+
+// Load returns the games database, reading it from the SD card only the
+// first time: the menu, search and attract mode all share this one copy.
+// It must not be changed in place.
+func Load() ([]FileInfo, error) { return loadAll() }
 
 func loadAll() ([]FileInfo, error) {
 	// If we've already loaded the Gob file once, return the cached version instantly.

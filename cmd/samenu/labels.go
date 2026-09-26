@@ -296,8 +296,7 @@ func runOptionsScreen(stdscr *gc.Window, cfg *config.Config, sc optionsScreen) {
 		}
 		pickerHeight := len(opts) + 4
 
-		stdscr.Clear()
-		stdscr.Refresh()
+		clearScreen(stdscr)
 		// The settings and the preview are placed together as one block,
 		// centred, with the preview trimmed if the screen is too short.
 		rows, _ := stdscr.MaxYX()
@@ -354,8 +353,7 @@ func runOptionsScreen(stdscr *gc.Window, cfg *config.Config, sc optionsScreen) {
 		}
 	}
 
-	stdscr.Clear()
-	stdscr.Refresh()
+	clearScreen(stdscr)
 
 	if changed {
 		save := sc.save
@@ -364,8 +362,7 @@ func runOptionsScreen(stdscr *gc.Window, cfg *config.Config, sc optionsScreen) {
 		}
 		if err := save(); err != nil {
 			_ = curses.InfoBox(stdscr, "Error", fmt.Sprintf("Couldn't save settings: %v", err), false, true)
-			stdscr.Clear()
-			stdscr.Refresh()
+			clearScreen(stdscr)
 		}
 	}
 }

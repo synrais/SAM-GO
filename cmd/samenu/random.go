@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 
 	gc "github.com/rthornton128/goncurses"
 
@@ -76,10 +77,7 @@ func pickRandomGame(stdscr *gc.Window, cfg *config.Config, files []MenuFile) err
 		message(stdscr, "Couldn't launch it: "+err.Error())
 		return nil
 	}
-	name := f.Name
-	if f.Ext != "" {
-		name += "." + f.Ext
-	}
+	name := f.FileName()
 	text := fmt.Sprintf("%s  (%s)", name, sys.Name)
 	if max := systemListWidth - 4; len(text) > max && max > 3 {
 		text = text[:max-3] + "..."
@@ -105,7 +103,7 @@ func randomGameScreen(stdscr *gc.Window, cfg *config.Config) {
 		save: func() error {
 			cfg.Menu.RandomEntry = show.isOn()
 			return config.SaveValues(cfg.Path, "Menu", [][2]string{
-				{"RandomEntry", boolText(cfg.Menu.RandomEntry)},
+				{"RandomEntry", strconv.FormatBool(cfg.Menu.RandomEntry)},
 			})
 		},
 	})

@@ -99,7 +99,7 @@ func DrawBox(win *gc.Window, y int, x int, height int, width int) {
 	win.NoutRefresh()
 }
 
-func DrawActionButtons(win *gc.Window, buttons []string, selected int, _ int) {
+func DrawActionButtons(win *gc.Window, buttons []string, selected int) {
 	height, width := win.MaxYX()
 
 	// Draw horizontal separator
@@ -160,9 +160,6 @@ func InfoBox(stdscr *gc.Window, title string, text string, clear bool, ok bool) 
 	}
 
 	height := 3
-	// if ok {
-	// 	height = 5
-	// }
 
 	win, err := NewWindow(stdscr, height, len(text)+4, title, -1)
 	if err != nil {
@@ -173,10 +170,6 @@ func InfoBox(stdscr *gc.Window, title string, text string, clear bool, ok bool) 
 	gc.Cursor(0)
 
 	win.MovePrint(1, 2, text)
-
-	// if ok {
-	// 	DrawActionButtons(win, []string{"OK"}, 0)
-	// }
 
 	win.NoutRefresh()
 	gc.Update()

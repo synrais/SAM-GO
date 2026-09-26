@@ -140,7 +140,7 @@ func NewPicker(cfg *config.Config, files []gamesdb.FileInfo, singlePick bool) *P
 				return da < db
 			}
 		}
-		return utils.LessFold(systemName(a.id), systemName(b.id))
+		return utils.LessFold(games.DisplayName(a.id), games.DisplayName(b.id))
 	})
 	return p
 }
@@ -357,13 +357,6 @@ func customWeight(cfg *config.Config, id, category, maker string) float64 {
 		}
 	}
 	return w
-}
-
-func systemName(id string) string {
-	if s, err := games.GetSystem(id); err == nil {
-		return s.Name
-	}
-	return id
 }
 
 func releaseDate(id string) string {

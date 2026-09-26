@@ -35,8 +35,6 @@ type AttractConfig struct {
 	UseStaticDetector bool     `ini:"usestaticdetector"`
 	// What input with no binding does: Ignore, Stop or Play.
 	OtherInput string `ini:"otherinput"`
-	// Minutes without input, after Play, before attract mode carries on
-	// (0 = off: Play ends attract mode for good).
 	// Mute MiSTer's sound while attract mode plays.
 	Mute bool `ini:"mute"`
 	// How a game is chosen (see pkg/attract/picker.go): Selection is one
@@ -528,11 +526,11 @@ const (
 	IdleBoth  = "Menu+Games" // the MiSTer menu, SAMenu and games
 )
 
-// IdleWatch reports whether the idle watcher should run: attract mode
-// starts "When idle" (from boot on).
 // StartsMenu reports whether SAMenu opens on boot ([Startup] Start).
 func (c *Config) StartsMenu() bool { return c.Startup.Start == "SAMenu" }
 
+// IdleWatch reports whether the idle watcher should run: attract mode
+// starts "When idle" (from boot on).
 func (c *Config) IdleWatch() bool {
 	return c.Startup.Start == "Attract mode" && c.Startup.AttractWhen == "When idle"
 }

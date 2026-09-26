@@ -55,17 +55,10 @@ func GenerateMgl(cfg *config.Config, system *games.System, path string, override
 }
 
 func writeTempFile(content string) (string, error) {
-	tmpFile, err := os.Create(config.LastLaunchFile)
-	if err != nil {
+	if err := os.WriteFile(config.LastLaunchFile, []byte(content), 0644); err != nil {
 		return "", err
 	}
-	defer tmpFile.Close()
-
-	_, err = tmpFile.WriteString(content)
-	if err != nil {
-		return "", err
-	}
-	return tmpFile.Name(), nil
+	return config.LastLaunchFile, nil
 }
 
 func launchFile(path string) error {
@@ -84,9 +77,10 @@ func launchFile(path string) error {
 	}
 	defer cmd.Close()
 
-	cmd.WriteString(fmt.Sprintf("load_core %s\n", path))
-
-	return nil
+	// A failed write means the core didn't load: report it, so it's not
+	// counted as a launch.
+	_, err = fmt.Fprintf(cmd, "load_core %s\n", path)
+	return err
 }
 
 func launchTempMgl(cfg *config.Config, system *games.System, path string) error {
@@ -159,9 +153,8 @@ func LaunchMenu() error {
 	defer cmd.Close()
 
 	// TODO: don't hardcode here
-	cmd.WriteString(fmt.Sprintf("load_core %s\n", filepath.Join(config.SdFolder, "menu.rbf")))
-
-	return nil
+	_, err = fmt.Fprintf(cmd, "load_core %s\n", filepath.Join(config.SdFolder, "menu.rbf"))
+	return err
 }
 
 // LaunchGenericFile Given a generic file path, launch it using the correct method, if possible.

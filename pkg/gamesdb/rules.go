@@ -51,10 +51,7 @@ func (rs RuleSet) Excludes(f FileInfo) bool {
 	}
 
 	// Files match the name with or without its extension.
-	full := f.Name
-	if f.Ext != "" {
-		full += "." + f.Ext
-	}
+	full := f.FileName()
 	for _, pattern := range rules.Files {
 		if matchPattern(pattern, f.Name) || matchPattern(pattern, full) {
 			return true

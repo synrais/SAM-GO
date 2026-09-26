@@ -120,15 +120,15 @@ func attractSettingsScreen(stdscr *gc.Window, cfg *config.Config, sysNames []str
 			return config.SaveValues(cfg.Path, "Attract", [][2]string{
 				{"Orientation", a.Orientation},
 				{"Selection", a.Selection},
-				{"NoRepeats", boolText(a.NoRepeats)},
-				{"MixSystems", boolText(a.MixSystems)},
-				{"OneVersion", boolText(a.OneVersion)},
+				{"NoRepeats", strconv.FormatBool(a.NoRepeats)},
+				{"MixSystems", strconv.FormatBool(a.MixSystems)},
+				{"OneVersion", strconv.FormatBool(a.OneVersion)},
 				{"SkipTags", strings.Join(a.SkipTags, ", ")},
 				{"PlayTime", a.PlayTime},
 				{"Include", strings.Join(a.Include, ", ")},
 				{"Exclude", strings.Join(a.Exclude, ", ")},
 				{"OtherInput", a.OtherInput},
-				{"Mute", boolText(a.Mute)},
+				{"Mute", strconv.FormatBool(a.Mute)},
 			})
 		},
 	})
@@ -179,19 +179,19 @@ func detectorSettingsScreen(stdscr *gc.Window, cfg *config.Config) {
 				*opts[i].dst = opts[i].o.isOn()
 			}
 			if err := config.SaveValues(cfg.Path, "Attract", [][2]string{
-				{"UseStaticDetector", boolText(cfg.Attract.UseStaticDetector)},
+				{"UseStaticDetector", strconv.FormatBool(cfg.Attract.UseStaticDetector)},
 			}); err != nil {
 				return err
 			}
 			if err := config.SaveValues(cfg.Path, "StaticDetector", [][2]string{
-				{"SkipBlack", boolText(d.SkipBlack)}, {"WriteBlackList", boolText(d.WriteBlackList)},
-				{"SkipStatic", boolText(d.SkipStatic)}, {"WriteStaticList", boolText(d.WriteStaticList)},
+				{"SkipBlack", strconv.FormatBool(d.SkipBlack)}, {"WriteBlackList", strconv.FormatBool(d.WriteBlackList)},
+				{"SkipStatic", strconv.FormatBool(d.SkipStatic)}, {"WriteStaticList", strconv.FormatBool(d.WriteStaticList)},
 			}); err != nil {
 				return err
 			}
 			return config.SaveValues(cfg.Path, "List", [][2]string{
-				{"UseBlacklist", boolText(l.UseBlacklist)}, {"UseStaticlist", boolText(l.UseStaticlist)},
-				{"UseWhitelist", boolText(l.UseWhitelist)},
+				{"UseBlacklist", strconv.FormatBool(l.UseBlacklist)}, {"UseStaticlist", strconv.FormatBool(l.UseStaticlist)},
+				{"UseWhitelist", strconv.FormatBool(l.UseWhitelist)},
 			})
 		},
 	})
@@ -230,8 +230,7 @@ func databaseSystemsScreen(stdscr *gc.Window, cfg *config.Config) bool {
 		return false
 	}
 
-	stdscr.Clear()
-	stdscr.Refresh()
+	clearScreen(stdscr)
 	button, sel, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 		Shortcuts:     menuShortcuts(),
 		Title:         "Rebuild the games database now?",
@@ -267,8 +266,7 @@ func tickList(stdscr *gc.Window, title string, ids, labels []string, on map[stri
 			}
 			items[i] = box + " " + strings.TrimLeft(labels[i], " ")
 		}
-		stdscr.Clear()
-		stdscr.Refresh()
+		clearScreen(stdscr)
 		button, sel, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Shortcuts:     menuShortcuts(),
 			Title:         fmt.Sprintf("%s (%d of %d)", title, countTicks(on, ids), len(ids)),
@@ -302,8 +300,7 @@ func tickList(stdscr *gc.Window, title string, ids, labels []string, on map[stri
 		}
 		break
 	}
-	stdscr.Clear()
-	stdscr.Refresh()
+	clearScreen(stdscr)
 	if changed {
 		save(on)
 	}
@@ -348,19 +345,9 @@ func systemIDs(names []string) []string {
 func namesOf(ids []string) []string {
 	out := make([]string, len(ids))
 	for i, id := range ids {
-		out[i] = id
-		if s, err := games.GetSystem(id); err == nil {
-			out[i] = s.Name
-		}
+		out[i] = games.DisplayName(id)
 	}
 	return out
-}
-
-func boolText(b bool) string {
-	if b {
-		return "true"
-	}
-	return "false"
 }
 
 // idleChoices are the idle times offered in the menu.

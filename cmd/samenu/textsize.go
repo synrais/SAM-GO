@@ -120,8 +120,7 @@ func applyTextSizeLive(stdscr *gc.Window) {
 	if rows, cols, err := mister.ConsoleSize(); err == nil {
 		_ = gc.ResizeTerm(rows, cols)
 	}
-	stdscr.Clear()
-	stdscr.Refresh()
+	clearScreen(stdscr)
 	_ = fitToScreen(stdscr)
 }
 

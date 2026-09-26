@@ -200,10 +200,7 @@ func StartAttractMode(cfg *config.Config, files []gamesdb.FileInfo) error {
 			continue
 		}
 
-		display := game.Name
-		if game.Ext != "" {
-			display += "." + game.Ext
-		}
+		display := game.FileName()
 
 		// The blacklist can grow while we run (the detector adds to it).
 		if useBlack(sys.Id) && ListNames(Blacklist, sys.Id)[ListKey(game.Name)] {
@@ -277,7 +274,11 @@ func StartAttractMode(cfg *config.Config, files []gamesdb.FileInfo) error {
 			_ = mister.LaunchMenu()
 			return nil
 		case "menu", "search":
-			fmt.Printf("[Attract] Opening SAMenu%s on the TV\n", map[bool]string{true: " (search)"}[action == "search"])
+			if action == "search" {
+				fmt.Println("[Attract] Opening SAMenu (search) on the TV")
+			} else {
+				fmt.Println("[Attract] Opening SAMenu on the TV")
+			}
 			openGamesMenu(action == "search")
 			return nil
 		case "quit": // from -launch / -random: leave the game running

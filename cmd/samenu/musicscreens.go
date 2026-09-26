@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	gc "github.com/rthornton128/goncurses"
 
@@ -89,7 +90,7 @@ func musicScreen(stdscr *gc.Window, cfg *config.Config) {
 		}
 		if sel >= 2 && sel <= 4 {
 			err = config.SaveValues(cfg.Path, "Music", [][2]string{
-				{"Playback", m.Playback}, {"Playlist", m.Playlist}, {"PauseInGames", boolText(m.PauseInGames)},
+				{"Playback", m.Playback}, {"Playlist", m.Playlist}, {"PauseInGames", strconv.FormatBool(m.PauseInGames)},
 			})
 		}
 		if err != nil {
@@ -153,7 +154,7 @@ func startupScreen(stdscr *gc.Window, cfg *config.Config) {
 // saveStartup saves [Startup] and updates user-startup.sh to match.
 func saveStartup(stdscr *gc.Window, cfg *config.Config) error {
 	if err := config.SaveValues(cfg.Path, "Startup", [][2]string{
-		{"Start", cfg.Startup.Start}, {"Music", boolText(cfg.Startup.Music)},
+		{"Start", cfg.Startup.Start}, {"Music", strconv.FormatBool(cfg.Startup.Music)},
 		{"AttractWhen", cfg.Startup.AttractWhen},
 		{"AttractDelay", fmt.Sprint(cfg.Startup.AttractDelay)}, {"AttractPress", cfg.Startup.AttractPress},
 		{"IdleTime", fmt.Sprint(cfg.Startup.IdleTime)}, {"IdleWhere", cfg.Startup.IdleWhere},

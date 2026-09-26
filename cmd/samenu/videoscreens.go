@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	gc "github.com/rthornton128/goncurses"
@@ -108,8 +109,8 @@ func videoScreen(stdscr *gc.Window, cfg *config.Config) {
 		}
 		if err := config.SaveValues(cfg.Path, "Video", [][2]string{
 			{"Playback", v.Playback}, {"Playlist", v.Playlist}, {"AttractEvery", fmt.Sprint(v.AttractEvery)},
-			{"AutoSync", boolText(v.AutoSync)}, {"CorrectPts", boolText(v.CorrectPts)},
-			{"Mp3Seek", boolText(v.Mp3Seek)}, {"AviIndex", boolText(v.AviIndex)},
+			{"AutoSync", strconv.FormatBool(v.AutoSync)}, {"CorrectPts", strconv.FormatBool(v.CorrectPts)},
+			{"Mp3Seek", strconv.FormatBool(v.Mp3Seek)}, {"AviIndex", strconv.FormatBool(v.AviIndex)},
 		}); err != nil {
 			message(stdscr, fmt.Sprintf("Couldn't save: %v", err))
 		}
@@ -159,8 +160,7 @@ func videoBrowser(stdscr *gc.Window, dir string) {
 		if playAll {
 			first = 1
 		}
-		stdscr.Clear()
-		stdscr.Refresh()
+		clearScreen(stdscr)
 		button, sel, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 			Title:         title,
 			Buttons:       []string{"PgUp", "PgDn", "", "Back"},

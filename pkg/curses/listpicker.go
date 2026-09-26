@@ -207,7 +207,7 @@ func ListPicker(stdscr *gc.Window, opts ListPickerOpts, items []string) (int, in
 			buttons[opts.ActionButton] = opts.DynamicActionLabel(selectedItem)
 		}
 
-		DrawActionButtons(win, buttons, selectedButton, 4)
+		DrawActionButtons(win, buttons, selectedButton)
 
 		// --- Position/scroll indicators ---
 		if opts.ShowTotal {

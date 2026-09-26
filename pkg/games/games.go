@@ -10,6 +10,14 @@ import (
 	"github.com/synrais/SAMenu/pkg/utils"
 )
 
+// DisplayName is a system's name, or its ID if it isn't a known system.
+func DisplayName(id string) string {
+	if system, ok := Systems[id]; ok {
+		return system.Name
+	}
+	return id
+}
+
 // GetSystem looks up an exact system definition by ID.
 func GetSystem(id string) (*System, error) {
 	if system, ok := Systems[id]; ok {
@@ -77,11 +85,6 @@ func GetFiles(systemId string, path string) ([]string, error) {
 		return nil, err
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-
 	var scanner func(path string, file fs.DirEntry, err error) error
 	scanner = func(path string, file fs.DirEntry, walkErr error) error {
 		// An entry that can't be read is skipped, not fatal.
@@ -100,11 +103,6 @@ func GetFiles(systemId string, path string) ([]string, error) {
 
 		// handle symlinked directories
 		if file.Type()&os.ModeSymlink != 0 {
-			err = os.Chdir(filepath.Dir(path))
-			if err != nil {
-				return err
-			}
-
 			// A broken link (its target renamed or deleted, e.g. an old
 			// _Organized shortcut to an MRA) is skipped, not fatal.
 			realPath, err := filepath.EvalSymlinks(path)
@@ -118,11 +116,6 @@ func GetFiles(systemId string, path string) ([]string, error) {
 			}
 
 			if file.IsDir() {
-				err = os.Chdir(path)
-				if err != nil {
-					return err
-				}
-
 				stack.new()
 				defer stack.pop()
 
@@ -185,11 +178,6 @@ func GetFiles(systemId string, path string) ([]string, error) {
 		return nil, err
 	}
 
-	err = os.Chdir(filepath.Dir(path))
-	if err != nil {
-		return nil, err
-	}
-
 	var realPath string
 	if root.Mode()&os.ModeSymlink == 0 {
 		realPath = path
@@ -223,11 +211,6 @@ func GetFiles(systemId string, path string) ([]string, error) {
 		for i := range allResults {
 			allResults[i] = strings.Replace(allResults[i], realPath, path, 1)
 		}
-	}
-
-	err = os.Chdir(cwd)
-	if err != nil {
-		return nil, err
 	}
 
 	return allResults, nil

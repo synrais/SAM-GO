@@ -146,7 +146,7 @@ func OnScreenKeyboardWith(stdscr *gc.Window, title string, buttons []string, def
 		} else {
 			button = -1
 		}
-		DrawActionButtons(win, buttons, button, 6)
+		DrawActionButtons(win, buttons, button)
 
 		win.Move(2, cursor+2)
 

@@ -42,16 +42,16 @@ func CopyFile(sourcePath, destPath string) error {
 	if err != nil {
 		return err
 	}
-	defer outputFile.Close()
-
-	_, err = io.Copy(outputFile, inputFile)
-	if err != nil {
+	if _, err := io.Copy(outputFile, inputFile); err != nil {
+		outputFile.Close()
 		return err
 	}
-	outputFile.Sync()
-	inputFile.Close()
-
-	return nil
+	// Sync and Close errors mean the copy may not have been written.
+	if err := outputFile.Sync(); err != nil {
+		outputFile.Close()
+		return err
+	}
+	return outputFile.Close()
 }
 
 // Min returns the lowest value in a slice.

@@ -83,10 +83,7 @@ func listGames() {
 		os.Exit(1)
 	}
 	for _, f := range files {
-		name := f.Name
-		if f.Ext != "" {
-			name += "." + f.Ext
-		}
+		name := f.FileName()
 		fmt.Println(filepath.Join(f.MenuPath, name))
 	}
 }

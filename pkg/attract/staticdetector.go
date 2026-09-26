@@ -159,13 +159,13 @@ type StaticEvent struct {
 	Samples      int
 	Width        int
 	Height       int
-	DominantHex  string
-	DominantName string
-	AverageHex   string
-	AverageName  string
-	Game         string
-	ChangedPct   float64 // share of sampled pixels that changed, in %
-	Spread       int     // cells that changed within SpreadTime
+	// The colours as numbers: turned into text (hex and a name) only when
+	// the status is written, not on every frame.
+	DomR, DomG, DomB int
+	AvgR, AvgG, AvgB int
+	System, Title    string
+	ChangedPct       float64 // share of sampled pixels that changed, in %
+	Spread           int     // cells that changed within SpreadTime
 }
 
 // StatusFile always holds the detector's latest state (updated 10 times a
@@ -264,7 +264,7 @@ func (d *Detector) writeStatus(cfg config.StaticDetectorConfig, force bool) {
 	if title == "" {
 		b.WriteString("Waiting for a game...\n")
 	} else {
-		fmt.Fprintf(&b, "Game:          %s\n", ev.Game)
+		fmt.Fprintf(&b, "Game:          [%s] %s\n", ev.System, ev.Title)
 		fmt.Fprintf(&b, "Playing for:   %.1fs (grace %.0fs)\n", ev.Uptime, cfg.Grace)
 		fmt.Fprintf(&b, "Unchanged for: %.1fs (black limit %.0fs, static limit %.0fs)\n",
 			ev.StaticScreen, cfg.BlackThreshold, cfg.StaticThreshold)
@@ -274,7 +274,8 @@ func (d *Detector) writeStatus(cfg config.StaticDetectorConfig, force bool) {
 		fmt.Fprintf(&b, "Stuck pixels:  %d/%d\n", ev.StuckPixels, ev.Samples)
 		fmt.Fprintf(&b, "Resolution:    %dx%d\n", ev.Width, ev.Height)
 		fmt.Fprintf(&b, "Colours:       dominant %s %s, average %s %s\n",
-			ev.DominantHex, ev.DominantName, ev.AverageHex, ev.AverageName)
+			rgbToHex(ev.DomR, ev.DomG, ev.DomB), nearestColorName(ev.DomR, ev.DomG, ev.DomB),
+			rgbToHex(ev.AvgR, ev.AvgG, ev.AvgB), nearestColorName(ev.AvgR, ev.AvgG, ev.AvgB))
 	}
 	if action != "" {
 		fmt.Fprintf(&b, "\nLast action:   %s\n", action)
@@ -375,7 +376,10 @@ func (d *Detector) run() {
 
 		valid := !(res.Width < 64 || res.Width > 2048 ||
 			res.Height < 64 || res.Height > 2048 ||
-			res.Line < res.Width*3 || res.Line > 2048*4)
+			res.Line < res.Width*3 || res.Line > 2048*4) &&
+			// the whole frame must fit in the mapped memory: a large or
+			// corrupt header would otherwise read past it and crash
+			res.Header+res.Height*res.Line <= len(res.Map)
 
 		var sumR, sumG, sumB int
 		currRGB = currRGB[:0]
@@ -418,7 +422,7 @@ func (d *Detector) run() {
 		// Dominant colour: sort a copy, so currRGB keeps screen order for
 		// the frame-to-frame comparison below.
 		sorted = append(sorted[:0], currRGB...)
-		sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+		sort.Sort(rgbList(sorted)) // a typed sort: much cheaper than sort.Slice
 		bestCount := 0
 		currCount := 1
 		bestVal := sorted[0]
@@ -497,7 +501,7 @@ func (d *Detector) run() {
 		lastFrameTime = frameTime
 
 		uptime := frameTime.Sub(titleStartTime).Seconds()
-		avgHex := rgbToHex(avgR, avgG, avgB)
+		black := avgR|avgG|avgB == 0
 
 		event := StaticEvent{
 			Uptime:       uptime,
@@ -507,17 +511,15 @@ func (d *Detector) run() {
 			Samples:      len(currRGB),
 			Width:        res.Width,
 			Height:       res.Height,
-			DominantHex:  rgbToHex(domR, domG, domB),
-			DominantName: nearestColorName(domR, domG, domB),
-			AverageHex:   avgHex,
-			AverageName:  nearestColorName(avgR, avgG, avgB),
-			Game:         fmt.Sprintf("[%s] %s", systemID, title),
-			ChangedPct:   changedPct,
-			Spread:       spread,
+			DomR:         domR, DomG: domG, DomB: domB,
+			AvgR: avgR, AvgG: avgG, AvgB: avgB,
+			System: systemID, Title: title,
+			ChangedPct: changedPct,
+			Spread:     spread,
 		}
 
 		if uptime > currCfg.Grace {
-			if avgHex == "#000000" && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
+			if black && staticScreenRun > currCfg.BlackThreshold && !handledBlack {
 				msg := fmt.Sprintf("Black screen on %q", title)
 				switch {
 				case d.viewOnly:
@@ -534,7 +536,7 @@ func (d *Detector) run() {
 				}
 				handledBlack = true
 			}
-			if avgHex != "#000000" && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
+			if !black && staticScreenRun > currCfg.StaticThreshold && !handledStatic {
 				msg := fmt.Sprintf("Static screen on %q from %.0fs", title, staticStartTime)
 				switch {
 				case d.viewOnly:
@@ -635,3 +637,11 @@ func wouldText(list bool, listName string, skip bool) string {
 	}
 	return " " + strings.Join(parts, " and ")
 }
+
+// rgbList sorts colour samples (sort.Interface, for the detector's
+// dominant colour: faster than sort.Slice on every frame).
+type rgbList []uint32
+
+func (l rgbList) Len() int           { return len(l) }
+func (l rgbList) Less(i, j int) bool { return l[i] < l[j] }
+func (l rgbList) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }

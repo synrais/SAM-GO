@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -76,15 +77,8 @@ func SaveMenuLayout(cfg *Config) error {
 func SaveInputDetector(cfg *Config) error {
 	d := cfg.InputDetector
 	return SaveValues(cfg.Path, "InputDetector", [][2]string{
-		{"Mouse", boolText(d.Mouse)}, {"Keyboard", boolText(d.Keyboard)}, {"Joystick", boolText(d.Joystick)},
+		{"Mouse", strconv.FormatBool(d.Mouse)}, {"Keyboard", strconv.FormatBool(d.Keyboard)}, {"Joystick", strconv.FormatBool(d.Joystick)},
 	})
-}
-
-func boolText(b bool) string {
-	if b {
-		return "true"
-	}
-	return "false"
 }
 
 // SaveAttractControls writes the three [InputDetector.X] sections. Inputs

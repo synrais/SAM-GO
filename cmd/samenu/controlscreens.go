@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,8 +40,7 @@ var attractActionNames = map[string]string{
 // bindingPicker shows a list of actions plus "Restore defaults" and returns
 // the chosen index (len(actions) for defaults), or -1 for Back.
 func bindingPicker(stdscr *gc.Window, title string, items []string, selected int) int {
-	stdscr.Clear()
-	stdscr.Refresh()
+	clearScreen(stdscr)
 	items = append(items, "Restore defaults")
 	button, sel, err := curses.ListPicker(stdscr, curses.ListPickerOpts{
 		Shortcuts:     menuShortcuts(),
@@ -126,7 +126,7 @@ func controlsScreen(stdscr *gc.Window, cfg *config.Config) {
 			err := config.SaveInputDetector(cfg)
 			if err == nil {
 				err = config.SaveValues(cfg.Path, "BiosSkip", [][2]string{
-					{"Attract", boolText(cfg.AutoInput.Attract)}, {"Menu", boolText(cfg.AutoInput.Menu)},
+					{"Attract", strconv.FormatBool(cfg.AutoInput.Attract)}, {"Menu", strconv.FormatBool(cfg.AutoInput.Menu)},
 				})
 			}
 			if err != nil {
@@ -167,8 +167,7 @@ func controlsScreen(stdscr *gc.Window, cfg *config.Config) {
 			message(stdscr, fmt.Sprintf("Couldn't save: %v", err))
 		}
 	}
-	stdscr.Clear()
-	stdscr.Refresh()
+	clearScreen(stdscr)
 }
 
 // waitForInput waits for a press from the input detectors. Mouse movement

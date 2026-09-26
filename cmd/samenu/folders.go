@@ -189,8 +189,7 @@ func systemsScreen(cfg *config.Config, stdscr *gc.Window, st *menuState, title s
 		if !top {
 			buttons = []string{"PgUp", "PgDn", "", "Back"}
 		}
-		stdscr.Clear()
-		stdscr.Refresh()
+		clearScreen(stdscr)
 		button, selected, err := 2, autoOpen, error(nil)
 		if autoOpen < 0 {
 			button, selected, err = curses.ListPicker(stdscr, curses.ListPickerOpts{
@@ -219,8 +218,7 @@ func systemsScreen(cfg *config.Config, stdscr *gc.Window, st *menuState, title s
 			current = entries[selected].key()
 			navHere(depth, current, selected)
 		}
-		stdscr.Clear()
-		stdscr.Refresh()
+		clearScreen(stdscr)
 
 		if !top {
 			if button == 3 {
